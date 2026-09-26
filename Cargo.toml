@@ -40,7 +40,9 @@ features = ["derive"]
 version = "1.0"
 
 [workspace.package]
+authors = ["Bahram Joharshamshiri <jowharshamshiri@gmail.com>"]
 edition = "2024"
+homepage = "https://github.com/jowharshamshiri/patina"
 license = "Apache-2.0"
 repository = "https://github.com/jowharshamshiri/patina"
 rust-version = "1.89"
