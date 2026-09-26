@@ -5,9 +5,15 @@
 	import DocHeader from './doc-header.svelte';
 	import TableOfContents from './table-of-contents.svelte';
 	import MobileTableOfContents from './mobile-table-of-contents.svelte';
+	import { siteConfig } from '$lib/config';
 
 	let { title, description, data }: { title: string; description: string; data: any } = $props();
 </script>
+
+<svelte:head>
+	<title>{title} · {siteConfig.title}</title>
+	<meta name="description" content={description} />
+</svelte:head>
 
 <!-- Code blocks arrive highlighted from the build (svelte.config.js), so the page renders
      completely on the server and is prerendered with its content. -->
