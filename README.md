@@ -58,3 +58,7 @@ elan toolchain install leanprover/lean4:v4.34.1
 cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
 ```
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
