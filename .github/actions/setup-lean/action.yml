@@ -1,0 +1,37 @@
+name: Set up Lean
+description: >
+  Installs elan and the pinned Lean toolchain explicitly. lean2rust builds never install
+  toolchains themselves.
+runs:
+  using: composite
+  steps:
+    - name: Cache the Lean toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.elan
+        key: elan-${{ runner.os }}-${{ runner.arch }}-${{ env.LEAN_TOOLCHAIN }}
+    - name: Install elan (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        if [ ! -x "$HOME/.elan/bin/elan" ]; then
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+        fi
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+    - name: Install elan (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not (Test-Path "$HOME\.elan\bin\elan.exe")) {
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/leanprover/elan/master/elan-init.ps1 -OutFile elan-init.ps1
+          powershell -ExecutionPolicy Bypass -File elan-init.ps1 -NoPrompt 1 -DefaultToolchain none
+          Remove-Item elan-init.ps1
+        }
+        "$HOME\.elan\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - name: Install the pinned toolchain
+      shell: bash
+      run: |
+        elan toolchain install "$LEAN_TOOLCHAIN"
+        elan run "$LEAN_TOOLCHAIN" lean --version

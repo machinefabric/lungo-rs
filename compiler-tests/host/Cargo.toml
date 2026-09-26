@@ -1,0 +1,15 @@
+[package]
+name = "host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Release-gate project: Rust callbacks, custom Lean syntax and macros, PureRust linking"
+
+[dependencies]
+lean2rust = { path = "../../crates/lean2rust" }
+
+[dev-dependencies]
+object = "0.36"
+
+[build-dependencies]
+lean2rust-build = { path = "../../crates/lean2rust-build" }

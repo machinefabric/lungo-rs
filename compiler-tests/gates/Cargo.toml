@@ -1,0 +1,13 @@
+[package]
+name = "gates"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Release-gate tests of the lean2rust build pipeline on small Lake projects"
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+lean2rust-bir = { path = "../../crates/lean2rust-bir" }
+lean2rust-build = { path = "../../crates/lean2rust-build" }

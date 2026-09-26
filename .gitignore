@@ -1,8 +1,5 @@
 .DS_Store
-__pycache__/
-*.pyc
 .lake/
 target/
-*.bir
-!compiler-tests/golden/*.bir
 *.partial
+.lean2rust-cache/

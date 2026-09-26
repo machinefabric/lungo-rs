@@ -1,0 +1,20 @@
+[package]
+name = "conformance-runner"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Runs the Lean conformance programs through lean2rust's PureRust backend"
+
+[[bin]]
+name = "conformance"
+path = "src/main.rs"
+
+[dependencies]
+lean2rust = { path = "../../crates/lean2rust" }
+
+[dev-dependencies]
+toml = "0.8"
+
+[build-dependencies]
+lean2rust-build = { path = "../../crates/lean2rust-build" }
+toml = "0.8"

@@ -1,0 +1,6 @@
+name = "type_error"
+version = "0.1.0"
+defaultTargets = ["TypeError"]
+
+[[lean_lib]]
+name = "TypeError"

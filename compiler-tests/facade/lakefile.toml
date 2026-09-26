@@ -1,0 +1,6 @@
+name = "facade"
+version = "0.1.0"
+defaultTargets = ["Facade"]
+
+[[lean_lib]]
+name = "Facade"

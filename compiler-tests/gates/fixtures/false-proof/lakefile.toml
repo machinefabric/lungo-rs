@@ -1,0 +1,6 @@
+name = "false_proof"
+version = "0.1.0"
+defaultTargets = ["FalseProof"]
+
+[[lean_lib]]
+name = "FalseProof"

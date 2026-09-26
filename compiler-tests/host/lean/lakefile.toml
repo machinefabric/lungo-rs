@@ -1,0 +1,6 @@
+name = "host"
+version = "0.1.0"
+defaultTargets = ["Host"]
+
+[[lean_lib]]
+name = "Host"

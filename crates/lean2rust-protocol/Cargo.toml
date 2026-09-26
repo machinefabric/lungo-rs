@@ -1,0 +1,12 @@
+[package]
+name = "lean2rust-protocol"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "The versioned protocol between lean2rust-build and the toolchain-specific Lean worker"
+license = "Apache-2.0"
+
+[dependencies]
+ciborium = "0.2.2"
+lean2rust-bir = { path = "../lean2rust-bir", version = "0.1.0" }
+serde = { version = "1.0", features = ["derive"] }

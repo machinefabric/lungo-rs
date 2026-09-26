@@ -1,0 +1,6 @@
+name = "imports"
+version = "0.1.0"
+defaultTargets = ["Imports"]
+
+[[lean_lib]]
+name = "Imports"

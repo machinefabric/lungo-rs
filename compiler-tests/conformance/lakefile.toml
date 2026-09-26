@@ -1,0 +1,54 @@
+name = "conformance"
+version = "0.1.0"
+defaultTargets = ["numbers", "strings", "data", "higher_order", "collections", "floats", "effects", "concurrency", "panics", "initialization", "syntax", "unsafe"]
+
+[[lean_lib]]
+name = "Conformance"
+
+[[lean_exe]]
+name = "numbers"
+root = "Conformance.Numbers"
+
+[[lean_exe]]
+name = "strings"
+root = "Conformance.Strings"
+
+[[lean_exe]]
+name = "data"
+root = "Conformance.Data"
+
+[[lean_exe]]
+name = "higher_order"
+root = "Conformance.HigherOrder"
+
+[[lean_exe]]
+name = "collections"
+root = "Conformance.Collections"
+
+[[lean_exe]]
+name = "floats"
+root = "Conformance.Floats"
+
+[[lean_exe]]
+name = "effects"
+root = "Conformance.Effects"
+
+[[lean_exe]]
+name = "concurrency"
+root = "Conformance.Concurrency"
+
+[[lean_exe]]
+name = "panics"
+root = "Conformance.Panics"
+
+[[lean_exe]]
+name = "initialization"
+root = "Conformance.Initialization"
+
+[[lean_exe]]
+name = "syntax"
+root = "Conformance.Syntax"
+
+[[lean_exe]]
+name = "unsafe"
+root = "Conformance.Unsafe"

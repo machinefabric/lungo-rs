@@ -1,156 +1,134 @@
-module
+import Lean
+import Lean2Rust.Cbor
+import Lean2Rust.Diagnostics
 
-public import Lean
-public import Lean.Compiler.LCNF.Main
+/-!
+Serialization of Lean's final compiler representation as lean2rust Bridge IR (BIR).
 
+For Lean 4.34.1 the final representation of every compiled declaration — local or imported — is
+the lowering of its final impure LCNF (`Lean.IR.ToIR`), which Lean persists per module and which
+its interpreter executes. BIR mirrors that representation instruction for instruction, but
+flattens straight-line code into blocks so that consumers do not recurse once per statement.
+-/
 namespace Lean2Rust.BridgeIR
 
-open Lean Lean.Compiler.LCNF
+open Lean Lean.IR Lean2Rust.Cbor
 
-public abbrev version : Nat := 1
+/-- Version of the BIR data model, independent of the protocol version. -/
+def version : Nat := 3
 
-private def obj (tag : String) (fields : List (String × Json)) : Json :=
-  Json.mkObj (("op", toJson tag) :: fields)
+/-- Fully qualified Lean names are canonical identities; the escaped form round-trips. -/
+def nameString (n : Name) : String := n.toString
 
-private def num (n : Nat) : Json := toJson n.repr
+def name (n : Name) : Value := str (nameString n)
 
-private def name (n : Name) : Json := toJson n.toString
+def irType (ty : IRType) : Except String Value :=
+  match ty with
+  | .float => return unitVariant "float"
+  | .float32 => return unitVariant "float32"
+  | .uint8 => return unitVariant "uint8"
+  | .uint16 => return unitVariant "uint16"
+  | .uint32 => return unitVariant "uint32"
+  | .uint64 => return unitVariant "uint64"
+  | .usize => return unitVariant "usize"
+  | .erased => return unitVariant "erased"
+  | .object => return unitVariant "object"
+  | .tobject => return unitVariant "tobject"
+  | .tagged => return unitVariant "tagged"
+  | .void => return unitVariant "void"
+  | .struct .. | .union .. =>
+    throw "IR struct/union types are not produced by the Lean 4.34.1 compiler and are rejected by this adapter"
 
-private def var (v : FVarId) : Json := name v.name
+def arg : IR.Arg → Value
+  | .var x => .map #[("var", nat x.idx)]
+  | .erased => unitVariant "erased"
 
-private def binderInfo : BinderInfo → Json
-  | .default => toJson "explicit"
-  | .implicit => toJson "implicit"
-  | .strictImplicit => toJson "strict_implicit"
-  | .instImplicit => toJson "instance"
+def args (ys : Array IR.Arg) : Value := arr (ys.map arg)
 
-private partial def level : Level → Json
-  | .zero => obj "zero" []
-  | .succ x => obj "successor" [("value", level x)]
-  | .max a b => obj "maximum" [("left", level a), ("right", level b)]
-  | .imax a b => obj "dependent_maximum" [("left", level a), ("right", level b)]
-  | .param n => obj "parameter" [("name", name n)]
-  | .mvar id => obj "metavariable" [("id", name id.name)]
+def ctorInfo (i : IR.CtorInfo) : Value :=
+  obj [("name", name i.name), ("tag", nat i.cidx), ("size", nat i.size),
+       ("usize", nat i.usize), ("ssize", nat i.ssize)]
 
-private partial def type : Expr → Json
-  | .bvar n => obj "bound_variable" [("index", num n)]
-  | .fvar id => obj "free_variable" [("id", var id)]
-  | .mvar id => obj "metavariable" [("id", name id.name)]
-  | .sort u => obj "sort" [("level", level u)]
-  | .const n [] => name n
-  | .const n us => obj "constant" [("name", name n), ("levels", toJson (us.map level))]
-  | .app fn arg => obj "application" [("function", type fn), ("argument", type arg)]
-  | .lam n domain body info => obj "lambda" [
-      ("name", name n), ("domain", type domain), ("body", type body),
-      ("binder", binderInfo info)]
-  | .forallE n domain body info => obj "forall" [
-      ("name", name n), ("domain", type domain), ("body", type body),
-      ("binder", binderInfo info)]
-  | .letE n ty value body nondep => obj "let" [
-      ("name", name n), ("type", type ty), ("value", type value),
-      ("body", type body), ("nondependent", toJson nondep)]
-  | .lit (.natVal n) => obj "natural_literal" [("value", num n)]
-  | .lit (.strVal s) => obj "string_literal" [("value", toJson s)]
-  | .mdata _ e => type e
-  | .proj n i e => obj "projection" [
-      ("typeName", name n), ("index", num i), ("value", type e)]
+def param (p : IR.Param) : Except String Value := do
+  return obj [("var", nat p.x.idx), ("ty", ← irType p.ty), ("borrow", .bool p.borrow)]
 
-private def arg : Arg .impure → Json
-  | .erased => obj "erased" []
-  | .fvar v => obj "var" [("id", var v)]
+def expr : IR.Expr → Except String Value
+  | .ctor i ys => return variant "ctor" [("info", ctorInfo i), ("args", args ys)]
+  | .reset n x => return variant "reset" [("fields", nat n), ("var", nat x.idx)]
+  | .reuse x i u ys =>
+    return variant "reuse" [("var", nat x.idx), ("info", ctorInfo i), ("update_header", .bool u), ("args", args ys)]
+  | .proj i x => return variant "proj" [("index", nat i), ("var", nat x.idx)]
+  | .uproj i x => return variant "uproj" [("index", nat i), ("var", nat x.idx)]
+  | .sproj n o x => return variant "sproj" [("fields", nat n), ("offset", nat o), ("var", nat x.idx)]
+  | .fap c ys => return variant "fap" [("function", name c), ("args", args ys)]
+  | .pap c ys => return variant "pap" [("function", name c), ("args", args ys)]
+  | .ap x ys => return variant "ap" [("var", nat x.idx), ("args", args ys)]
+  | .box ty x => return variant "box" [("ty", ← irType ty), ("var", nat x.idx)]
+  | .unbox x => return variant "unbox" [("var", nat x.idx)]
+  | .lit (.num n) => return .map #[("lit", .map #[("num", str (toString n))])]
+  | .lit (.str s) => return .map #[("lit", .map #[("str", str s)])]
+  | .isShared x => return variant "is_shared" [("var", nat x.idx)]
 
-private def args (xs : Array (Arg .impure)) : Json :=
-  toJson (xs.toList.map arg)
+mutual
 
-private def ctorInfo (info : CtorInfo) : Json :=
-  Json.mkObj [
-    ("name", name info.name),
-    ("tag", num info.cidx),
-    ("objectFields", num info.size),
-    ("usizeFields", num info.usize),
-    ("scalarBytes", num info.ssize)
-  ]
+partial def block (b : IR.FnBody) : Except String Value := do
+  let mut stmts : Array Value := #[]
+  let mut b := b
+  repeat
+    match b with
+    | .vdecl x ty e k =>
+      stmts := stmts.push (variant "let" [("var", nat x.idx), ("ty", ← irType ty), ("expr", ← expr e)])
+      b := k
+    | .jdecl j xs v k =>
+      stmts := stmts.push (variant "join"
+        [("id", nat j.idx), ("params", arr (← xs.mapM param)), ("body", ← block v)])
+      b := k
+    | .set x i y k =>
+      stmts := stmts.push (variant "set" [("var", nat x.idx), ("index", nat i), ("arg", arg y)])
+      b := k
+    | .setTag x c k =>
+      stmts := stmts.push (variant "set_tag" [("var", nat x.idx), ("tag", nat c)])
+      b := k
+    | .uset x i y k =>
+      stmts := stmts.push (variant "uset" [("var", nat x.idx), ("index", nat i), ("value", nat y.idx)])
+      b := k
+    | .sset x i o y ty k =>
+      stmts := stmts.push (variant "sset" [("var", nat x.idx), ("index", nat i), ("offset", nat o),
+        ("value", nat y.idx), ("ty", ← irType ty)])
+      b := k
+    | .inc x n c p k =>
+      stmts := stmts.push (variant "inc" [("var", nat x.idx), ("count", nat n), ("checked", .bool c),
+        ("persistent", .bool p)])
+      b := k
+    | .dec x n c p k =>
+      stmts := stmts.push (variant "dec" [("var", nat x.idx), ("count", nat n), ("checked", .bool c),
+        ("persistent", .bool p)])
+      b := k
+    | .del x k =>
+      stmts := stmts.push (variant "del" [("var", nat x.idx)])
+      b := k
+    | _ => break
+  return obj [("stmts", arr stmts), ("terminator", ← terminator b)]
 
-private def literal : LitValue → Json
-  | .nat n => obj "nat" [("value", num n)]
-  | .str s => obj "string" [("value", toJson s)]
-  | .uint8 n => obj "uint8" [("value", num n.toNat)]
-  | .uint16 n => obj "uint16" [("value", num n.toNat)]
-  | .uint32 n => obj "uint32" [("value", num n.toNat)]
-  | .uint64 n => obj "uint64" [("value", num n.toNat)]
-  | .usize n => obj "usize" [("value", num n.toNat)]
+partial def terminator : IR.FnBody → Except String Value
+  | .case tid x xty alts => do
+    return variant "case" [("type_name", name tid), ("var", nat x.idx), ("var_ty", ← irType xty),
+      ("alts", arr (← alts.mapM alt))]
+  | .ret y => return variant "ret" [("arg", arg y)]
+  | .jmp j ys => return variant "jmp" [("id", nat j.idx), ("args", args ys)]
+  | .unreachable => return unitVariant "unreachable"
+  | _ => throw "internal error: non-terminal IR instruction in terminator position"
 
-private def value : LetValue .impure → Json
-  | .lit x => obj "literal" [("literal", literal x)]
-  | .erased => obj "erased" []
-  | .fvar f xs => obj "apply_closure" [("function", var f), ("args", args xs)]
-  | .ctor info xs => obj "constructor" [("info", ctorInfo info), ("args", args xs)]
-  | .oproj i v => obj "object_projection" [("index", num i), ("value", var v)]
-  | .uproj i v => obj "usize_projection" [("index", num i), ("value", var v)]
-  | .sproj n offset v => obj "scalar_projection" [("bytes", num n), ("offset", num offset), ("value", var v)]
-  | .fap fn xs => obj "call" [("function", name fn), ("args", args xs)]
-  | .pap fn xs => obj "partial_application" [("function", name fn), ("args", args xs)]
-  | .reset n v => obj "reset" [("fields", num n), ("value", var v)]
-  | .reuse v info updateHeader xs => obj "reuse" [
-      ("value", var v), ("info", ctorInfo info), ("updateHeader", toJson updateHeader),
-      ("args", args xs)]
-  | .box ty v => obj "box" [("type", type ty), ("value", var v)]
-  | .unbox v => obj "unbox" [("value", var v)]
-  | .isShared v => obj "is_shared" [("value", var v)]
+partial def alt : IR.Alt → Except String Value
+  | .ctor info b => return variant "ctor" [("info", ctorInfo info), ("body", ← block b)]
+  | .default b => return variant "default" [("body", ← block b)]
 
-private def param (p : Param .impure) : Json := Json.mkObj [
-  ("id", var p.fvarId),
-  ("type", type p.type),
-  ("borrow", toJson p.borrow)
-]
+end
 
-private partial def code : Code .impure → Json
-  | .let d k => obj "let" [
-      ("id", var d.fvarId), ("type", type d.type), ("value", value d.value),
-      ("next", code k)]
-  | .jp (.mk id _ ps ty body) next => obj "join" [
-      ("id", var id), ("params", toJson (ps.toList.map param)),
-      ("type", type ty), ("body", code body), ("next", code next)]
-  | .jmp id xs => obj "jump" [("target", var id), ("args", args xs)]
-  | .cases (.mk ty result discr alts) => obj "cases" [
-      ("typeName", name ty), ("resultType", type result),
-      ("discriminator", var discr), ("alternatives", toJson (alts.toList.map alt))]
-  | .return id => obj "return" [("value", var id)]
-  | .unreach ty => obj "unreachable" [("type", type ty)]
-  | .oset v i y k => obj "object_set" [("value", var v), ("index", num i), ("field", arg y), ("next", code k)]
-  | .uset v i y k => obj "usize_set" [("value", var v), ("index", num i), ("field", var y), ("next", code k)]
-  | .sset v i offset y ty k => obj "scalar_set" [
-      ("value", var v), ("index", num i), ("offset", num offset),
-      ("field", var y), ("type", type ty), ("next", code k)]
-  | .setTag v tag k => obj "set_tag" [("value", var v), ("tag", num tag), ("next", code k)]
-  | .inc v n check persistent k => obj "increment" [
-      ("value", var v), ("count", num n), ("check", toJson check),
-      ("persistent", toJson persistent), ("next", code k)]
-  | .dec v n check persistent objs k => obj "decrement" [
-      ("value", var v), ("count", num n), ("check", toJson check),
-      ("persistent", toJson persistent), ("objects", toJson (objs.map num)), ("next", code k)]
-  | .del v k => obj "delete" [("value", var v), ("next", code k)]
-where
-  alt : Alt .impure → Json
-    | .ctorAlt info body => obj "constructor" [("info", ctorInfo info), ("body", code body)]
-    | .default body => obj "default" [("body", code body)]
-
-private def externEntry : ExternEntry → Json
-  | .adhoc backend => obj "adhoc" [("backend", name backend)]
-  | .inline backend pattern => obj "inline" [("backend", name backend), ("pattern", toJson pattern)]
-  | .standard backend symbol => obj "standard" [("backend", name backend), ("symbol", toJson symbol)]
-  | .opaque => obj "opaque" []
-
-public def declaration (decl : Decl .impure) : Json :=
-  Json.mkObj [
-    ("name", name decl.name),
-    ("params", toJson (decl.params.toList.map param)),
-    ("resultType", type decl.type),
-    ("safe", toJson decl.safe),
-    ("recursive", toJson decl.recursive),
-    ("value", match decl.value with
-      | .code c => obj "code" [("body", code c)]
-      | .extern data => obj "extern" [("entries", toJson (data.entries.map externEntry))])
-  ]
+def externEntry : ExternEntry → Value
+  | .adhoc backend => variant "adhoc" [("backend", name backend)]
+  | .inline backend pattern => variant "inline" [("backend", name backend), ("pattern", str pattern)]
+  | .standard backend symbol => variant "standard" [("backend", name backend), ("symbol", str symbol)]
+  | .opaque => unitVariant "opaque"
 
 end Lean2Rust.BridgeIR

@@ -1,450 +1,370 @@
-//! The versioned compiler boundary emitted by the toolchain-specific Lean worker.
+//! Bridge IR (BIR): lean2rust's versioned compiler IR.
+//!
+//! BIR represents Lean's final compiler representation — the lowering of final impure LCNF —
+//! instruction for instruction. It is produced by the toolchain-specific worker and consumed by
+//! the Rust backend. It is not a restricted Lean fragment: every construct the Lean compiler
+//! hands to a backend has a representation here.
+//!
+//! Straight-line code is flattened into [`Block`]s so that consumers recurse only on genuinely
+//! nested control flow (join points and case alternatives).
 
-use serde::Deserialize;
-use std::fmt;
+mod pretty;
+mod validate;
 
-/// A canonical, unbounded nonnegative integer in the worker protocol.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Decimal(String);
+pub use pretty::{pretty_declaration, pretty_program};
+pub use validate::{ValidationError, validate};
 
-impl Decimal {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+use serde::{Deserialize, Serialize};
 
-impl<'de> Deserialize<'de> for Decimal {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        if value.is_empty()
-            || (value.len() > 1 && value.starts_with('0'))
-            || !value.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            return Err(serde::de::Error::custom(
-                "expected a canonical nonnegative decimal integer",
-            ));
-        }
-        Ok(Self(value))
-    }
-}
+/// Version of the BIR data model. Independent of the worker protocol version.
+pub const BIR_VERSION: u32 = 3;
 
-/// A protocol integer whose value must fit a fixed-width Lean scalar.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct BoundedDecimal<const MAX: u64>(Decimal);
+/// A variable identifier, unique within one declaration.
+pub type VarId = u32;
+/// A join point identifier, unique within one declaration.
+pub type JoinId = u32;
 
-impl<const MAX: u64> BoundedDecimal<MAX> {
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl<'de, const MAX: u64> Deserialize<'de> for BoundedDecimal<MAX> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let decimal = Decimal::deserialize(deserializer)?;
-        match decimal.as_str().parse::<u64>() {
-            Ok(value) if value <= MAX => Ok(Self(decimal)),
-            _ => Err(serde::de::Error::custom(format!(
-                "decimal integer exceeds maximum {MAX}"
-            ))),
-        }
-    }
-}
-
-pub const PROTOCOL_VERSION: u32 = 1;
-pub const BIR_VERSION: u32 = 1;
-const MAGIC: &[u8; 4] = b"L2RB";
-
-#[derive(Debug)]
-pub enum FrameError {
-    Truncated,
-    InvalidMagic,
-    InvalidLength { declared: usize, actual: usize },
-    InvalidPayload(serde_json::Error),
-    ProtocolVersion(u32),
-    BirVersion(u32),
-    InvalidModule,
-    InvalidDeclarationOrder,
-}
-
-impl fmt::Display for FrameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Truncated => f.write_str("truncated lean2rust BIR frame"),
-            Self::InvalidMagic => f.write_str("invalid lean2rust BIR frame magic"),
-            Self::InvalidLength { declared, actual } => write!(
-                f,
-                "lean2rust BIR frame declares {declared} payload bytes but contains {actual}"
-            ),
-            Self::InvalidPayload(error) => write!(f, "invalid lean2rust BIR payload: {error}"),
-            Self::ProtocolVersion(version) => write!(
-                f,
-                "lean2rust worker protocol version {version} is incompatible with {PROTOCOL_VERSION}"
-            ),
-            Self::BirVersion(version) => write!(
-                f,
-                "lean2rust BIR version {version} is incompatible with {BIR_VERSION}"
-            ),
-            Self::InvalidModule => f.write_str("lean2rust BIR module name is empty"),
-            Self::InvalidDeclarationOrder => {
-                f.write_str("lean2rust BIR declarations are unsorted or contain duplicate names")
-            }
-        }
-    }
-}
-
-impl std::error::Error for FrameError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::InvalidPayload(error) => Some(error),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Module {
-    pub protocol_version: u32,
+/// The complete executable closure of the requested Lean program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Program {
     pub bir_version: u32,
-    pub module: String,
+    /// Every loaded module, in initialization order (dependencies first).
+    pub modules: Vec<Module>,
+    /// Every reachable compiler declaration, sorted by name.
     pub declarations: Vec<Declaration>,
 }
 
-impl Module {
-    pub fn from_frame(frame: &[u8]) -> Result<Self, FrameError> {
-        let Some(header) = frame.get(..8) else {
-            return Err(FrameError::Truncated);
-        };
-        if &header[..4] != MAGIC {
-            return Err(FrameError::InvalidMagic);
-        }
-        let declared =
-            u32::from_le_bytes(header[4..8].try_into().expect("four-byte header")) as usize;
-        let actual = frame.len() - 8;
-        if declared != actual {
-            return Err(FrameError::InvalidLength { declared, actual });
-        }
-        let module: Self =
-            serde_json::from_slice(&frame[8..]).map_err(FrameError::InvalidPayload)?;
-        if module.protocol_version != PROTOCOL_VERSION {
-            return Err(FrameError::ProtocolVersion(module.protocol_version));
-        }
-        if module.bir_version != BIR_VERSION {
-            return Err(FrameError::BirVersion(module.bir_version));
-        }
-        if module.module.is_empty() {
-            return Err(FrameError::InvalidModule);
-        }
-        if module
-            .declarations
-            .windows(2)
-            .any(|pair| pair[0].name >= pair[1].name)
-        {
-            return Err(FrameError::InvalidDeclarationOrder);
-        }
-        Ok(module)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Declaration {
-    pub name: String,
-    pub params: Vec<Parameter>,
-    pub result_type: Type,
-    pub safe: bool,
-    pub recursive: bool,
-    pub value: DeclarationValue,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Parameter {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub ty: Type,
-    pub borrow: bool,
+pub struct Module {
+    pub name: String,
+    pub imports: Vec<String>,
+    /// Initialization actions of this module, in declaration order.
+    pub initializers: Vec<Initializer>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum DeclarationValue {
-    Code { body: Code },
-    Extern { entries: Vec<ExternEntry> },
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Initializer {
+    /// An `IO Unit` action run once, for its effects, during initialization.
+    Io(String),
+    /// `decl` holds the value produced by running the `IO` action `init_fn` during initialization.
+    Value { decl: String, init_fn: String },
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Declaration {
+    /// Canonical (escaped) fully qualified Lean name.
+    pub name: String,
+    /// The module whose compiler output contains this declaration.
+    pub module: String,
+    /// The source-level constant this declaration was compiled from, if any.
+    pub origin: Option<String>,
+    pub params: Vec<Param>,
+    pub result: IrType,
+    pub body: Body,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Body {
+    Function {
+        block: Block,
+    },
+    /// An implementation supplied outside Lean: a runtime primitive or host function.
+    Extern {
+        entries: Vec<ExternEntry>,
+        /// The entry Lean's own C backend selects.
+        selected: ExternEntry,
+        /// The Lean definition that provides the selected symbol with `@[export]`, when the
+        /// symbol is implemented by compiled Lean code rather than by the runtime.
+        exported_by: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExternEntry {
-    Adhoc { backend: String },
-    Inline { backend: String, pattern: String },
-    Standard { backend: String, symbol: String },
+    /// Implemented under the declaration's own (mangled) name.
+    Adhoc {
+        backend: String,
+    },
+    /// A backend-specific code pattern.
+    Inline {
+        backend: String,
+        pattern: String,
+    },
+    /// A named external symbol.
+    Standard {
+        backend: String,
+        symbol: String,
+    },
     Opaque,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Type {
-    Name(String),
-    Expression(Box<TypeExpression>),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum TypeExpression {
-    BoundVariable {
-        index: Decimal,
-    },
-    FreeVariable {
-        id: String,
-    },
-    Metavariable {
-        id: String,
-    },
-    Sort {
-        level: Level,
-    },
-    Constant {
-        name: String,
-        levels: Vec<Level>,
-    },
-    Application {
-        function: Type,
-        argument: Type,
-    },
-    Lambda {
-        name: String,
-        domain: Type,
-        body: Type,
-        binder: Binder,
-    },
-    Forall {
-        name: String,
-        domain: Type,
-        body: Type,
-        binder: Binder,
-    },
-    Let {
-        name: String,
-        #[serde(rename = "type")]
-        ty: Type,
-        value: Type,
-        body: Type,
-        nondependent: bool,
-    },
-    NaturalLiteral {
-        value: Decimal,
-    },
-    StringLiteral {
-        value: String,
-    },
-    Projection {
-        #[serde(rename = "typeName")]
-        type_name: String,
-        index: Decimal,
-        value: Type,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Binder {
-    Explicit,
-    Implicit,
-    StrictImplicit,
-    Instance,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Level {
-    Zero,
-    Successor { value: Box<Level> },
-    Maximum { left: Box<Level>, right: Box<Level> },
-    DependentMaximum { left: Box<Level>, right: Box<Level> },
-    Parameter { name: String },
-    Metavariable { id: String },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Argument {
-    Erased,
-    Var { id: String },
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ConstructorInfo {
-    pub name: String,
-    pub tag: Decimal,
-    #[serde(rename = "objectFields")]
-    pub object_fields: Decimal,
-    #[serde(rename = "usizeFields")]
-    pub usize_fields: Decimal,
-    #[serde(rename = "scalarBytes")]
-    pub scalar_bytes: Decimal,
+pub struct Param {
+    pub var: VarId,
+    pub ty: IrType,
+    /// Borrowed parameters are not consumed by the callee.
+    pub borrow: bool,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Literal {
-    Nat { value: Decimal },
-    String { value: String },
-    Uint8 { value: BoundedDecimal<255> },
-    Uint16 { value: BoundedDecimal<65535> },
-    Uint32 { value: BoundedDecimal<4294967295> },
-    Uint64 { value: BoundedDecimal<{ u64::MAX }> },
-    Usize { value: BoundedDecimal<{ u64::MAX }> },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum LetValue {
-    Literal {
-        literal: Literal,
-    },
+/// Runtime representation types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IrType {
+    Float,
+    Float32,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Usize,
+    /// Types, propositions and proofs: represented by the scalar `box(0)`.
     Erased,
-    ApplyClosure {
-        function: String,
-        args: Vec<Argument>,
-    },
-    Constructor {
-        info: ConstructorInfo,
-        args: Vec<Argument>,
-    },
-    ObjectProjection {
-        index: Decimal,
-        value: String,
-    },
-    UsizeProjection {
-        index: Decimal,
-        value: String,
-    },
-    ScalarProjection {
-        bytes: Decimal,
-        offset: Decimal,
-        value: String,
-    },
-    Call {
-        function: String,
-        args: Vec<Argument>,
-    },
-    PartialApplication {
-        function: String,
-        args: Vec<Argument>,
-    },
-    Reset {
-        fields: Decimal,
-        value: String,
-    },
-    Reuse {
-        value: String,
-        info: ConstructorInfo,
-        #[serde(rename = "updateHeader")]
-        update_header: bool,
-        args: Vec<Argument>,
-    },
-    Box {
-        #[serde(rename = "type")]
-        ty: Type,
-        value: String,
-    },
-    Unbox {
-        value: String,
-    },
-    IsShared {
-        value: String,
-    },
+    /// A pointer to a heap object.
+    Object,
+    /// A heap object or a tagged scalar.
+    Tobject,
+    /// A tagged scalar.
+    Tagged,
+    /// The `IO` world token; it has no runtime representation.
+    Void,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Alternative {
-    Constructor { info: ConstructorInfo, body: Code },
-    Default { body: Code },
+impl IrType {
+    /// Unboxed scalar types.
+    pub fn is_scalar(self) -> bool {
+        matches!(
+            self,
+            IrType::Float
+                | IrType::Float32
+                | IrType::Uint8
+                | IrType::Uint16
+                | IrType::Uint32
+                | IrType::Uint64
+                | IrType::Usize
+        )
+    }
+
+    /// Types represented by an object pointer or tagged scalar.
+    pub fn is_object(self) -> bool {
+        matches!(self, IrType::Object | IrType::Tobject | IrType::Tagged | IrType::Erased | IrType::Void)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            IrType::Float => "float",
+            IrType::Float32 => "float32",
+            IrType::Uint8 => "u8",
+            IrType::Uint16 => "u16",
+            IrType::Uint32 => "u32",
+            IrType::Uint64 => "u64",
+            IrType::Usize => "usize",
+            IrType::Erased => "◾",
+            IrType::Object => "obj",
+            IrType::Tobject => "tobj",
+            IrType::Tagged => "tagged",
+            IrType::Void => "void",
+        }
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Code {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Block {
+    pub stmts: Vec<Stmt>,
+    pub terminator: Terminator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Stmt {
     Let {
-        id: String,
-        #[serde(rename = "type")]
-        ty: Type,
-        value: LetValue,
-        next: Box<Code>,
+        var: VarId,
+        ty: IrType,
+        expr: Expr,
     },
+    /// A join point, in scope for the remainder of the enclosing block.
     Join {
-        id: String,
-        params: Vec<Parameter>,
-        #[serde(rename = "type")]
-        ty: Type,
-        body: Box<Code>,
-        next: Box<Code>,
+        id: JoinId,
+        params: Vec<Param>,
+        body: Block,
     },
-    Jump {
-        target: String,
-        args: Vec<Argument>,
-    },
-    Cases {
-        #[serde(rename = "typeName")]
-        type_name: String,
-        #[serde(rename = "resultType")]
-        result_type: Type,
-        discriminator: String,
-        alternatives: Vec<Alternative>,
-    },
-    Return {
-        value: String,
-    },
-    Unreachable {
-        #[serde(rename = "type")]
-        ty: Type,
-    },
-    ObjectSet {
-        value: String,
-        index: Decimal,
-        field: Argument,
-        next: Box<Code>,
-    },
-    UsizeSet {
-        value: String,
-        index: Decimal,
-        field: String,
-        next: Box<Code>,
-    },
-    ScalarSet {
-        value: String,
-        index: Decimal,
-        offset: Decimal,
-        field: String,
-        #[serde(rename = "type")]
-        ty: Type,
-        next: Box<Code>,
+    /// Store an object field of an exclusive constructor object.
+    Set {
+        var: VarId,
+        index: u32,
+        arg: Arg,
     },
     SetTag {
-        value: String,
-        tag: Decimal,
-        next: Box<Code>,
+        var: VarId,
+        tag: u32,
     },
-    Increment {
-        value: String,
-        count: Decimal,
-        check: bool,
+    /// Store a `usize` field (index counted in words, after the object fields).
+    Uset {
+        var: VarId,
+        index: u32,
+        value: VarId,
+    },
+    /// Store a scalar at `index` words plus `offset` bytes.
+    Sset {
+        var: VarId,
+        index: u32,
+        offset: u32,
+        value: VarId,
+        ty: IrType,
+    },
+    Inc {
+        var: VarId,
+        count: u32,
+        /// Whether the value may be a tagged scalar.
+        checked: bool,
+        /// Statically known to be persistent: no reference counting is performed.
         persistent: bool,
-        next: Box<Code>,
     },
-    Decrement {
-        value: String,
-        count: Decimal,
-        check: bool,
+    Dec {
+        var: VarId,
+        count: u32,
+        checked: bool,
         persistent: bool,
-        objects: Option<Decimal>,
-        next: Box<Code>,
     },
-    Delete {
-        value: String,
-        next: Box<Code>,
+    /// Free an object without touching its fields.
+    Del {
+        var: VarId,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Terminator {
+    Case { type_name: String, var: VarId, var_ty: IrType, alts: Vec<Alt> },
+    Ret { arg: Arg },
+    Jmp { id: JoinId, args: Vec<Arg> },
+    Unreachable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Alt {
+    Ctor { info: CtorInfo, body: Block },
+    Default { body: Block },
+}
+
+impl Alt {
+    pub fn body(&self) -> &Block {
+        match self {
+            Alt::Ctor { body, .. } | Alt::Default { body } => body,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Expr {
+    /// Allocate a constructor object (or a tagged scalar when it has no fields).
+    Ctor {
+        info: CtorInfo,
+        args: Vec<Arg>,
+    },
+    /// Prepare an exclusive object for reuse, or release a shared one.
+    Reset {
+        fields: u32,
+        var: VarId,
+    },
+    /// Reuse a reset object's memory for a constructor.
+    Reuse {
+        var: VarId,
+        info: CtorInfo,
+        update_header: bool,
+        args: Vec<Arg>,
+    },
+    /// Borrow an object field.
+    Proj {
+        index: u32,
+        var: VarId,
+    },
+    Uproj {
+        index: u32,
+        var: VarId,
+    },
+    Sproj {
+        fields: u32,
+        offset: u32,
+        var: VarId,
+    },
+    /// Full application of a declaration.
+    Fap {
+        function: String,
+        args: Vec<Arg>,
+    },
+    /// Partial application creating a closure.
+    Pap {
+        function: String,
+        args: Vec<Arg>,
+    },
+    /// Application of a closure.
+    Ap {
+        var: VarId,
+        args: Vec<Arg>,
+    },
+    Box {
+        ty: IrType,
+        var: VarId,
+    },
+    Unbox {
+        var: VarId,
+    },
+    Lit(Literal),
+    /// `1 : u8` iff the object is shared.
+    IsShared {
+        var: VarId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Literal {
+    /// A natural number literal in canonical decimal notation. Its representation follows the
+    /// type of the binding variable.
+    Num(String),
+    Str(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Arg {
+    Var(VarId),
+    /// An erased value, represented by `box(0)`.
+    Erased,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CtorInfo {
+    pub name: String,
+    pub tag: u32,
+    /// Number of object fields.
+    pub size: u32,
+    /// Number of `usize` fields.
+    pub usize: u32,
+    /// Bytes of other scalar fields.
+    pub ssize: u32,
+}
+
+impl CtorInfo {
+    /// Constructors without fields are represented as tagged scalars.
+    pub fn is_scalar(&self) -> bool {
+        self.size == 0 && self.usize == 0 && self.ssize == 0
+    }
+}
+
+impl Program {
+    pub fn declaration(&self, name: &str) -> Option<&Declaration> {
+        self.declarations.binary_search_by(|d| d.name.as_str().cmp(name)).ok().map(|i| &self.declarations[i])
+    }
 }

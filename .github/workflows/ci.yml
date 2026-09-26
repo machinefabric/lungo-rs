@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # The toolchain every project in this repository pins (`lean-toolchain`).
+  LEAN_TOOLCHAIN: leanprover/lean4:v4.34.1
+  # Keep compiled Lean workers inside the cached area.
+  LEAN2RUST_CACHE_DIR: ${{ github.workspace }}/.lean2rust-cache
+
+jobs:
+  lint:
+    name: Format, lints, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: ./.github/actions/setup-lean
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            exclude: ""
+          - os: macos-latest
+            exclude: ""
+          # LeanOracle mode links Lean's native runtime, which targets the GNU ABI on Windows;
+          # the MSVC host runs everything else, including the differential test against
+          # natively compiled Lean executables.
+          - os: windows-latest
+            exclude: --exclude facade-runner
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-lean
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.LEAN2RUST_CACHE_DIR }}
+          key: lean2rust-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('worker/**') }}
+      - name: Build
+        run: cargo build --workspace --all-targets ${{ matrix.exclude }}
+      - name: Test
+        run: cargo test --workspace ${{ matrix.exclude }}
+      - name: Source tree is unchanged by builds
+        shell: bash
+        run: |
+          git status --porcelain --ignored=no
+          test -z "$(git status --porcelain --ignored=no)"
