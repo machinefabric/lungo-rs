@@ -1,6 +1,7 @@
 import { siteConfig } from "$lib/config";
 import type { DocResolver } from "$lib/types/docs";
 import type { NavItem } from "$lib/types/nav";
+import type { Pathname } from "$app/types";
 
 /**
  * The docs navigation: the root page, then one group per section of `siteConfig.sections`, in
@@ -28,7 +29,7 @@ class DocsNavigation {
             const doc = await (resolver as DocResolver)();
             const { title, disabled, external, label } = doc.metadata;
             const slug = path.replace(/^\/src\/content\//, '').replace(/\.md$/, '').replace(/(^|\/)index$/, '');
-            const item: NavItem = { title, href: slug === '' ? '/docs' : `/docs/${slug}`, disabled, external, label };
+            const item: NavItem = { title, href: (slug === '' ? '/docs' : `/docs/${slug}`) as Pathname, disabled, external, label };
 
             if (slug === '') {
                 root.push(item);

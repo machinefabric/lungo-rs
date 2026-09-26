@@ -6,6 +6,7 @@
 	import DarkModeToggle from '../dark-mode-toggle.svelte';
 	import { navItems, siteConfig } from '$lib/config';
 	import { asset, resolve } from '$app/paths';
+	import { link } from '$lib/paths';
 	import SocialMedia from '../social-media.svelte';
 
 	let isNavOpen = false;
@@ -66,7 +67,7 @@
 									<DropdownMenu.Group>
 										{#each item.items as subItem}
 											<DropdownMenu.Item>
-												<a href={resolve(subItem.href)}>{subItem.title}</a>
+												<a href={link(subItem.href)}>{subItem.title}</a>
 											</DropdownMenu.Item>
 										{/each}
 									</DropdownMenu.Group>
@@ -74,7 +75,7 @@
 							</DropdownMenu.Root>
 						{:else}
 							<!-- Regular Button for single items -->
-							<Button variant="ghost" href={resolve(item.href)}>
+							<Button variant="ghost" href={link(item.href)}>
 								{#if item.icon}
 									<item.icon />
 								{/if}

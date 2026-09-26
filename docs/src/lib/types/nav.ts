@@ -1,9 +1,11 @@
 import { type Icon as IconType } from 'lucide-svelte';
+import type { Pathname } from '$app/types';
 
 
 export interface NavItem {
     title: string;
-    href?: string;
+    /** The page's site path; none for a group of pages. */
+    href?: Pathname;
     disabled?: boolean;
     external?: boolean;
     icon?: typeof IconType;
@@ -31,5 +33,5 @@ export interface Icons {
 
 export interface QuickLink {
     title: string;
-    href: string;
+    href: Pathname;
 }

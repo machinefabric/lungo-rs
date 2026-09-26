@@ -4,7 +4,7 @@
 	import Command from "./command.svelte";
 	import * as Dialog from "$lib/components/ui/dialog/index.js";
 
-	type $$Props = DialogPrimitive.Props & CommandPrimitive.CommandProps;
+	type $$Props = DialogPrimitive.RootProps & CommandPrimitive.CommandProps;
 
 	export let open: $$Props["open"] = false;
 	export let value: $$Props["value"] = undefined;

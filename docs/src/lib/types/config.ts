@@ -1,4 +1,5 @@
 import type { QuickLink } from "$lib/types/nav";
+import type { Pathname } from "$app/types";
 import {
     type Icon as IconType,
 
@@ -54,5 +55,5 @@ export interface PromoConfig {
     title: string;
     description: string;
     ctaText: string;
-    ctaLink: string;
+    ctaLink: Pathname;
 }

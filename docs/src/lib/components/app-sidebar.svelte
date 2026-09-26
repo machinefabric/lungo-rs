@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import SocialMedia from './social-media.svelte';
 	import { resolve } from '$app/paths';
+	import { link } from '$lib/paths';
 
 	const path = $derived(page.url.pathname);
 </script>
@@ -41,7 +42,7 @@
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton class="font-medium" isActive={groupItem.href !== undefined && path === resolve(groupItem.href)}>
 							{#snippet child({ props })}
-								<a href={groupItem.href === undefined ? undefined : resolve(groupItem.href)} {...props}>
+								<a href={link(groupItem.href)} {...props}>
 									{groupItem.title}
 								</a>
 							{/snippet}
@@ -52,7 +53,7 @@
 									<Sidebar.MenuSubItem>
 										<Sidebar.MenuSubButton isActive={item.href !== undefined && path === resolve(item.href)}>
 											{#snippet child({ props })}
-												<a href={item.href === undefined ? undefined : resolve(item.href)} {...props}>{item.title}</a>
+												<a href={link(item.href)} {...props}>{item.title}</a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>

@@ -1,6 +1,7 @@
 <script>
 	import { navItems, siteConfig } from '$lib/config';
 	import { asset, resolve } from '$app/paths';
+	import { link } from '$lib/paths';
 	import SocialMedia from '../social-media.svelte';
 </script>
 
@@ -20,7 +21,7 @@
 				>
 					<a
 						class="inline-flex gap-x-2 text-sm text-gray-500 hover:text-gray-800 focus:text-gray-800 focus:outline-none dark:text-neutral-500 dark:hover:text-neutral-200 dark:focus:text-neutral-200"
-						href={resolve(item.href)}
+						href={link(item.href)}
 					>
 						{item.title}
 					</a>
