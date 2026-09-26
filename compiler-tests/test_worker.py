@@ -15,7 +15,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "worker"
 WORKER_BIN = WORKER / ".lake/build/bin/lean2rust-worker"
-WORKER_LIB = WORKER / ".lake/build/lib/lean"
 FIXTURES = ROOT / "compiler-tests/fixtures"
 
 
@@ -27,20 +26,19 @@ def run_worker(
 ) -> subprocess.CompletedProcess[str]:
     project = FIXTURES / fixture
     env = os.environ.copy()
-    env.update(
-        L2R_WORKER=str(WORKER_BIN),
-        L2R_WORKER_LIB=str(WORKER_LIB),
-        L2R_MODULE=module,
-        L2R_OUTPUT=str(output),
-        L2R_FORCE_HASH=lean_git_hash_override or "",
-    )
-    return subprocess.run(
-        [
+    command = ["lake", "env", str(WORKER_BIN), module, str(output)]
+    if lean_git_hash_override is not None:
+        env["L2R_FORCE_HASH"] = lean_git_hash_override
+        command = [
             "lake", "env", "sh", "-c",
-            'LEAN_PATH="$L2R_WORKER_LIB:$LEAN_PATH"; export LEAN_PATH; '
-            'if [ -n "$L2R_FORCE_HASH" ]; then LEAN_GITHASH="$L2R_FORCE_HASH"; export LEAN_GITHASH; fi; '
+            'LEAN_GITHASH="$L2R_FORCE_HASH"; export LEAN_GITHASH; '
             'exec "$L2R_WORKER" "$L2R_MODULE" "$L2R_OUTPUT"',
-        ],
+        ]
+        env.update(
+            L2R_WORKER=str(WORKER_BIN), L2R_MODULE=module, L2R_OUTPUT=str(output)
+        )
+    return subprocess.run(
+        command,
         cwd=project,
         env=env,
         capture_output=True,

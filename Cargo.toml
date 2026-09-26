@@ -1,3 +1,24 @@
 [workspace]
-members = ["crates/lean2rust-bir"]
+members = [".", "crates/lean2rust-bir"]
 resolver = "3"
+
+[package]
+name = "lean2rust-build"
+version = "0.1.0"
+edition = "2024"
+publish = false
+include = [
+    "Cargo.toml",
+    "src/**",
+    "worker/Main.lean",
+    "worker/Lean2Rust/*.lean",
+    "worker/lakefile.toml",
+    "worker/lean-toolchain",
+]
+
+[dependencies]
+blake3 = "1.8"
+lean2rust-bir = { path = "crates/lean2rust-bir" }
+
+[dev-dependencies]
+tempfile = "3.26"

@@ -3,6 +3,53 @@
 use serde::Deserialize;
 use std::fmt;
 
+/// A canonical, unbounded nonnegative integer in the worker protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Decimal(String);
+
+impl Decimal {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Decimal {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        if value.is_empty()
+            || (value.len() > 1 && value.starts_with('0'))
+            || !value.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(serde::de::Error::custom(
+                "expected a canonical nonnegative decimal integer",
+            ));
+        }
+        Ok(Self(value))
+    }
+}
+
+/// A protocol integer whose value must fit a fixed-width Lean scalar.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BoundedDecimal<const MAX: u64>(Decimal);
+
+impl<const MAX: u64> BoundedDecimal<MAX> {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl<'de, const MAX: u64> Deserialize<'de> for BoundedDecimal<MAX> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let decimal = Decimal::deserialize(deserializer)?;
+        match decimal.as_str().parse::<u64>() {
+            Ok(value) if value <= MAX => Ok(Self(decimal)),
+            _ => Err(serde::de::Error::custom(format!(
+                "decimal integer exceeds maximum {MAX}"
+            ))),
+        }
+    }
+}
+
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const BIR_VERSION: u32 = 1;
 const MAGIC: &[u8; 4] = b"L2RB";
@@ -146,7 +193,7 @@ pub enum Type {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TypeExpression {
     BoundVariable {
-        index: String,
+        index: Decimal,
     },
     FreeVariable {
         id: String,
@@ -186,7 +233,7 @@ pub enum TypeExpression {
         nondependent: bool,
     },
     NaturalLiteral {
-        value: String,
+        value: Decimal,
     },
     StringLiteral {
         value: String,
@@ -194,7 +241,7 @@ pub enum TypeExpression {
     Projection {
         #[serde(rename = "typeName")]
         type_name: String,
-        index: String,
+        index: Decimal,
         value: Type,
     },
 }
@@ -230,25 +277,25 @@ pub enum Argument {
 #[serde(deny_unknown_fields)]
 pub struct ConstructorInfo {
     pub name: String,
-    pub tag: String,
+    pub tag: Decimal,
     #[serde(rename = "objectFields")]
-    pub object_fields: String,
+    pub object_fields: Decimal,
     #[serde(rename = "usizeFields")]
-    pub usize_fields: String,
+    pub usize_fields: Decimal,
     #[serde(rename = "scalarBytes")]
-    pub scalar_bytes: String,
+    pub scalar_bytes: Decimal,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Literal {
-    Nat { value: String },
+    Nat { value: Decimal },
     String { value: String },
-    Uint8 { value: String },
-    Uint16 { value: String },
-    Uint32 { value: String },
-    Uint64 { value: String },
-    Usize { value: String },
+    Uint8 { value: BoundedDecimal<255> },
+    Uint16 { value: BoundedDecimal<65535> },
+    Uint32 { value: BoundedDecimal<4294967295> },
+    Uint64 { value: BoundedDecimal<{ u64::MAX }> },
+    Usize { value: BoundedDecimal<{ u64::MAX }> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,16 +314,16 @@ pub enum LetValue {
         args: Vec<Argument>,
     },
     ObjectProjection {
-        index: String,
+        index: Decimal,
         value: String,
     },
     UsizeProjection {
-        index: String,
+        index: Decimal,
         value: String,
     },
     ScalarProjection {
-        bytes: String,
-        offset: String,
+        bytes: Decimal,
+        offset: Decimal,
         value: String,
     },
     Call {
@@ -288,7 +335,7 @@ pub enum LetValue {
         args: Vec<Argument>,
     },
     Reset {
-        fields: String,
+        fields: Decimal,
         value: String,
     },
     Reuse {
@@ -357,20 +404,20 @@ pub enum Code {
     },
     ObjectSet {
         value: String,
-        index: String,
+        index: Decimal,
         field: Argument,
         next: Box<Code>,
     },
     UsizeSet {
         value: String,
-        index: String,
+        index: Decimal,
         field: String,
         next: Box<Code>,
     },
     ScalarSet {
         value: String,
-        index: String,
-        offset: String,
+        index: Decimal,
+        offset: Decimal,
         field: String,
         #[serde(rename = "type")]
         ty: Type,
@@ -378,22 +425,22 @@ pub enum Code {
     },
     SetTag {
         value: String,
-        tag: String,
+        tag: Decimal,
         next: Box<Code>,
     },
     Increment {
         value: String,
-        count: String,
+        count: Decimal,
         check: bool,
         persistent: bool,
         next: Box<Code>,
     },
     Decrement {
         value: String,
-        count: String,
+        count: Decimal,
         check: bool,
         persistent: bool,
-        objects: Option<String>,
+        objects: Option<Decimal>,
         next: Box<Code>,
     },
     Delete {

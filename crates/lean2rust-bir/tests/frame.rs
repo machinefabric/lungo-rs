@@ -45,3 +45,37 @@ fn rejects_truncated_and_wrong_length_frames() {
         Err(FrameError::InvalidLength { .. })
     ));
 }
+
+fn frame_with_payload(payload: &serde_json::Value) -> Vec<u8> {
+    let encoded = serde_json::to_vec(payload).unwrap();
+    let mut frame = b"L2RB".to_vec();
+    frame.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&encoded);
+    frame
+}
+
+#[test]
+fn rejects_noncanonical_and_out_of_range_worker_integers() {
+    let mut payload: serde_json::Value = serde_json::from_slice(&SIMPLE[8..]).unwrap();
+    let decls = payload["declarations"].as_array_mut().unwrap();
+    let boxed_index = decls
+        .iter()
+        .position(|decl| decl["name"] == "twice._boxed")
+        .unwrap();
+    decls[boxed_index]["value"]["body"]["next"]["count"] = "01".into();
+    assert!(matches!(
+        Module::from_frame(&frame_with_payload(&payload)),
+        Err(FrameError::InvalidPayload(_))
+    ));
+
+    let twice_index = decls.iter().position(|decl| decl["name"] == "twice").unwrap();
+    decls[twice_index]["value"]["body"]["value"] = serde_json::json!({
+        "op": "literal",
+        "literal": {"op": "uint8", "value": "256"}
+    });
+    decls[boxed_index]["value"]["body"]["next"]["count"] = "1".into();
+    assert!(matches!(
+        Module::from_frame(&frame_with_payload(&payload)),
+        Err(FrameError::InvalidPayload(_))
+    ));
+}

@@ -25,7 +25,17 @@ public meta unsafe def main (args : List String) : IO UInt32 := do
   if leanGitHash != expectedLeanGitHash then
     IO.eprintln s!"lean2rust-worker requires Lean commit {expectedLeanGitHash}; Lake selected {leanGitHash}"
     return 1
-  initSearchPath (← findSysroot)
+  let some binaryDir := (← IO.appPath).parent | do
+    IO.eprintln "cannot locate lean2rust-worker binary directory"
+    return 1
+  let some buildDir := binaryDir.parent | do
+    IO.eprintln "cannot locate lean2rust-worker build directory"
+    return 1
+  let workerLib := buildDir / "lib" / "lean"
+  unless ← workerLib.pathExists do
+    IO.eprintln s!"missing lean2rust-worker Lean library directory: {workerLib}"
+    return 1
+  initSearchPath (← findSysroot) [workerLib]
   enableInitializersExecution
   let moduleName := moduleString.toName
   let sourcePath ← findLean (← getSrcSearchPath) moduleName
