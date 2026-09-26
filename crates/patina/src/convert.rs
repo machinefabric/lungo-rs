@@ -8,8 +8,8 @@
 
 use crate::backend::{Backend, RustBackend};
 use crate::{ByteArray, FloatArray, Int, List, Nat};
-use patina_runtime::{self as rt, Obj};
 use num_bigint::{BigInt, BigUint};
+use patina_runtime::{self as rt, Obj};
 
 /// A Rust type with a Lean runtime representation in the runtime `B`.
 ///

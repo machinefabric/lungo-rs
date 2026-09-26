@@ -312,11 +312,7 @@ impl<'a> Facade<'a> {
             }
             FacadeType::Opaque { head, .. } => {
                 let marker = self.marker(head);
-                format!(
-                    "::patina::LeanValue<{}__opaque::{marker}, {}>",
-                    "super::".repeat(depth),
-                    self.backend(depth)
-                )
+                format!("::patina::LeanValue<{}__opaque::{marker}, {}>", "super::".repeat(depth), self.backend(depth))
             }
         })
     }
@@ -645,9 +641,9 @@ impl<'a> Facade<'a> {
                 FieldKind::Object(i) => {
                     w.line(format!("rt::lean_ctor_set(o, {i}, ::patina::LeanType::<{b}>::into_lean({value}));"))
                 }
-                FieldKind::Usize(i) => w.line(format!(
-                    "rt::lean_ctor_set_usize(o, {i}, ::patina::__facade::to_usize::<{b}, _>({value}));"
-                )),
+                FieldKind::Usize(i) => {
+                    w.line(format!("rt::lean_ctor_set_usize(o, {i}, ::patina::__facade::to_usize::<{b}, _>({value}));"))
+                }
                 FieldKind::Scalar { offset, ty, .. } => {
                     let (setter, conv) = scalar_set(ty, b)?;
                     w.line(format!(
@@ -1203,8 +1199,7 @@ impl<'a> Facade<'a> {
         let depth = 1;
         let b = self.backend(depth);
         // Type parameters of a polymorphic extern are instantiated with opaque Lean values.
-        let generics: Vec<String> =
-            sig.type_params.iter().map(|_| format!("::patina::LeanValue<(), {b}>")).collect();
+        let generics: Vec<String> = sig.type_params.iter().map(|_| format!("::patina::LeanValue<(), {b}>")).collect();
         let mut params = Vec::new();
         let mut reads = Vec::new();
         let mut args = Vec::new();

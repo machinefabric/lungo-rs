@@ -79,8 +79,7 @@ pub(crate) fn generate(
     }
     std::fs::create_dir_all(&objects_dir).map_err(|e| Error::io("cannot create oracle objects", e))?;
     let shim = objects_dir.join("patina_oracle_shim.c");
-    std::fs::write(&shim, patina_codegen::ORACLE_C_SHIM)
-        .map_err(|e| Error::io("cannot write the oracle shim", e))?;
+    std::fs::write(&shim, patina_codegen::ORACLE_C_SHIM).map_err(|e| Error::io("cannot write the oracle shim", e))?;
     let leanc = tool(ctx, "leanc");
     let mut objects = Vec::new();
     for (i, c) in c_files.iter().chain(std::iter::once(&shim)).enumerate() {

@@ -82,7 +82,9 @@ pub fn emit_native_layer(w: &mut Writer, input: &GenInput) -> Result<(), Codegen
     for (i, init) in input.success.oracle.module_initializers.iter().enumerate() {
         w.line(format!("let r = module_init_{i}(1);"));
         w.open("if rt::lean_ptr_tag(r) != 0 {");
-        w.line("let msg = <super::__oracle::Backend as ::patina::Backend>::io_error_to_string(rt::lean_ctor_get(r, 0));");
+        w.line(
+            "let msg = <super::__oracle::Backend as ::patina::Backend>::io_error_to_string(rt::lean_ctor_get(r, 0));",
+        );
         w.line(format!(
             "panic!(\"initialization of Lean module {} failed: uncaught exception: {{msg}}\");",
             init.module

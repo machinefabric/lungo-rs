@@ -5,8 +5,8 @@
 //! through the runtime that owns the objects. [`RustBackend`] is the patina runtime used by
 //! PureRust code; code generated in `LeanOracle` mode provides a backend for Lean's C runtime.
 
-use patina_runtime::{self as rt, Obj};
 use num_bigint::{BigInt, BigUint};
+use patina_runtime::{self as rt, Obj};
 
 /// Allocation, reference counting, and application of Lean objects.
 ///
