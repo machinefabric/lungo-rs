@@ -2,7 +2,7 @@
 name = "lean2rust-codegen"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "The lean2rust Rust backend: Bridge IR to Rust"
 license = "Apache-2.0"
 

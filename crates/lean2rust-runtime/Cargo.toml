@@ -2,7 +2,7 @@
 name = "lean2rust-runtime"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Rust implementation of the Lean runtime semantics targeted by lean2rust-generated code"
 license = "Apache-2.0"
 

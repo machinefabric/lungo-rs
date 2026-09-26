@@ -2,7 +2,7 @@
 name = "cargo-lean2rust"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Inspect and build Lean projects integrated with lean2rust"
 license = "Apache-2.0"
 

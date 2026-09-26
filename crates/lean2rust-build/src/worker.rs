@@ -213,8 +213,49 @@ const HERMETIC_ENV: &[&str] = &[
 pub struct RunOptions<'a> {
     pub project: &'a Path,
     pub scratch: &'a Path,
+    /// Wall-clock time after which the worker's process tree is killed.
     pub timeout: Option<Duration>,
     pub hermetic: bool,
+    pub limits: Limits,
+}
+
+/// Resource limits of the worker's processes.
+///
+/// The worker is isolated from the build process (a crash or runaway worker cannot take the
+/// build down), but it is not a security sandbox: a Lean project runs build-time code with the
+/// user's permissions, like a Cargo build script.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Limits {
+    /// Processor time: per process on Unix (`RLIMIT_CPU`), for the whole process tree on
+    /// Windows (job object).
+    pub cpu: Option<Duration>,
+    /// Memory in bytes: address space per process on Linux (`RLIMIT_AS`), committed memory of
+    /// the whole process tree on Windows (job object). Other platforms cannot enforce it.
+    pub memory: Option<u64>,
+}
+
+impl Limits {
+    /// Fails when the platform cannot enforce a requested limit.
+    pub fn check_enforceable(&self) -> Result<()> {
+        if self.memory.is_some() && !cfg!(any(target_os = "linux", target_os = "android", windows)) {
+            return Err(Error::Environment(format!(
+                "a worker memory limit cannot be enforced on {}; remove `worker_memory_limit`",
+                std::env::consts::OS
+            )));
+        }
+        Ok(())
+    }
+
+    fn describe(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if let Some(c) = self.cpu {
+            parts.push(format!("CPU time {} s", c.as_secs()));
+        }
+        if let Some(m) = self.memory {
+            parts.push(format!("memory {m} bytes"));
+        }
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
 }
 
 /// Applies the environment policy to a command run on behalf of the worker: in hermetic mode
@@ -274,9 +315,31 @@ struct ProcessTree {
 
 impl ProcessTree {
     #[cfg(unix)]
-    fn spawn(cmd: &mut Command) -> std::io::Result<(std::process::Child, ProcessTree)> {
+    fn spawn(cmd: &mut Command, limits: Limits) -> std::io::Result<(std::process::Child, ProcessTree)> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
+        let set = |resource, soft: u64, hard: u64| {
+            let r = libc::rlimit { rlim_cur: soft as libc::rlim_t, rlim_max: hard as libc::rlim_t };
+            // SAFETY: `setrlimit` is async-signal-safe; `r` lives on this stack frame.
+            if unsafe { libc::setrlimit(resource, &r) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+        };
+        if limits.cpu.is_some() || limits.memory.is_some() {
+            // SAFETY: the closure runs between `fork` and `exec` and only calls `setrlimit`.
+            unsafe {
+                cmd.pre_exec(move || {
+                    if let Some(cpu) = limits.cpu {
+                        // The soft limit signals SIGXCPU; the hard limit one second later kills.
+                        let secs = cpu.as_secs().max(1);
+                        set(libc::RLIMIT_CPU, secs, secs + 1)?;
+                    }
+                    #[cfg(any(target_os = "linux", target_os = "android"))]
+                    if let Some(bytes) = limits.memory {
+                        set(libc::RLIMIT_AS, bytes, bytes)?;
+                    }
+                    Ok(())
+                });
+            }
+        }
         let child = cmd.spawn()?;
         let group = child.id() as libc::pid_t;
         Ok((child, ProcessTree { group }))
@@ -289,7 +352,7 @@ impl ProcessTree {
     }
 
     #[cfg(windows)]
-    fn spawn(cmd: &mut Command) -> std::io::Result<(std::process::Child, ProcessTree)> {
+    fn spawn(cmd: &mut Command, requested: Limits) -> std::io::Result<(std::process::Child, ProcessTree)> {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::System::JobObjects::*;
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -299,6 +362,15 @@ impl ProcessTree {
         let tree = ProcessTree { job };
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if let Some(cpu) = requested.cpu {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_TIME;
+            // In units of 100 ns.
+            limits.BasicLimitInformation.PerJobUserTimeLimit = (cpu.as_nanos() / 100).min(i64::MAX as u128) as i64;
+        }
+        if let Some(bytes) = requested.memory {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_MEMORY;
+            limits.JobMemoryLimit = bytes as usize;
+        }
         let ok = unsafe {
             SetInformationJobObject(
                 job,
@@ -333,6 +405,20 @@ impl Drop for ProcessTree {
     }
 }
 
+/// Whether the operating system stopped a process for exceeding its CPU time limit.
+fn exceeded_cpu_limit(status: &std::process::ExitStatus) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        matches!(status.signal(), Some(libc::SIGXCPU))
+    }
+    #[cfg(windows)]
+    {
+        // Processes of a job that exceeds its time limit end with `ERROR_NOT_ENOUGH_QUOTA`.
+        status.code() == Some(windows_sys::Win32::Foundation::ERROR_NOT_ENOUGH_QUOTA as i32)
+    }
+}
+
 /// Runs the worker on `request` in the project's Lake environment.
 ///
 /// The worker is a direct child process, so the supervision (the timeout in particular) acts
@@ -361,7 +447,9 @@ pub fn run(worker: &Worker, toolchain: &Toolchain, request: &Request, opts: &Run
             None => cmd.env_remove(k),
         };
     }
-    let (mut child, tree) = ProcessTree::spawn(&mut cmd).map_err(|e| Error::io("cannot start the Lean worker", e))?;
+    opts.limits.check_enforceable()?;
+    let (mut child, tree) =
+        ProcessTree::spawn(&mut cmd, opts.limits).map_err(|e| Error::io("cannot start the Lean worker", e))?;
     let mut stdout = child.stdout.take().expect("piped");
     let mut stderr = child.stderr.take().expect("piped");
     let out_reader = std::thread::spawn(move || {
@@ -398,7 +486,18 @@ pub fn run(worker: &Worker, toolchain: &Toolchain, request: &Request, opts: &Run
     let stdout = String::from_utf8_lossy(&out_reader.join().unwrap_or_default()).into_owned();
     let stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
     if !status.success() || !resp_path.is_file() {
-        return Err(Error::WorkerCrashed { status: status.to_string(), stderr: format!("{stdout}{stderr}") });
+        let output = format!("{stdout}{stderr}");
+        if let (Some(cpu), true) = (opts.limits.cpu, exceeded_cpu_limit(&status)) {
+            return Err(Error::WorkerResourceLimit {
+                limit: format!("CPU time ({} s)", cpu.as_secs()),
+                stderr: output,
+            });
+        }
+        return Err(Error::WorkerCrashed {
+            status: status.to_string(),
+            stderr: output,
+            limits: opts.limits.describe(),
+        });
     }
     let bytes = fs::read(&resp_path).map_err(|e| Error::io("cannot read the worker response", e))?;
     let response = Response::from_frame(&bytes).map_err(|e| Error::Protocol(e.to_string()))?;
@@ -469,12 +568,22 @@ mod tests {
     }
 
     fn run_fake(s: &Setup, script: &str, timeout: Option<Duration>) -> Result<Response> {
+        run_limited(s, script, timeout, Limits::default())
+    }
+
+    fn run_limited(s: &Setup, script: &str, timeout: Option<Duration>, limits: Limits) -> Result<Response> {
         let worker = fake_worker(s, script);
         run(
             &worker,
             &s.toolchain,
             &s.request,
-            &RunOptions { project: &s.dir.join("project"), scratch: &s.dir.join("work"), timeout, hermetic: false },
+            &RunOptions {
+                project: &s.dir.join("project"),
+                scratch: &s.dir.join("work"),
+                timeout,
+                hermetic: false,
+                limits,
+            },
         )
     }
 
@@ -524,5 +633,41 @@ mod tests {
             other => panic!("expected a timeout, got {other:?}"),
         }
         assert!(elapsed < Duration::from_secs(20), "the timeout took {elapsed:?}: the worker was not killed");
+    }
+
+    #[test]
+    fn cpu_limit_stops_a_spinning_worker() {
+        let s = setup("cpu");
+        let limits = Limits { cpu: Some(Duration::from_secs(1)), memory: None };
+        let start = Instant::now();
+        let err = run_limited(&s, "while :; do :; done", Some(Duration::from_secs(60)), limits).unwrap_err();
+        assert!(matches!(&err, Error::WorkerResourceLimit { limit, .. } if limit.contains("CPU")), "{err:?}");
+        assert!(start.elapsed() < Duration::from_secs(30), "the limit took {:?}", start.elapsed());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn memory_limit_bounds_the_worker() {
+        let s = setup("memory");
+        let limits = Limits { cpu: None, memory: Some(512 << 20) };
+        // Allocating 2 GiB fails under a 512 MiB address-space limit (and succeeds without it).
+        let script = "python3 -c 'bytearray(2 << 30)'";
+        let err = run_limited(&s, script, Some(Duration::from_secs(60)), limits).unwrap_err();
+        match err {
+            Error::WorkerCrashed { stderr, limits, .. } => {
+                assert!(stderr.contains("MemoryError"), "the allocation was not refused:\n{stderr}");
+                assert_eq!(limits.as_deref(), Some("memory 536870912 bytes"));
+            }
+            other => panic!("expected the allocation to fail, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[test]
+    fn unenforceable_memory_limits_are_rejected() {
+        let s = setup("no-memory-limit");
+        let limits = Limits { cpu: None, memory: Some(1 << 30) };
+        let err = run_limited(&s, "exit 0", None, limits).unwrap_err();
+        assert!(matches!(&err, Error::Environment(m) if m.contains("cannot be enforced")), "{err:?}");
     }
 }

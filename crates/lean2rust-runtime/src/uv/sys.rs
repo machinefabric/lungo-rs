@@ -420,6 +420,8 @@ impl Sock {
     }
 
     /// Starts a non-blocking connection. `Ok(false)` means the connection is in progress.
+    // The loop retries calls interrupted by signals (`EINTR`), which exist only on Unix.
+    #[cfg_attr(windows, allow(clippy::never_loop))]
     pub fn connect(&self, addr: &SocketAddr) -> io::Result<bool> {
         let (storage, len) = addr::to_storage(addr);
         loop {
@@ -445,6 +447,8 @@ impl Sock {
         }
     }
 
+    // The loop retries calls interrupted by signals (`EINTR`), which exist only on Unix.
+    #[cfg_attr(windows, allow(clippy::never_loop))]
     pub fn accept(&self) -> io::Result<Sock> {
         loop {
             let mut storage: addr::Storage = unsafe { zeroed() };
@@ -502,6 +506,8 @@ impl Sock {
         if r != 0 { Err(last_error()) } else { Ok(value) }
     }
 
+    // The loop retries calls interrupted by signals (`EINTR`), which exist only on Unix.
+    #[cfg_attr(windows, allow(clippy::never_loop))]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             #[cfg(unix)]
@@ -572,6 +578,8 @@ impl Sock {
         }
     }
 
+    // The loop retries calls interrupted by signals (`EINTR`), which exist only on Unix.
+    #[cfg_attr(windows, allow(clippy::never_loop))]
     pub fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, Option<SocketAddr>)> {
         loop {
             let mut storage: addr::Storage = unsafe { zeroed() };
@@ -616,6 +624,8 @@ impl Sock {
         }
     }
 
+    // The loop retries calls interrupted by signals (`EINTR`), which exist only on Unix.
+    #[cfg_attr(windows, allow(clippy::never_loop))]
     pub fn send_to(&self, buf: &[u8], to: Option<&SocketAddr>) -> io::Result<usize> {
         let target = to.map(addr::to_storage);
         loop {

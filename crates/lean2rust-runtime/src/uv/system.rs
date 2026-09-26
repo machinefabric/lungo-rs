@@ -356,7 +356,7 @@ mod winapi {
                 REG_DWORD => Some(RegValue::Dword(u32::from_ne_bytes([buf[0], buf[1], buf[2], buf[3]]))),
                 REG_SZ => {
                     let wide: Vec<u16> =
-                        buf[..size as usize].chunks_exact(2).map(|c| u16::from_ne_bytes([c[0], c[1]])).collect();
+                        buf[..size as usize].as_chunks::<2>().0.iter().map(|c| u16::from_ne_bytes(*c)).collect();
                     let n = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
                     Some(RegValue::Str(String::from_utf16_lossy(&wide[..n])))
                 }
@@ -389,7 +389,7 @@ fn cpu_info() -> Res<Vec<CpuInfo>> {
         GetSystemInfo(&mut si);
         let n = si.dwNumberOfProcessors as usize;
         let query: NtQuery = match winapi::ntdll(b"NtQuerySystemInformation\0") {
-            Some(f) => std::mem::transmute(f),
+            Some(f) => std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQuery>(f),
             None => return Err(UV_ENOSYS),
         };
         let mut perf: Vec<PerfInfo> = (0..n).map(|_| std::mem::zeroed()).collect();
@@ -601,8 +601,11 @@ pub(crate) unsafe fn os_get_passwd() -> Obj {
     unsafe {
         #[cfg(unix)]
         let r = passwd_of(libc::geteuid()).map(|p| (p.username, Some(p.uid), Some(p.gid), p.shell, p.homedir));
+        // (user name, uid, gid, shell, home directory)
         #[cfg(windows)]
-        let r = (|| -> Res<(String, Option<u64>, Option<u64>, Option<String>, Option<String>)> {
+        type Passwd = (String, Option<u64>, Option<u64>, Option<String>, Option<String>);
+        #[cfg(windows)]
+        let r = (|| -> Res<Passwd> {
             use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
             let mut buf = vec![0u16; 257];
             let mut len = buf.len() as u32;
@@ -934,7 +937,7 @@ fn uname() -> Res<[String; 4]> {
         let mut info: OsVersionInfo = std::mem::zeroed();
         info.size = size_of::<OsVersionInfo>() as u32;
         let f: RtlGetVersion = match winapi::ntdll(b"RtlGetVersion\0") {
-            Some(f) => std::mem::transmute(f),
+            Some(f) => std::mem::transmute::<unsafe extern "system" fn() -> isize, RtlGetVersion>(f),
             None => return Err(UV_ENOSYS),
         };
         f(&mut info);
@@ -1139,7 +1142,9 @@ fn free_memory() -> u64 {
     if v != 0 {
         return v;
     }
-    sysinfo().map(|i| i.freeram as u64 * i.mem_unit as u64).unwrap_or(0)
+    // `sysinfo` fields are `c_ulong`, which is 32 bits wide on 32-bit targets.
+    #[allow(clippy::useless_conversion)]
+    sysinfo().map(|i| u64::from(i.freeram) * u64::from(i.mem_unit)).unwrap_or(0)
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -1148,7 +1153,9 @@ fn total_memory() -> u64 {
     if v != 0 {
         return v;
     }
-    sysinfo().map(|i| i.totalram as u64 * i.mem_unit as u64).unwrap_or(0)
+    // `sysinfo` fields are `c_ulong`, which is 32 bits wide on 32-bit targets.
+    #[allow(clippy::useless_conversion)]
+    sysinfo().map(|i| u64::from(i.totalram) * u64::from(i.mem_unit)).unwrap_or(0)
 }
 
 /// The cgroup (v2 or v1) memory limit and current usage of this process, if constrained.

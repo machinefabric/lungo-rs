@@ -2,7 +2,7 @@
 name = "lean2rust-build"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Build-script integration of Lean projects into Rust crates"
 license = "Apache-2.0"
 

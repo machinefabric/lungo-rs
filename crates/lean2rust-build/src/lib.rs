@@ -36,7 +36,7 @@ mod worker;
 
 pub use error::{Error, Result};
 pub use toolchain::{SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, read_pin};
-pub use worker::{ADAPTER_VERSION, WorkerCache};
+pub use worker::{ADAPTER_VERSION, Limits, WorkerCache};
 
 use fingerprint::Hasher;
 use lean2rust_protocol::{
@@ -107,6 +107,13 @@ pub struct Config {
     /// Seconds after which a running worker is terminated.
     #[serde(default)]
     pub worker_timeout: Option<u64>,
+    /// Processor seconds the worker may use (see [`Limits`]).
+    #[serde(default)]
+    pub worker_cpu_limit: Option<u64>,
+    /// Bytes of memory the worker may use (see [`Limits`]); an error on platforms that
+    /// cannot enforce it.
+    #[serde(default)]
+    pub worker_memory_limit: Option<u64>,
     #[serde(default)]
     pub install_toolchain: bool,
     /// Use this toolchain installation instead of the one elan manages.
@@ -142,6 +149,8 @@ impl Config {
             hermetic_worker_cache: false,
             hermetic: false,
             worker_timeout: None,
+            worker_cpu_limit: None,
+            worker_memory_limit: None,
             install_toolchain: false,
             toolchain_dir: None,
             lean_options: BTreeMap::new(),
@@ -228,6 +237,18 @@ impl Config {
 
     pub fn hermetic(mut self, hermetic: bool) -> Self {
         self.hermetic = hermetic;
+        self
+    }
+
+    /// Limits the processor time the worker may use.
+    pub fn worker_cpu_limit(mut self, limit: Duration) -> Self {
+        self.worker_cpu_limit = Some(limit.as_secs().max(1));
+        self
+    }
+
+    /// Limits the memory, in bytes, the worker may use.
+    pub fn worker_memory_limit(mut self, bytes: u64) -> Self {
+        self.worker_memory_limit = Some(bytes);
         self
     }
 
@@ -372,6 +393,10 @@ impl Config {
                 project: &ctx.project,
                 scratch: &env.work_dir,
                 timeout: self.worker_timeout.map(Duration::from_secs),
+                limits: worker::Limits {
+                    cpu: self.worker_cpu_limit.map(Duration::from_secs),
+                    memory: self.worker_memory_limit,
+                },
                 hermetic: self.hermetic,
             },
         )?;

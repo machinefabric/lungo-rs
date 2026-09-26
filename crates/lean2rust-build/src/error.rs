@@ -37,6 +37,13 @@ pub enum Error {
     WorkerCrashed {
         status: String,
         stderr: String,
+        /// The resource limits in effect, which a failure may be due to.
+        limits: Option<String>,
+    },
+    /// The worker exceeded a configured resource limit and was stopped by the operating system.
+    WorkerResourceLimit {
+        limit: String,
+        stderr: String,
     },
     WorkerTimeout {
         seconds: u64,
@@ -118,8 +125,15 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::WorkerCrashed { status, stderr } => {
-                write!(f, "lean2rust: the Lean worker process failed ({status}) without producing a response\n{stderr}")
+            Error::WorkerCrashed { status, stderr, limits } => {
+                write!(f, "lean2rust: the Lean worker process failed ({status}) without producing a response")?;
+                if let Some(l) = limits {
+                    write!(f, " (worker resource limits: {l})")?;
+                }
+                write!(f, "\n{stderr}")
+            }
+            Error::WorkerResourceLimit { limit, stderr } => {
+                write!(f, "lean2rust: the Lean worker exceeded its {limit} limit and was stopped\n{stderr}")
             }
             Error::WorkerTimeout { seconds, stderr } => {
                 write!(f, "lean2rust: the Lean worker did not finish within {seconds} s and was terminated\n{stderr}")

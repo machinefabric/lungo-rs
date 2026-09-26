@@ -133,7 +133,7 @@ cargo lean2rust setup              # install the pinned toolchain and locked dep
 
 ## Requirements
 
-- Rust 1.88 or later.
+- Rust 1.89 or later.
 - [elan](https://github.com/leanprover/elan) with the toolchain the Lake project pins
   (`leanprover/lean4:v4.34.1` is supported). Builds never download toolchains: install them
   explicitly (`elan toolchain install leanprover/lean4:v4.34.1` or `cargo lean2rust setup`).

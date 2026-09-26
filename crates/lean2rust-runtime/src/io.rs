@@ -1907,6 +1907,8 @@ pub mod externs {
                     match std::fs::symlink_metadata(path) {
                         Ok(m) if m.permissions().readonly() && !m.is_dir() => {
                             let mut p = m.permissions();
+                            // On Windows this clears `FILE_ATTRIBUTE_READONLY` only.
+                            #[allow(clippy::permissions_set_readonly_false)]
                             p.set_readonly(false);
                             std::fs::set_permissions(path, p).and_then(|()| std::fs::remove_file(path))
                         }
