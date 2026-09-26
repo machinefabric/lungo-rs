@@ -276,6 +276,7 @@ mod tests {
         crate::task::ensure_task_manager();
     }
 
+    #[track_caller]
     unsafe fn ok(r: Obj) -> Obj {
         unsafe {
             assert!(lean_io_result_is_ok(r), "expected an ok IO result");
@@ -284,6 +285,7 @@ mod tests {
     }
 
     /// The constructor and OS code of the `IO.Error` of a failed IO result (consumed).
+    #[track_caller]
     unsafe fn io_err(r: Obj) -> (&'static str, u32) {
         unsafe {
             assert!(lean_io_result_is_error(r), "expected an IO error");
@@ -395,10 +397,13 @@ mod tests {
             lean_dec(expect_ok(await_promise(conn)));
             let peer = expect_ok(await_promise(acc));
 
-            let sent = ok(lean_uv_tcp_send(client, array(&[bytes(b"hello "), bytes(b"world")])));
-            lean_dec(expect_ok(await_promise(sent)));
+            // The read is started before anything is sent, so it is still pending when the
+            // parallel read is attempted; with data already buffered, the event loop could
+            // complete it first.
             let r = ok(lean_uv_tcp_recv(peer, 64));
             assert_eq!(io_err(lean_uv_tcp_recv(peer, 64)), (OTHER_ERROR, errno(errno::UV_EALREADY)));
+            let sent = ok(lean_uv_tcp_send(client, array(&[bytes(b"hello "), bytes(b"world")])));
+            lean_dec(expect_ok(await_promise(sent)));
             let got = expect_ok(await_promise(r));
             assert_eq!(lean_obj_tag(got), 1);
             assert_eq!(contents(lean_ctor_get(got, 0)), b"hello world");
