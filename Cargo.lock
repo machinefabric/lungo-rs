@@ -105,11 +105,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "cargo-patina"
-version = "0.22.940"
+name = "cargo-lungo"
+version = "0.25.1243"
 dependencies = [
  "clap",
- "patina-build",
+ "lungo-build",
  "serde_json",
 ]
 
@@ -204,10 +204,10 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "conformance-runner"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
- "patina",
- "patina-build",
+ "lungo",
+ "lungo-build",
  "toml",
 ]
 
@@ -265,11 +265,11 @@ dependencies = [
 
 [[package]]
 name = "facade-runner"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
+ "lungo",
+ "lungo-build",
  "num-bigint",
- "patina",
- "patina-build",
  "proptest",
 ]
 
@@ -304,9 +304,9 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "gates"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
- "patina-build",
+ "lungo-build",
  "serde_json",
 ]
 
@@ -347,11 +347,11 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "host"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
+ "lungo",
+ "lungo-build",
  "object",
- "patina",
- "patina-build",
 ]
 
 [[package]]
@@ -387,6 +387,73 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "lungo"
+version = "0.25.1243"
+dependencies = [
+ "lungo-runtime",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lungo-bir"
+version = "0.25.1243"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "lungo-build"
+version = "0.25.1243"
+dependencies = [
+ "blake3",
+ "dunce",
+ "libc",
+ "lungo-bir",
+ "lungo-codegen",
+ "lungo-protocol",
+ "lungo-runtime",
+ "serde",
+ "serde_json",
+ "toml",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "lungo-codegen"
+version = "0.25.1243"
+dependencies = [
+ "lungo-bir",
+ "lungo-protocol",
+ "lungo-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lungo-protocol"
+version = "0.25.1243"
+dependencies = [
+ "ciborium",
+ "lungo-bir",
+ "serde",
+]
+
+[[package]]
+name = "lungo-runtime"
+version = "0.25.1243"
+dependencies = [
+ "getrandom",
+ "libc",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "memchr"
@@ -454,73 +521,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "patina"
-version = "0.22.940"
-dependencies = [
- "num-bigint",
- "num-traits",
- "patina-runtime",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "patina-bir"
-version = "0.22.940"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "patina-build"
-version = "0.22.940"
-dependencies = [
- "blake3",
- "dunce",
- "libc",
- "patina-bir",
- "patina-codegen",
- "patina-protocol",
- "patina-runtime",
- "serde",
- "serde_json",
- "toml",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "patina-codegen"
-version = "0.22.940"
-dependencies = [
- "patina-bir",
- "patina-protocol",
- "patina-runtime",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "patina-protocol"
-version = "0.22.940"
-dependencies = [
- "ciborium",
- "patina-bir",
- "serde",
-]
-
-[[package]]
-name = "patina-runtime"
-version = "0.22.940"
-dependencies = [
- "getrandom",
- "libc",
- "num-bigint",
- "num-integer",
- "num-traits",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "ppv-lite86"
@@ -712,18 +712,18 @@ dependencies = [
 
 [[package]]
 name = "session"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
- "patina",
- "patina-build",
+ "lungo",
+ "lungo-build",
 ]
 
 [[package]]
 name = "shaping"
-version = "0.22.940"
+version = "0.25.1243"
 dependencies = [
- "patina",
- "patina-build",
+ "lungo",
+ "lungo-build",
  "serde",
  "serde_json",
 ]
