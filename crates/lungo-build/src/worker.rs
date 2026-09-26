@@ -455,8 +455,8 @@ impl Drop for Exchange {
 /// on the worker itself rather than on a wrapper that could leave it running.
 pub fn run(worker: &Worker, toolchain: &Toolchain, request: &Request, opts: &RunOptions) -> Result<Response> {
     let exchange = Exchange::create(opts.scratch)?;
-    let req_path = exchange.dir.join("request.ptnf");
-    let resp_path = exchange.dir.join("response.ptnf");
+    let req_path = exchange.dir.join("request.lngf");
+    let resp_path = exchange.dir.join("response.lngf");
     let frame = request.to_frame().map_err(|e| Error::Protocol(e.to_string()))?;
     fs::write(&req_path, frame).map_err(|e| Error::io("cannot write the worker request", e))?;
     let lake_env = lake_environment(toolchain, opts)?;

@@ -1187,17 +1187,17 @@ impl<'a> Facade<'a> {
                 generics.iter().map(|g| format!("{g}: ::lungo::LeanType<{b}>")).collect::<Vec<_>>().join(", ")
             )
         };
-        let ptn = format!("{}__ptn", "super::".repeat(depth));
+        let lng = format!("{}__lng", "super::".repeat(depth));
         w.line("#[allow(unused_imports, unused_unsafe, clippy::all)]");
         w.open(format!("pub fn {}{bounds}({}) -> {ret} {{", placement.ident, sig.join(", ")));
         w.line("use ::lungo::__runtime::{self as rt, Obj};");
-        w.line(format!("{ptn}::__initialize();"));
+        w.line(format!("{lng}::__initialize();"));
         w.open("unsafe {");
         for l in body_pre {
             w.line(l);
         }
         w.line(format!(
-            "let __r: {} = {ptn}::{}({});",
+            "let __r: {} = {lng}::{}({});",
             rust_type(spec.ir_result),
             mangle(spec.lean_name),
             call_args.join(", ")
@@ -1229,7 +1229,7 @@ impl<'a> Facade<'a> {
     }
 
     /// Emits the adapter through which compiled code calls an application-provided Rust
-    /// function for extern `decl`. The adapter lives in `__ptn` (depth 1).
+    /// function for extern `decl`. The adapter lives in `__lng` (depth 1).
     ///
     /// With `export_symbol`, the adapter is an exported C function with that symbol, as Lean's
     /// natively compiled code calls it in `LeanOracle` mode.

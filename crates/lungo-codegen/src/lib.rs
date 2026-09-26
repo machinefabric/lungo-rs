@@ -1,6 +1,6 @@
 //! The lungo Rust backend: generates Rust from Bridge IR.
 //!
-//! The output has two layers. The compiler layer (`__ptn`) mechanically reproduces Lean's
+//! The output has two layers. The compiler layer (`__lng`) mechanically reproduces Lean's
 //! compiled program on top of the `lungo` runtime, one file per Lean module. The public
 //! facade exposes exported declarations as ordinary Rust functions over idiomatic Rust types.
 //! Alongside the Rust sources, machine-readable metadata records name mappings, extern
@@ -347,7 +347,7 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     w.line("");
     w.line("#[doc(hidden)]");
     w.line("#[allow(non_snake_case, non_upper_case_globals, unused_mut, unused_variables, unused_assignments, unused_labels, unused_unsafe, unused_imports, unreachable_code, unreachable_patterns, dead_code, unsafe_op_in_unsafe_fn, clippy::all)]");
-    w.open("pub mod __ptn {");
+    w.open("pub mod __lng {");
     w.line("use ::lungo::__runtime as rt;");
     w.line("use rt::Obj;");
     w.line(format!("const _: () = rt::assert_abi::<{}>();", lungo_runtime::ABI_VERSION));
@@ -556,7 +556,7 @@ fn emit_entry_point(w: &mut Writer, entry: &EntryPoint, program: &lungo_bir::Pro
     w.open("pub fn __lean_main_with(args: ::std::vec::Vec<::std::string::String>) -> i32 {");
     match layer {
         Layer::PureRust => w.line(format!(
-            "::lungo::__runtime::run_main(__ptn::__initialize, ::lungo::__runtime::MainFn::{kind}(__ptn::{}), {}, args)",
+            "::lungo::__runtime::run_main(__lng::__initialize, ::lungo::__runtime::MainFn::{kind}(__lng::{}), {}, args)",
             mangle(&main.name),
             entry.returns_exit_code
         )),

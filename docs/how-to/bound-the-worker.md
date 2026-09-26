@@ -17,11 +17,11 @@ fn main() -> lungo_build::Result<()> {
 ```
 
 When the limit passes, the worker and every process it started are killed and the build fails
-with [`LNG0304`](../reference/errors.md#ptn0304).
+with [`LNG0304`](../reference/errors.md#lng0304).
 
 To bound processor time instead (a busy loop, rather than a slow machine), use
 `.worker_cpu_limit(Duration::from_secs(300))`; exceeding it fails with
-[`LNG0305`](../reference/errors.md#ptn0305). On Unix the limit applies to each process of the
+[`LNG0305`](../reference/errors.md#lng0305). On Unix the limit applies to each process of the
 worker; on Windows to all of them together.
 
 ## Limit memory
@@ -33,7 +33,7 @@ worker; on Windows to all of them together.
 The limit is enforced on Linux (address space of each worker process) and Windows (memory of
 the worker's processes together). Lean maps the compiled files of every imported module into
 memory, so leave room above what `lake build` needs. On other systems, such as macOS, setting
-it fails with [`LNG0104`](../reference/errors.md#ptn0104) rather than being ignored; set it
+it fails with [`LNG0104`](../reference/errors.md#lng0104) rather than being ignored; set it
 only for the platforms that enforce it:
 
 ```rust

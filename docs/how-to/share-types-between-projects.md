@@ -59,6 +59,6 @@ by another lungo build of the same Lean type, in the same mode, is such a type.
 Types of `drawing` that contain an extern type derive only `Clone` and `Debug`, since lungo
 does not know which other traits the extern type implements; add further derives with
 `type_attribute`. A mapping for a Lean type that no exported declaration uses fails the build
-with [`LNG0107`](../reference/errors.md#ptn0107).
+with [`LNG0107`](../reference/errors.md#lng0107).
 
 `compiler-tests/shaping` in the repository builds two such packages.

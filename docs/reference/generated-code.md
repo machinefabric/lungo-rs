@@ -39,7 +39,7 @@ pub mod formal {
 | types and functions | The facade: one item per exported declaration and per type reachable from exports and `rust_extern` functions, except [extern types](configuration.md#shaping-the-generated-code). Declarations in the facade namespace are at the root; `A.B.f` is `a::b::f`; other names are under `_root_`. |
 | `__meta` | Metadata; see below. |
 | `__lean_main()`, `__lean_main_with(args)` | Present when a root module defines `main`. Run the Lean program with the process arguments (or `args`) and return its exit code. |
-| `__ptn`, `__opaque`, `__oracle` | Hidden: the compiler layer, marker types of opaque values, the `LeanOracle` backend. Not a stable interface. |
+| `__lng`, `__opaque`, `__oracle` | Hidden: the compiler layer, marker types of opaque values, the `LeanOracle` backend. Not a stable interface. |
 
 Every facade function initializes the program's modules on first use. Its doc comment
 records the Lean name, type and source location, unless `disable_comments` selects it.

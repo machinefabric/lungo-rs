@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn floating_and_unknown_pins_are_rejected() {
-        let dir = std::env::temp_dir().join(format!("ptn-pin-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lng-pin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         for pin in ["stable", "leanprover/lean4:stable", "leanprover/lean4:v4.35.0-rc3"] {
             std::fs::write(dir.join("lean-toolchain"), format!("{pin}\n")).unwrap();

@@ -45,7 +45,7 @@ lungo_build::configure()
 ```
 
 `cargo lungo mappings` lists the Lean name of every generated type and field. A path that
-selects nothing fails the build with [`LNG0107`](../reference/errors.md#ptn0107), so a
+selects nothing fails the build with [`LNG0107`](../reference/errors.md#lng0107), so a
 misspelled or stale path does not go unnoticed.
 
 ## Implement `Debug` yourself

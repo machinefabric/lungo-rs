@@ -28,7 +28,7 @@ type-attributes = [
 ```
 
 In `lungo.toml`, `project` is the Lake project directory, relative to the Cargo package;
-`[build]` may be omitted. Unknown keys are errors ([`LNG0107`](errors.md#ptn0107)).
+`[build]` may be omitted. Unknown keys are errors ([`LNG0107`](errors.md#lng0107)).
 
 ## Program
 
@@ -44,7 +44,7 @@ Without `root_module`, the roots are what `lake build` builds: the root modules 
 default target of the root package (`defaultTargets` in `lakefile.toml`, `@[default_target]`
 in `lakefile.lean`), which are Lean libraries (their `roots`) or Lean executables (their
 `root`). A package without default targets needs `root_module`
-([`LNG0301`](errors.md#ptn0301)).
+([`LNG0301`](errors.md#lng0301)).
 
 Without `export` and `export_module`, the root modules and their submodules are exported.
 From an exported module, definitions are exported unless they are private, internal
@@ -59,7 +59,7 @@ other path selects the Lean name it spells and every name in it as a namespace: 
 selects `Formal.Sess` and `Formal.Sess.isOpen`, but `Formal.Se` selects neither. Fields are
 named as in [`names.json`](generated-code.md#namesjson): `<Structure>.<field>`,
 `<Constructor>.<binder>`, or `<Constructor>#<index>`. A path other than `.` that selects
-nothing is an error ([`LNG0107`](errors.md#ptn0107)): it cannot have any effect.
+nothing is an error ([`LNG0107`](errors.md#lng0107)): it cannot have any effect.
 
 | Builder | TOML key | Default | Meaning |
 | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ containing it derive only `Clone` and `Debug`. See
 | `deny_axioms(b)` | `deny-axioms` | `false` | depends on an axiom other than `propext`, `Classical.choice`, `Quot.sound` |
 | `deny_unsafe(b)` | `deny-unsafe` | `false` | has an `unsafe` definition in its executable closure (outside the Lean toolchain) |
 
-Violations fail the build with [`LNG0601`](errors.md#ptn0601).
+Violations fail the build with [`LNG0601`](errors.md#lng0601).
 
 ## Output
 
@@ -107,16 +107,16 @@ Violations fail the build with [`LNG0601`](errors.md#ptn0601).
 | `emit_rerun_if_changed(b)` | `emit-rerun-if-changed` | whether the build runs under Cargo | Print `cargo::rerun-if-changed` for every input, and `cargo::rerun-if-env-changed` for the [environment variables](#environment-variables). |
 
 One build script may compile several Lean projects; each generates its own module, and two
-that would generate the same module are an error ([`LNG0107`](errors.md#ptn0107)). Give one
+that would generate the same module are an error ([`LNG0107`](errors.md#lng0107)). Give one
 of them another `name`.
 
 ## Worker
 
 | Builder | TOML key | Default | Meaning |
 | --- | --- | --- | --- |
-| `worker_timeout(d)` | `worker-timeout` | none | Wall-clock seconds after which the worker's processes are killed ([`LNG0304`](errors.md#ptn0304)). |
-| `worker_cpu_limit(d)` | `worker-cpu-limit` | none | Processor seconds the worker may use ([`LNG0305`](errors.md#ptn0305)). |
-| `worker_memory_limit(bytes)` | `worker-memory-limit` | none | Memory the worker may use. Enforced on Linux and Windows; an error ([`LNG0104`](errors.md#ptn0104)) elsewhere. |
+| `worker_timeout(d)` | `worker-timeout` | none | Wall-clock seconds after which the worker's processes are killed ([`LNG0304`](errors.md#lng0304)). |
+| `worker_cpu_limit(d)` | `worker-cpu-limit` | none | Processor seconds the worker may use ([`LNG0305`](errors.md#lng0305)). |
+| `worker_memory_limit(bytes)` | `worker-memory-limit` | none | Memory the worker may use. Enforced on Linux and Windows; an error ([`LNG0104`](errors.md#lng0104)) elsewhere. |
 | `hermetic(b)` | `hermetic` | `false` | Run the worker with only `PATH`, `HOME`, `USERPROFILE`, `SystemRoot`, `SYSTEMROOT`, `TEMP`, `TMP`, `TMPDIR`, `LANG`, `LC_ALL`, `ELAN_HOME`, `LOCALAPPDATA`, `APPDATA` from the environment, plus Lake's environment for the project. |
 | `hermetic_worker_cache(b)` | `hermetic-worker-cache` | `false` | Keep the compiled worker beside the build output instead of in the shared cache. |
 | `lean_option(name, value)` | `lean-options` | `{}` | Lean options in effect while the worker loads the project and runs Lean metaprograms. |
@@ -126,7 +126,7 @@ of them another `name`.
 
 | Builder | TOML key | Default | Meaning |
 | --- | --- | --- | --- |
-| `toolchain_policy(p)` | `install-toolchain` | `Strict` / `false` | `Install` (`true`) installs a missing pinned toolchain with elan. `Strict` (`false`) fails with [`LNG0103`](errors.md#ptn0103). |
+| `toolchain_policy(p)` | `install-toolchain` | `Strict` / `false` | `Install` (`true`) installs a missing pinned toolchain with elan. `Strict` (`false`) fails with [`LNG0103`](errors.md#lng0103). |
 | `toolchain_dir(dir)` | `toolchain-dir` | elan's installation | Use the toolchain installed in `dir`. |
 
 ## Environment variables

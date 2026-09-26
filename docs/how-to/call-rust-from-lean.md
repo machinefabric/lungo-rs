@@ -78,9 +78,9 @@ fn main() -> lungo_build::Result<()> {
 ```
 
 Build. If a Lean declaration's symbol has no implementation, the build fails with
-[`LNG0401`](../reference/errors.md#ptn0401), naming the declaration and the Rust signature it
+[`LNG0401`](../reference/errors.md#lng0401), naming the declaration and the Rust signature it
 needs. A mapping for a symbol nothing uses fails with
-[`LNG0405`](../reference/errors.md#ptn0405).
+[`LNG0405`](../reference/errors.md#lng0405).
 
 ## Pass functions across the boundary
 
@@ -106,6 +106,6 @@ In the other direction, Rust passes its own functions to generated Lean function
 
 The same mappings work in `LeanOracle` mode for externs declared `@[extern "symbol"]`: the
 generated adapter is exported under that C symbol. Other extern forms fail with
-[`LNG0407`](../reference/errors.md#ptn0407).
+[`LNG0407`](../reference/errors.md#lng0407).
 
 A complete example is `compiler-tests/host` in the repository.

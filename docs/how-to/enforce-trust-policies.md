@@ -21,7 +21,7 @@ fn main() -> lungo_build::Result<()> {
 }
 ```
 
-A violation fails with [`LNG0601`](../reference/errors.md#ptn0601) and lists each export with
+A violation fails with [`LNG0601`](../reference/errors.md#lng0601) and lists each export with
 the offending dependencies:
 
 ```text
