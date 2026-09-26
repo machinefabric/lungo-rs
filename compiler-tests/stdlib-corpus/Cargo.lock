@@ -92,6 +92,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,70 +155,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "lean2rust"
-version = "0.1.0"
-dependencies = [
- "lean2rust-runtime",
- "num-bigint",
- "num-traits",
-]
-
-[[package]]
-name = "lean2rust-bir"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "lean2rust-build"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "lean2rust-bir",
- "lean2rust-codegen",
- "lean2rust-protocol",
- "lean2rust-runtime",
- "libc",
- "serde",
- "serde_json",
- "toml",
- "windows-sys",
-]
-
-[[package]]
-name = "lean2rust-codegen"
-version = "0.1.0"
-dependencies = [
- "lean2rust-bir",
- "lean2rust-protocol",
- "lean2rust-runtime",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "lean2rust-protocol"
-version = "0.1.0"
-dependencies = [
- "ciborium",
- "lean2rust-bir",
- "serde",
-]
-
-[[package]]
-name = "lean2rust-runtime"
-version = "0.1.0"
-dependencies = [
- "getrandom",
- "libc",
- "num-bigint",
- "num-integer",
- "num-traits",
- "windows-sys",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -250,6 +192,71 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "patina"
+version = "0.1.0"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "patina-runtime",
+]
+
+[[package]]
+name = "patina-bir"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "patina-build"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dunce",
+ "libc",
+ "patina-bir",
+ "patina-codegen",
+ "patina-protocol",
+ "patina-runtime",
+ "serde",
+ "serde_json",
+ "toml",
+ "windows-sys",
+]
+
+[[package]]
+name = "patina-codegen"
+version = "0.1.0"
+dependencies = [
+ "patina-bir",
+ "patina-protocol",
+ "patina-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "patina-protocol"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "patina-bir",
+ "serde",
+]
+
+[[package]]
+name = "patina-runtime"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "libc",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "windows-sys",
 ]
 
 [[package]]
@@ -338,8 +345,8 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 name = "stdlib-corpus"
 version = "0.1.0"
 dependencies = [
- "lean2rust",
- "lean2rust-build",
+ "patina",
+ "patina-build",
 ]
 
 [[package]]
