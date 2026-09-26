@@ -1,10 +1,10 @@
 /-! Child processes: spawning, pipes, standard input, exit codes, environment, working
 directory, and spawn failures. The child is the `child` helper named by
-`LEAN2RUST_CONFORMANCE_CHILD`. -/
+`PATINA_CONFORMANCE_CHILD`. -/
 
 def main : IO UInt32 := do
-  let some child ← IO.getEnv "LEAN2RUST_CONFORMANCE_CHILD"
-    | IO.eprintln "LEAN2RUST_CONFORMANCE_CHILD is not set"; return 2
+  let some child ← IO.getEnv "PATINA_CONFORMANCE_CHILD"
+    | IO.eprintln "PATINA_CONFORMANCE_CHILD is not set"; return 2
   -- Captured output and error streams.
   let out ← IO.Process.output { cmd := child, args := #["echo", "a b", "ünï"] }
   IO.println (out.exitCode, out.stdout, out.stderr)
@@ -23,9 +23,9 @@ def main : IO UInt32 := do
   let env (v : String) (e : Array (String × Option String)) := do
     let out ← IO.Process.output { cmd := child, args := #["env", v], env := e }
     return out.stdout.trimAscii.toString
-  IO.println (← env "L2R_CHILD_VAR" #[("L2R_CHILD_VAR", some "set!")])
-  IO.println (← env "LEAN2RUST_CONFORMANCE_VAR" #[])
-  IO.println (← env "LEAN2RUST_CONFORMANCE_VAR" #[("LEAN2RUST_CONFORMANCE_VAR", none)])
+  IO.println (← env "PTN_CHILD_VAR" #[("PTN_CHILD_VAR", some "set!")])
+  IO.println (← env "PATINA_CONFORMANCE_VAR" #[])
+  IO.println (← env "PATINA_CONFORMANCE_VAR" #[("PATINA_CONFORMANCE_VAR", none)])
   -- Working directory.
   let out ← IO.Process.output { cmd := child, args := #["cwd"], cwd := some "Conformance" }
   IO.println out.stdout.trimAscii.toString
@@ -36,7 +36,7 @@ def main : IO UInt32 := do
   catch e => IO.println s!"run failed: {decide ((toString e).length > 0)}"
   -- A program that does not exist: Lean's runtime reports it from the child process.
   try
-    let out ← IO.Process.output { cmd := "lean2rust-no-such-program-xyz" }
+    let out ← IO.Process.output { cmd := "patina-no-such-program-xyz" }
     IO.println (out.exitCode, out.stdout, out.stderr)
   catch e => IO.println s!"spawn failed: {e}"
   return 0

@@ -1,0 +1,12 @@
+[package]
+name = "patina"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Runtime and facade support for Rust code generated from Lean by patina"
+license = "Apache-2.0"
+
+[dependencies]
+patina-runtime = { path = "../patina-runtime", version = "0.1.0" }
+num-bigint = "0.4"
+num-traits = "0.2"

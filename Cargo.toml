@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/cargo-lean2rust", "crates/lean2rust", "crates/lean2rust-bir", "crates/lean2rust-build", "crates/lean2rust-codegen", "crates/lean2rust-protocol", "crates/lean2rust-runtime", "examples/session", "compiler-tests/runner", "compiler-tests/facade-runner", "compiler-tests/host", "compiler-tests/gates"]
+members = ["crates/cargo-patina", "crates/patina", "crates/patina-bir", "crates/patina-build", "crates/patina-codegen", "crates/patina-protocol", "crates/patina-runtime", "examples/session", "compiler-tests/runner", "compiler-tests/facade-runner", "compiler-tests/host", "compiler-tests/gates"]
 resolver = "3"
 
 [workspace.package]

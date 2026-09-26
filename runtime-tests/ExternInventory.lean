@@ -8,8 +8,8 @@ parameters are marked borrowed (`b_obj`) or owned (`obj`).
 
 Run with the toolchain the bridge supports:
 
-    lean --run runtime-tests/ExternInventory.lean externs > crates/lean2rust-runtime/tests/data/toolchain-externs.txt
-    lean --run runtime-tests/ExternInventory.lean exports > crates/lean2rust-runtime/tests/data/toolchain-exports.txt
+    lean --run runtime-tests/ExternInventory.lean externs > crates/patina-runtime/tests/data/toolchain-externs.txt
+    lean --run runtime-tests/ExternInventory.lean exports > crates/patina-runtime/tests/data/toolchain-exports.txt
 
 `externs` lists every `@[extern]` compiler declaration, one per line:
 `symbol<TAB>declaration<TAB>param,param,...<TAB>result<TAB>implementation`, where the

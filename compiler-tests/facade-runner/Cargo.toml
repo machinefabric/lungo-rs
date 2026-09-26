@@ -6,11 +6,11 @@ publish = false
 description = "Generates one Lean project in PureRust and LeanOracle modes for differential facade tests"
 
 [dependencies]
-lean2rust = { path = "../../crates/lean2rust" }
+patina = { path = "../../crates/patina" }
 
 [dev-dependencies]
 num-bigint = "0.4"
 proptest = "1.7"
 
 [build-dependencies]
-lean2rust-build = { path = "../../crates/lean2rust-build" }
+patina-build = { path = "../../crates/patina-build" }

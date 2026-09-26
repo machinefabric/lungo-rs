@@ -3,10 +3,10 @@ name = "session"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "The lean2rust design example: a Lean state machine with proofs, used from Rust"
+description = "The patina design example: a Lean state machine with proofs, used from Rust"
 
 [dependencies]
-lean2rust = { path = "../../crates/lean2rust" }
+patina = { path = "../../crates/patina" }
 
 [build-dependencies]
-lean2rust-build = { path = "../../crates/lean2rust-build" }
+patina-build = { path = "../../crates/patina-build" }

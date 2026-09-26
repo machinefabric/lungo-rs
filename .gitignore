@@ -2,6 +2,6 @@
 .lake/
 target/
 *.partial
-.lean2rust-cache/
+.patina-cache/
 .scrap/
 .atest/

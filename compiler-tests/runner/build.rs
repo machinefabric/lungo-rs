@@ -1,9 +1,9 @@
-//! Generates every executable of the conformance Lake project through lean2rust.
+//! Generates every executable of the conformance Lake project through patina.
 
-use lean2rust_build::Config;
+use patina_build::Config;
 use std::fmt::Write;
 
-fn main() -> lean2rust_build::Result<()> {
+fn main() -> patina_build::Result<()> {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("set by Cargo");
     let lakefile = std::path::Path::new(&manifest).join("../conformance/lakefile.toml");
     println!("cargo::rerun-if-changed={}", lakefile.display());
@@ -17,12 +17,12 @@ fn main() -> lean2rust_build::Result<()> {
         let root = exe["root"].as_str().expect("executable root module");
         Config::new("../conformance")
             .root_module(root)
-            .output_dir(format!("l2r-{name}"))
+            .output_dir(format!("ptn-{name}"))
             .output_name("program")
             .compile()?;
         writeln!(
             dispatch,
-            "#[allow(dead_code)]\nmod p_{name} {{ include!(concat!(env!(\"OUT_DIR\"), \"/l2r-{name}/program.rs\")); }}"
+            "#[allow(dead_code)]\nmod p_{name} {{ include!(concat!(env!(\"OUT_DIR\"), \"/ptn-{name}/program.rs\")); }}"
         )
         .unwrap();
         writeln!(arms, "        {name:?} => Some(p_{name}::__lean_main_with(args)),").unwrap();

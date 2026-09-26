@@ -6,10 +6,10 @@ publish = false
 description = "Release-gate project: Rust callbacks, custom Lean syntax and macros, PureRust linking"
 
 [dependencies]
-lean2rust = { path = "../../crates/lean2rust" }
+patina = { path = "../../crates/patina" }
 
 [dev-dependencies]
 object = "0.36"
 
 [build-dependencies]
-lean2rust-build = { path = "../../crates/lean2rust-build" }
+patina-build = { path = "../../crates/patina-build" }

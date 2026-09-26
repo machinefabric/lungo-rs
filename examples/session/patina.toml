@@ -1,0 +1,4 @@
+# The configuration of this crate's build.rs, for `cargo patina`.
+project = "lean"
+root-modules = ["Formal.Session"]
+export-modules = ["Formal"]

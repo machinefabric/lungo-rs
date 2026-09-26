@@ -1,10 +1,10 @@
 //! A Rust application hosting Lean code that calls back into it.
 
-include!(concat!(env!("OUT_DIR"), "/lean2rust/host.rs"));
+include!(concat!(env!("OUT_DIR"), "/patina/host.rs"));
 
 /// The Rust implementations of the Lean `@[extern]` declarations in `Host.Callbacks`.
 pub mod host {
-    use lean2rust::{IoError, LeanClosure, List, Nat};
+    use patina::{IoError, LeanClosure, List, Nat};
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 

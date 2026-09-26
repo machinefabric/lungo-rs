@@ -1,5 +1,5 @@
-//! Lean's executable standard library, compiled through lean2rust.
+//! Lean's executable standard library, compiled through patina.
 
 pub mod corpus {
-    include!(concat!(env!("OUT_DIR"), "/lean2rust/stdlib_corpus.rs"));
+    include!(concat!(env!("OUT_DIR"), "/patina/stdlib_corpus.rs"));
 }

@@ -9,7 +9,7 @@ description = "The executable part of Lean's Init and Std libraries, generated a
 [workspace]
 
 [dependencies]
-lean2rust = { path = "../../crates/lean2rust" }
+patina = { path = "../../crates/patina" }
 
 [build-dependencies]
-lean2rust-build = { path = "../../crates/lean2rust-build" }
+patina-build = { path = "../../crates/patina-build" }

@@ -1,7 +1,7 @@
-use lean2rust_build::{Config, Mode};
+use patina_build::{Config, Mode};
 
-fn main() -> lean2rust_build::Result<()> {
-    for (dir, mode) in [("l2r-pure", Mode::PureRust), ("l2r-oracle", Mode::LeanOracle)] {
+fn main() -> patina_build::Result<()> {
+    for (dir, mode) in [("ptn-pure", Mode::PureRust), ("ptn-oracle", Mode::LeanOracle)] {
         Config::new("../facade").root_module("Facade").export_module("Facade").mode(mode).output_dir(dir).compile()?;
     }
     Ok(())

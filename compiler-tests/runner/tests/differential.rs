@@ -1,5 +1,5 @@
 //! Differential conformance: every program runs through Lean's official native backend and
-//! through lean2rust's PureRust backend, and both must produce the same standard output,
+//! through patina's PureRust backend, and both must produce the same standard output,
 //! standard error, and exit status.
 
 use std::path::{Path, PathBuf};
@@ -38,8 +38,8 @@ fn configure(cmd: &mut Command) -> &mut Command {
     cmd.args(["first", "second arg", "ünïcode"])
         .current_dir(conformance_project())
         .env("LEAN_BACKTRACE", "0")
-        .env("LEAN2RUST_CONFORMANCE_VAR", "present")
-        .env("LEAN2RUST_CONFORMANCE_CHILD", native_exe("child"))
+        .env("PATINA_CONFORMANCE_VAR", "present")
+        .env("PATINA_CONFORMANCE_CHILD", native_exe("child"))
         .env_remove("LEAN_ABORT_ON_PANIC")
 }
 

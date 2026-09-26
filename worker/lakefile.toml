@@ -1,11 +1,11 @@
-name = "lean2rust-worker"
+name = "patina-worker"
 version = "0.1.0"
-defaultTargets = ["lean2rust-worker"]
+defaultTargets = ["patina-worker"]
 
 [[lean_lib]]
-name = "Lean2Rust"
+name = "Patina"
 
 [[lean_exe]]
-name = "lean2rust-worker"
+name = "patina-worker"
 root = "Main"
 supportInterpreter = true

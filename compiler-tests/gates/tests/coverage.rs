@@ -3,8 +3,8 @@
 //! differential conformance test compares every such instruction's Rust implementation against
 //! Lean's native backend.
 
-use lean2rust_bir::{Block, Body, Expr, Literal, Stmt, Terminator};
-use lean2rust_build::{Config, Environment};
+use patina_bir::{Block, Body, Expr, Literal, Stmt, Terminator};
+use patina_build::{Config, Environment};
 use std::collections::BTreeSet;
 use std::path::Path;
 

@@ -1,4 +1,4 @@
-//! Runs one conformance program, compiled from Lean by lean2rust, with the given arguments.
+//! Runs one conformance program, compiled from Lean by patina, with the given arguments.
 
 include!(concat!(env!("OUT_DIR"), "/programs.rs"));
 
