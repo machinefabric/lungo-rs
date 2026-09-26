@@ -3,7 +3,7 @@
 //! `Init` and `Std`; its complete program is analyzed by the worker, verified, and translated to
 //! Rust.
 
-use patina_build::{Config, Environment};
+use patina_build::{Environment, configure};
 use std::path::Path;
 
 #[test]
@@ -11,8 +11,10 @@ fn the_executable_standard_library_translates() {
     let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/stdlib").canonicalize().unwrap();
     let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("stdlib");
     let env = Environment::native(project.clone(), scratch.join("out"), scratch.join("work"));
-    let cfg = Config::new(&project).root_module("StdlibCorpus");
-    let analysis = cfg.analyze(&env).unwrap();
+    // The corpus references `sorryAx`, one of Init's executable constants.
+    let cfg = configure().deny_sorry(false);
+    let analysis = cfg.analyze(&project, &env).unwrap();
+    assert_eq!(analysis.success.root_modules, ["StdlibCorpus"], "the default target's root");
     let program = &analysis.success.bir;
 
     // The corpus generator is compile-time code: neither it nor the Lean compiler it uses is
@@ -30,7 +32,7 @@ fn the_executable_standard_library_translates() {
     patina_bir::validate(program).unwrap_or_else(|errors| {
         panic!("{} verifier errors, first: {}", errors.len(), errors[0]);
     });
-    let generated = cfg.generate(&env, &analysis).unwrap();
+    let generated = cfg.generate(&project, &env, &analysis).unwrap();
     let rust_bytes: usize = generated.files.iter().filter(|(k, _)| k.ends_with(".rs")).map(|(_, v)| v.len()).sum();
     assert!(rust_bytes > 10_000_000, "generated {rust_bytes} bytes of Rust");
 }

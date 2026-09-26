@@ -70,6 +70,8 @@ pub enum Error {
     },
     /// Environment the bridge requires is missing.
     Environment(String),
+    /// The build configuration cannot be applied.
+    Configuration(String),
 }
 
 impl Error {
@@ -95,6 +97,7 @@ impl Error {
             Error::Trust(_) => ErrorCode::TrustPolicy,
             Error::Command { .. } => ErrorCode::CommandFailed,
             Error::Environment(_) => ErrorCode::Environment,
+            Error::Configuration(_) => ErrorCode::InvalidConfiguration,
         }
     }
 }
@@ -194,7 +197,7 @@ impl fmt::Display for Error {
                 Ok(())
             }
             Error::Command { program, status, output } => write!(f, "`{program}` failed ({status})\n{output}"),
-            Error::Environment(msg) => f.write_str(msg),
+            Error::Environment(msg) | Error::Configuration(msg) => f.write_str(msg),
         }
     }
 }

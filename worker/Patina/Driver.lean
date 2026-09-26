@@ -40,6 +40,8 @@ structure ModuleNode where
 
 structure Context where
   request : Protocol.Request
+  /-- The program's root modules, as requested or resolved from Lake's default targets. -/
+  roots : Array Name
   ws : LakeInfo.Workspace
   env : Environment
   modules : Array ModuleNode
@@ -141,7 +143,9 @@ def selectExports (ctx : Context) (closureNames : NameSet) : CoreM (Array Name �
         implementation for it (it is a theorem, type, `noncomputable`, or otherwise erased declaration)")
     else
       out := out.insert n
-  for m in ctx.request.exports.modules do
+  let exportedModules := ctx.request.exports.modules ++
+    (if ctx.request.exports.roots then ctx.roots.map (·.toString (escape := false)) else #[])
+  for m in exportedModules do
     let prefixName := m.toName
     let matching := ctx.modules.filter fun node => prefixName == node.name || prefixName.isPrefixOf node.name
     if matching.isEmpty then
@@ -199,8 +203,9 @@ def run (request : Protocol.Request) : WorkerM Value := do
   let sysroot ← liftIO .project "cannot locate the Lean installation" (findSysroot)
   liftIO .project "cannot initialize the Lean search path" (initSearchPath sysroot)
   let ws ← LakeInfo.load request.projectRoot sysroot
-  if request.rootModules.isEmpty then fail .request "no root modules were requested"
-  let roots := request.rootModules.map String.toName
+  let roots ← match request.roots with
+    | .modules names => pure (names.map String.toName)
+    | .defaultTargets => LakeInfo.defaultRoots ws.root
   for r in roots do
     if r.isAnonymous then fail .request "a root module name is empty"
   liftIO .adapter "cannot enable initializers" (unsafe enableInitializersExecution)
@@ -214,7 +219,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
     let some idx := env.getModuleIdx? r | fail .request s!"root module {r} was not loaded"
     unless modules[idx.toNat]!.isLocal do
       fail .request s!"root module {r} is not a module of the project's root package"
-  let ctx : Context := { request, ws, env, modules }
+  let ctx : Context := { request, roots, ws, env, modules }
   let linked := linkedPhases env roots
   -- Compilation roots: every runtime declaration of the project's linked local modules, every
   -- initializer of every linked module, and explicitly exported declarations.
@@ -386,6 +391,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
         ("symbol", str (mkModuleInitializationFunctionName r (env.getModulePackageByIdx? idx) phases))])))
   ]
   return obj [
+    ("root_modules", arr (roots.map BridgeIR.name)),
     ("oracle", oracleCbor),
     ("module_graph", arr (modules.map (·.toCbor))),
     ("input_files", arr (inputFiles.map str)),

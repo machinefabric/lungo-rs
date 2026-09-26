@@ -4,7 +4,7 @@
 //! Lean's native backend.
 
 use patina_bir::{Block, Body, Expr, Literal, Stmt, Terminator};
-use patina_build::{Config, Environment};
+use patina_build::{Environment, configure};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -113,7 +113,7 @@ fn conformance_corpus_covers_every_instruction() {
     let mut emitted = BTreeSet::new();
     for root in &roots {
         let env = Environment::native(project.clone(), scratch.join(root), scratch.join(format!("{root}-work")));
-        let analysis = Config::new(&project).root_module(*root).analyze(&env).unwrap();
+        let analysis = configure().root_module(*root).analyze(&project, &env).unwrap();
         for d in &analysis.success.bir.declarations {
             if let Body::Function { block } = &d.body {
                 walk(block, &mut emitted);

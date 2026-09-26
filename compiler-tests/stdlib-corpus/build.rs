@@ -2,5 +2,6 @@
 //! the release-gate tests) as Rust.
 
 fn main() -> patina_build::Result<()> {
-    patina_build::Config::new("../gates/fixtures/stdlib").root_module("StdlibCorpus").compile()
+    // The corpus references `sorryAx`, one of Init's executable constants.
+    patina_build::configure().deny_sorry(false).compile_lean("../gates/fixtures/stdlib")
 }

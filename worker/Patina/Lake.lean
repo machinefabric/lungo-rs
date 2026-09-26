@@ -1,14 +1,17 @@
 import Lean
 import Lake.Load.Manifest
+import Lake.Load.Workspace
+import Lake.Config.InstallPath
 import Patina.Cbor
 import Patina.Diagnostics
 
 /-!
 Read-only access to the project's Lake workspace.
 
-Lake owns package configuration, dependency resolution, and build artifacts. The worker only
-reads the locked manifest to learn which package owns each module and which files are the
-project's inputs; it never updates or rewrites anything.
+Lake owns package configuration, dependency resolution, and build artifacts. The worker reads
+the locked manifest to learn which package owns each module and which files are the project's
+inputs, and loads the root package's configuration through Lake to learn its default targets;
+it never updates or rewrites anything.
 -/
 namespace Patina.LakeInfo
 
@@ -77,6 +80,39 @@ def load (root : FilePath) (sysroot : FilePath) : WorkerM Workspace := do
   let sysrootSrc ← liftIO .project "cannot resolve the toolchain source directory"
     (canonical (sysroot / "src" / "lean"))
   return { root, packages, manifestFile, lakefile, sysrootSrc }
+
+/--
+The root modules of the root package's default targets (`defaultTargets`), as Lake loads the
+package's configuration (`lakefile.toml` or `lakefile.lean`): a library's `roots` and an
+executable's `root`, in the order the defaults are declared, without duplicates. Dependencies
+are not resolved or updated.
+-/
+def defaultRoots (root : FilePath) : WorkerM (Array Name) := do
+  let (elan?, lean?, lake?) ← liftIO .project "cannot locate the Lean and Lake installations"
+    (do return (← Lake.findInstall?))
+  let some lean := lean? | fail .project "cannot locate the Lean installation of the Lake environment"
+  let some lake := lake? | fail .project "cannot locate the Lake installation of the Lake environment"
+  let lakeEnv ← match ← (Lake.Env.compute lake lean elan?).toBaseIO with
+    | .ok env => pure env
+    | .error e => fail .project s!"cannot compute the Lake environment: {e}"
+  let (ws?, log) ← (Lake.loadWorkspaceRoot { lakeEnv, wsDir := root }).run? {}
+  let some ws := ws?
+    | fail .project s!"Lake cannot load the project's configuration:\n{"\n".intercalate (log.entries.map (·.toString)).toList}"
+  let pkg := ws.root
+  if pkg.defaultTargets.isEmpty then
+    fail .request "the Lake package declares no default targets (`defaultTargets`); name the root modules explicitly"
+  let mut roots : Array Name := #[]
+  for target in pkg.defaultTargets do
+    let some decl := pkg.findTargetDecl? target
+      | fail .project s!"default target '{target}' is not a target of the package"
+    let found : Array Name ←
+      if let some lib := decl.leanLibConfig? then pure lib.roots
+      else if let some exe := decl.leanExeConfig? then pure #[exe.root]
+      else fail .request s!"default target '{target}' is neither a Lean library nor a Lean executable; \
+        name the root modules explicitly"
+    for r in found do
+      unless roots.contains r do roots := roots.push r
+  return roots
 
 /-- Path components of `path` below `base`, if `path` lies inside `base`. -/
 def relativeTo? (base path : FilePath) : Option (List String) :=

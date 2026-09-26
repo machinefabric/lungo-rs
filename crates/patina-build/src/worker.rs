@@ -557,7 +557,7 @@ mod tests {
 
     use super::*;
     use crate::toolchain::{Toolchain, ToolchainPolicy};
-    use crate::{Config, Environment};
+    use crate::{Environment, configure};
     use std::os::unix::fs::PermissionsExt;
 
     struct Setup {
@@ -581,8 +581,8 @@ mod tests {
         .unwrap();
         let toolchain = Toolchain::resolve_pin("leanprover/lean4:v4.34.1", None, ToolchainPolicy::Strict).unwrap();
         let env = Environment::native(dir.clone(), dir.join("out"), dir.join("work"));
-        let cfg = Config::new(&project).root_module("P");
-        let ctx = cfg.context(&env).unwrap();
+        let cfg = configure().root_module("P");
+        let ctx = cfg.context(&project, &env).unwrap();
         let request = cfg.request(&ctx, &env);
         Setup { dir, toolchain, request }
     }

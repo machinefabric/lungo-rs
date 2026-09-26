@@ -12,6 +12,7 @@
 use crate::compiler::rust_type;
 use crate::names::{components, mangle};
 use crate::rust::{self, Writer, camel, snake};
+use crate::shaping::Selector;
 use crate::{CodegenError, ErrorCode, NameRecord};
 use patina_bir::IrType;
 use patina_protocol::{
@@ -175,6 +176,8 @@ pub struct Facade<'a> {
     backend_module: Option<String>,
     /// Name records of constructors and fields, in emission order.
     pub members: Vec<NameRecord>,
+    /// The application's shaping of the generated code.
+    shaping: &'a Selector<'a>,
 }
 
 impl<'a> Facade<'a> {
@@ -183,6 +186,7 @@ impl<'a> Facade<'a> {
         naming: &mut Naming,
         exports: &[Export],
         backend_module: Option<String>,
+        shaping: &'a Selector<'a>,
     ) -> Result<Self, CodegenError> {
         let mut placements = HashMap::new();
         let mut names: Vec<&str> = types.iter().map(|t| t.name.as_str()).collect();
@@ -204,6 +208,7 @@ impl<'a> Facade<'a> {
             groups,
             backend_module,
             members: Vec::new(),
+            shaping,
         })
     }
 
@@ -299,7 +304,10 @@ impl<'a> Facade<'a> {
                 .cloned()
                 .ok_or_else(|| CodegenError::internal(format!("type parameter {i} out of range")))?,
             FacadeType::Inductive { name, args } => {
-                let path = self.placement(name)?.path_from_depth(depth);
+                let path = match self.shaping.extern_type(name) {
+                    Some(external) => external.to_owned(),
+                    None => self.placement(name)?.path_from_depth(depth),
+                };
                 if args.is_empty() {
                     path
                 } else {
@@ -311,6 +319,9 @@ impl<'a> Facade<'a> {
                 }
             }
             FacadeType::Opaque { head, .. } => {
+                if let Some(external) = head.as_deref().and_then(|h| self.shaping.extern_type(h)) {
+                    return Ok(external.to_owned());
+                }
                 let marker = self.marker(head);
                 format!("::patina::LeanValue<{}__opaque::{marker}, {}>", "super::".repeat(depth), self.backend(depth))
             }
@@ -357,6 +368,9 @@ impl<'a> Facade<'a> {
                 let (p2, e2) = self.capabilities(b, seen);
                 (p1 && p2, e1 && e2)
             }
+            // An application-provided type is only known to be `Clone` and `Debug`; further
+            // derives of the types containing it are the application's to add.
+            FacadeType::Inductive { name, .. } if self.shaping.extern_type(name).is_some() => (false, false),
             FacadeType::Inductive { name, args } => {
                 let mut p = true;
                 let mut e = true;
@@ -432,7 +446,10 @@ impl<'a> Facade<'a> {
                 eq &= e;
             }
         }
-        let mut derives = vec!["Clone", "Debug"];
+        let mut derives = vec!["Clone"];
+        if !self.shaping.skip_debug(&t.name) {
+            derives.push("Debug");
+        }
         if partial_eq {
             derives.push("PartialEq");
         }
@@ -440,13 +457,18 @@ impl<'a> Facade<'a> {
             derives.extend(["Eq", "Hash"]);
         }
         let ident = &placement.ident;
-        w.line(format!("/// Lean: `{}`", t.name));
+        if !self.shaping.disable_comments(&t.name) {
+            w.line(format!("/// Lean: `{}`", t.name));
+        }
         w.line(format!("#[derive({})]", derives.join(", ")));
         let is_enum = t.ctors.iter().all(|c| c.fields.is_empty()) && t.ctors.len() > 1;
+        let single_struct = t.ctors.len() == 1;
+        for attribute in self.shaping.type_attributes(&t.name, single_struct) {
+            w.line(attribute);
+        }
         // Field and variant naming.
         let variant_idents =
             unique_idents(t.ctors.iter().map(|c| camel(components(&c.name).last().expect("ctor name"))));
-        let single_struct = t.ctors.len() == 1;
         self.record_members(t, placement, &variant_idents, single_struct);
         if single_struct {
             let c = &t.ctors[0];
@@ -455,15 +477,17 @@ impl<'a> Facade<'a> {
                 w.line(format!("pub struct {ident}{generics};"));
             } else if let Some(named) = named_fields(c, t.structure) {
                 w.open(format!("pub struct {ident}{generics} {{"));
-                for ((name, _), ty) in named.iter().zip(&fields) {
+                for (i, ((name, _), ty)) in named.iter().zip(&fields).enumerate() {
+                    for attribute in self.shaping.field_attributes(&field_lean_name(t, c, i)) {
+                        w.line(attribute);
+                    }
                     w.line(format!("pub {name}: {ty},"));
                 }
                 w.close("}");
             } else {
-                w.line(format!(
-                    "pub struct {ident}{generics}({});",
-                    fields.iter().map(|f| format!("pub {f}")).collect::<Vec<_>>().join(", ")
-                ));
+                let items: Vec<String> =
+                    fields.iter().enumerate().map(|(i, f)| format!("{}pub {f}", self.inline_field_attributes(t, c, i))).collect();
+                w.line(format!("pub struct {ident}{generics}({});", items.join(", ")));
             }
         } else {
             w.open(format!("pub enum {ident}{generics} {{"));
@@ -472,11 +496,17 @@ impl<'a> Facade<'a> {
                 if c.fields.is_empty() {
                     w.line(format!("{v},"));
                 } else if let Some(named) = named_fields(c, t.structure) {
-                    let items: Vec<String> =
-                        named.iter().zip(&fields).map(|((n, _), ty)| format!("{n}: {ty}")).collect();
+                    let items: Vec<String> = named
+                        .iter()
+                        .zip(&fields)
+                        .enumerate()
+                        .map(|(i, ((n, _), ty))| format!("{}{n}: {ty}", self.inline_field_attributes(t, c, i)))
+                        .collect();
                     w.line(format!("{v} {{ {} }},", items.join(", ")));
                 } else {
-                    w.line(format!("{v}({}),", fields.join(", ")));
+                    let items: Vec<String> =
+                        fields.iter().enumerate().map(|(i, f)| format!("{}{f}", self.inline_field_attributes(t, c, i))).collect();
+                    w.line(format!("{v}({}),", items.join(", ")));
                 }
             }
             w.close("}");
@@ -683,15 +713,7 @@ impl<'a> Facade<'a> {
             });
             let named = named_fields(c, t.structure);
             for (i, f) in c.fields.iter().enumerate() {
-                // Structure fields are named by their projection; other constructor arguments by
-                // the constructor and binder (or position, for unnamed binders).
-                let lean_name = if t.structure {
-                    format!("{}.{}", t.name, f.name)
-                } else if named.is_some() {
-                    format!("{}.{}", c.name, f.name)
-                } else {
-                    format!("{}#{i}", c.name)
-                };
+                let lean_name = field_lean_name(t, c, i);
                 let (rust_field, renamed) = match &named {
                     Some(names) => (names[i].0.clone(), ident_differs(&f.name, &names[i].0)),
                     None => (i.to_string(), true),
@@ -704,6 +726,12 @@ impl<'a> Facade<'a> {
                 });
             }
         }
+    }
+
+    /// The field attributes of field `i` of constructor `c`, each followed by a space, for a
+    /// field written on one line.
+    fn inline_field_attributes(&self, t: &TypeDecl, c: &CtorDecl, i: usize) -> String {
+        self.shaping.field_attributes(&field_lean_name(t, c, i)).iter().map(|a| format!("{a} ")).collect()
     }
 
     fn binders(&self, t: &TypeDecl, c: &CtorDecl, single: bool, variant: &str, ident: &str) -> Binders {
@@ -746,6 +774,20 @@ struct Binders {
     names: Vec<String>,
 }
 
+/// The Lean name of field `i` of constructor `c` of `t`, as `names.json` records it: structure
+/// fields by their projection, other constructor arguments by the constructor and binder, or by
+/// position for unnamed binders.
+pub fn field_lean_name(t: &TypeDecl, c: &CtorDecl, i: usize) -> String {
+    let f = &c.fields[i];
+    if t.structure {
+        format!("{}.{}", t.name, f.name)
+    } else if named_fields(c, t.structure).is_some() {
+        format!("{}.{}", c.name, f.name)
+    } else {
+        format!("{}#{i}", c.name)
+    }
+}
+
 /// Rust field names for a constructor: structure fields always, other constructors' fields
 /// when every binder has a distinct name that Lean did not generate (unnamed constructor
 /// arguments are named `a`).
@@ -772,11 +814,13 @@ fn unique_idents(idents: impl Iterator<Item = String>) -> Vec<String> {
 }
 
 /// Names of the described types reachable from the exports' and application externs'
-/// signatures, following constructor fields.
+/// signatures, following constructor fields. Types the application provides (`is_extern`)
+/// are not generated, so the types of their fields are not followed.
 pub fn reachable_types<'t>(
     types: &'t [TypeDecl],
     exports: &[Export],
     externs: &[&ExternRequirement],
+    is_extern: &dyn Fn(&str) -> bool,
 ) -> BTreeSet<&'t str> {
     fn collect(ft: &FacadeType, out: &mut Vec<String>) {
         match ft {
@@ -827,6 +871,9 @@ pub fn reachable_types<'t>(
     }
     let mut seen = BTreeSet::new();
     while let Some(n) = work.pop() {
+        if is_extern(&n) {
+            continue;
+        }
         if let Some(t) = by_name.get(n.as_str())
             && seen.insert(t.name.as_str())
         {
@@ -1078,8 +1125,10 @@ impl<'a> Facade<'a> {
             )));
         }
         let mut w = Writer::new();
-        for d in doc {
-            w.line(format!("/// {d}"));
+        if !self.shaping.disable_comments(&export.name) {
+            for d in doc {
+                w.line(format!("/// {d}"));
+            }
         }
         let mut sig = Vec::new();
         let mut arg_names = BTreeSet::new();

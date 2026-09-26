@@ -50,6 +50,9 @@ codes! {
     Io = "PTN0105", "input/output error";
     /// A tool patina runs (Lake, `leanc`, `llvm-ar`) failed.
     CommandFailed = "PTN0106", "external command failed";
+    /// The build configuration cannot be applied: an invalid or conflicting output name, or a
+    /// setting that selects nothing.
+    InvalidConfiguration = "PTN0107", "invalid configuration";
 
     // Lean (02xx).
     /// Lean rejected the program: elaboration, kernel checking, or Lean's compiler.

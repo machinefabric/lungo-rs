@@ -2,9 +2,9 @@
 //! native backend and runtime (`oracle`).
 
 pub mod pure {
-    include!(concat!(env!("OUT_DIR"), "/ptn-pure/facade.rs"));
+    patina::include_lean!("pure");
 }
 
 pub mod oracle {
-    include!(concat!(env!("OUT_DIR"), "/ptn-oracle/facade.rs"));
+    patina::include_lean!("oracle");
 }

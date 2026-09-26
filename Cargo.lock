@@ -465,6 +465,8 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "patina-runtime",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,9 +1,9 @@
 //! Release gates of the build pipeline (design §49), exercised on untouched Lake projects.
 //!
 //! Each test copies a fixture from `fixtures/` into its own scratch directory and runs the same
-//! library pipeline `build.rs` runs (`Config::run`) against it.
+//! library pipeline `build.rs` runs (`Builder::run`) against it.
 
-use patina_build::{Config, Environment, Error, ErrorCode};
+use patina_build::{BuildOutcome, Builder, Environment, Error, ErrorCode, configure};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -76,16 +76,29 @@ fn snapshot(dir: &Path, skip: &[&str]) -> BTreeMap<String, Vec<u8>> {
     out
 }
 
-fn imports_config() -> Config {
-    Config::new("lean").root_module("Imports").export_module("Imports")
+/// The `imports` fixture's default configuration: its default target `Imports`, exported.
+fn imports_config() -> Builder {
+    configure()
+}
+
+impl Scratch {
+    /// Builds the scratch project with `cfg`, publishing under `<package>/<out>`.
+    fn build(&self, cfg: &Builder, out: &str) -> patina_build::Result<BuildOutcome> {
+        cfg.run(Path::new("lean"), &self.env(out))
+    }
+
+    /// The published module `name` under `<package>/<out>`.
+    fn module(&self, out: &str, name: &str) -> PathBuf {
+        self.package.join(out).join(name)
+    }
 }
 
 #[test]
 fn changing_an_imported_file_rebuilds() {
     let s = Scratch::new("imports", "rebuild");
-    let env = s.env("out");
     let cfg = imports_config();
-    let first = cfg.run(&env).unwrap();
+    let first = s.build(&cfg, "out").unwrap();
+    assert_eq!(first.name, "imports", "the module is named after the Lake package");
     assert!(!first.reused);
     let base = s.project().join("Imports/Base.lean").canonicalize().unwrap();
     assert!(
@@ -93,19 +106,21 @@ fn changing_an_imported_file_rebuilds() {
         "imported local modules are build inputs (for cargo::rerun-if-changed): {:?}",
         first.inputs
     );
-    let before = snapshot(&env.out_dir, &[]);
+    let module = s.module("out", "imports");
+    let before = snapshot(&module, &[]);
+    assert!(before.contains_key("imports.rs"), "the aggregate is `<name>/<name>.rs`: {:?}", before.keys());
 
     // Unchanged inputs reuse the published output.
-    assert!(cfg.run(&env).unwrap().reused);
+    assert!(s.build(&cfg, "out").unwrap().reused);
 
     // Editing only the imported module regenerates the Rust.
     s.write(
         "Imports/Base.lean",
         "namespace Imports.Base\n\ndef factor : Nat := 7\n\ndef offset : Nat := 1\n\ndef salutation : String := \"Howdy\"\n\nend Imports.Base\n",
     );
-    let second = cfg.run(&env).unwrap();
+    let second = s.build(&cfg, "out").unwrap();
     assert!(!second.reused, "a change to an imported file must rebuild");
-    let after = snapshot(&env.out_dir, &[]);
+    let after = snapshot(&module, &[]);
     let changed: Vec<&String> = after.keys().filter(|k| before.get(*k) != after.get(*k)).collect();
     assert!(
         changed.iter().any(|k| k.starts_with("modules/Imports-Base")),
@@ -118,7 +133,7 @@ fn changing_an_imported_file_rebuilds() {
 #[test]
 fn invalid_lean_fails_with_source_diagnostics() {
     let s = Scratch::new("type-error", "type-error");
-    let err = Config::new("lean").root_module("TypeError").run(&s.env("out")).unwrap_err();
+    let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::LeanElaboration { .. }), "{err:?}");
     assert_eq!(err.code(), ErrorCode::LeanRejected);
@@ -131,7 +146,7 @@ fn invalid_lean_fails_with_source_diagnostics() {
 #[test]
 fn proofs_are_checked_during_the_build() {
     let s = Scratch::new("false-proof", "false-proof");
-    let err = Config::new("lean").root_module("FalseProof").run(&s.env("out")).unwrap_err();
+    let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::LeanElaboration { .. }), "{err:?}");
     assert_eq!(err.code(), ErrorCode::LeanRejected);
@@ -144,7 +159,7 @@ fn toolchain_mismatch_is_detected_before_compilation() {
     let s = Scratch::new("imports", "toolchain-mismatch");
     for pin in ["leanprover/lean4:v4.35.0", "leanprover/lean4:stable", "leanprover/lean4:nightly-2026-01-01"] {
         s.write("lean-toolchain", &format!("{pin}\n"));
-        let err = imports_config().run(&s.env("out")).unwrap_err();
+        let err = s.build(&imports_config(), "out").unwrap_err();
         assert!(matches!(&err, Error::UnsupportedToolchain { found, .. } if found == pin), "{err:?}");
         assert!(err.to_string().contains("v4.34.1"), "the error names the supported toolchains: {err}");
         assert!(err.to_string().starts_with("error[PTN0102]: "), "{err}");
@@ -155,7 +170,7 @@ fn toolchain_mismatch_is_detected_before_compilation() {
 #[test]
 fn unknown_extern_symbols_are_hard_errors() {
     let s = Scratch::new("unknown-extern", "unknown-extern");
-    let err = Config::new("lean").root_module("Unknown").export_module("Unknown").run(&s.env("out")).unwrap_err();
+    let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::Codegen { .. }), "{err:?}");
     assert_eq!(err.code(), ErrorCode::UnresolvedExtern);
@@ -169,7 +184,7 @@ fn unknown_extern_symbols_are_hard_errors() {
 #[test]
 fn unused_rust_extern_mappings_are_rejected() {
     let s = Scratch::new("imports", "unused-mapping");
-    let err = imports_config().rust_extern("never_declared", "crate::f").run(&s.env("out")).unwrap_err();
+    let err = s.build(&imports_config().rust_extern("never_declared", "crate::f"), "out").unwrap_err();
     assert!(err.to_string().contains("never_declared"), "{err}");
     assert_eq!(err.code(), ErrorCode::UnusedExternMapping);
 }
@@ -179,10 +194,10 @@ fn builds_are_deterministic_and_location_independent() {
     // Two copies of the same project at different locations, built independently.
     let a = Scratch::new("imports", "determinism-a");
     let b = Scratch::new("imports", "determinism-b");
-    imports_config().run(&a.env("out")).unwrap();
-    imports_config().run(&b.env("out")).unwrap();
-    let sa = snapshot(&a.package.join("out"), &[]);
-    let sb = snapshot(&b.package.join("out"), &[]);
+    a.build(&imports_config(), "out").unwrap();
+    b.build(&imports_config(), "out").unwrap();
+    let sa = snapshot(&a.module("out", "imports"), &[]);
+    let sb = snapshot(&b.module("out", "imports"), &[]);
     assert_eq!(sa.keys().collect::<Vec<_>>(), sb.keys().collect::<Vec<_>>());
     for (k, v) in &sa {
         if k == "build-info.json" {
@@ -191,9 +206,9 @@ fn builds_are_deterministic_and_location_independent() {
         assert!(v == &sb[k], "{k} differs between identical builds");
     }
     // A forced regeneration in place reproduces the same bytes.
-    std::fs::remove_file(a.package.join("out/build-info.json")).unwrap();
-    imports_config().run(&a.env("out")).unwrap();
-    assert_eq!(snapshot(&a.package.join("out"), &["build-info.json"]), {
+    std::fs::remove_file(a.module("out", "imports").join("build-info.json")).unwrap();
+    a.build(&imports_config(), "out").unwrap();
+    assert_eq!(snapshot(&a.module("out", "imports"), &["build-info.json"]), {
         let mut s = sa.clone();
         s.remove("build-info.json");
         s
@@ -203,7 +218,7 @@ fn builds_are_deterministic_and_location_independent() {
 #[test]
 fn generated_artifacts_contain_no_machine_specific_paths() {
     let s = Scratch::new("imports", "no-abs-paths");
-    imports_config().embed_sources(true).run(&s.env("out")).unwrap();
+    s.build(&imports_config().embed_sources(true), "out").unwrap();
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap();
     let forbidden = [
         s.package.to_string_lossy().into_owned(),
@@ -226,7 +241,7 @@ fn generated_artifacts_contain_no_machine_specific_paths() {
 fn builds_never_rewrite_the_lean_project() {
     let s = Scratch::new("imports", "no-rewrite");
     let before = snapshot(&s.project(), &[".lake"]);
-    imports_config().run(&s.env("out")).unwrap();
+    s.build(&imports_config(), "out").unwrap();
     let after = snapshot(&s.project(), &[".lake"]);
     assert_eq!(before, after, "the build modified files of the Lean project");
 }

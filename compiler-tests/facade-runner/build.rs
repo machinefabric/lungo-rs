@@ -1,8 +1,8 @@
-use patina_build::{Config, Mode};
+use patina_build::Mode;
 
 fn main() -> patina_build::Result<()> {
-    for (dir, mode) in [("ptn-pure", Mode::PureRust), ("ptn-oracle", Mode::LeanOracle)] {
-        Config::new("../facade").root_module("Facade").export_module("Facade").mode(mode).output_dir(dir).compile()?;
+    for (name, mode) in [("pure", Mode::PureRust), ("oracle", Mode::LeanOracle)] {
+        patina_build::configure().mode(mode).name(name).compile_lean("../facade")?;
     }
     Ok(())
 }

@@ -5,7 +5,10 @@
 //! This crate provides the Rust types the facade exposes for Lean's builtin types ([`Nat`],
 //! [`Int`], [`List`], [`ByteArray`], [`FloatArray`]), opaque handles for Lean values without a
 //! plain Rust representation ([`LeanValue`], [`LeanClosure`]), `IO` errors ([`IoError`]), and
-//! the [`LeanType`] conversion trait.
+//! the [`LeanType`] conversion trait. [`include_lean!`] includes a generated module.
+//!
+//! With the `serde` feature, the facade types implement `serde::Serialize` and
+//! `serde::Deserialize`, so that generated types can derive them.
 
 mod backend;
 mod collections;
@@ -14,6 +17,8 @@ mod int;
 mod io;
 mod meta;
 mod nat;
+#[cfg(feature = "serde")]
+mod serde_impls;
 mod value;
 
 pub use backend::{Backend, RustBackend};
@@ -24,6 +29,26 @@ pub use io::{IoError, IoErrorType};
 pub use meta::{DeclarationInfo, ExportTrust, SourcePosition, SourceRange};
 pub use nat::Nat;
 pub use value::{LeanClosure, LeanValue, RustClosure};
+
+/// Includes the Rust module patina generated for a Lean project, by the module's name: the Lake
+/// package's name, or the name given to `patina_build::Builder::name`.
+///
+/// ```ignore
+/// // build.rs: patina_build::compile_lean("lean")   (Lake package `formal`)
+/// pub mod formal {
+///     patina::include_lean!("formal");
+/// }
+/// ```
+///
+/// This finds modules in the default output directory, `$OUT_DIR/patina`. A module generated
+/// with `patina_build::Builder::out_dir` is included with `include!` from that directory:
+/// `include!("<out_dir>/<name>/<name>.rs")`.
+#[macro_export]
+macro_rules! include_lean {
+    ($name:tt) => {
+        include!(concat!(env!("OUT_DIR"), "/patina/", $name, "/", $name, ".rs"));
+    };
+}
 
 /// The runtime used by generated code. Not a stable public interface.
 #[doc(hidden)]

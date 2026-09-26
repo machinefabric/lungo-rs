@@ -13,8 +13,10 @@ mod facade;
 mod names;
 mod oracle;
 mod rust;
+mod shaping;
 
 pub use codes::ErrorCode;
+pub use shaping::{Attribute, Shaping, selects};
 pub use externs::{Resolution, resolution_key};
 pub use names::{mangle, module_file_stem};
 pub use oracle::C_SHIM as ORACLE_C_SHIM;
@@ -44,6 +46,8 @@ pub enum CodegenError {
     Extern { code: ErrorCode, message: String },
     /// A violated internal invariant of the generator.
     Internal(String),
+    /// The application's configuration of the generated code cannot be applied.
+    Configuration(String),
 }
 
 impl CodegenError {
@@ -66,6 +70,7 @@ impl CodegenError {
             CodegenError::Adapter { .. } => ErrorCode::UnsupportedCompilerOutput,
             CodegenError::Extern { code, .. } => *code,
             CodegenError::Internal(_) => ErrorCode::InternalGenerator,
+            CodegenError::Configuration(_) => ErrorCode::InvalidConfiguration,
         }
     }
 }
@@ -89,6 +94,7 @@ impl fmt::Display for CodegenError {
             ),
             CodegenError::Extern { message, .. } => f.write_str(message),
             CodegenError::Internal(message) => write!(f, "internal patina code generator error: {message}"),
+            CodegenError::Configuration(message) => f.write_str(message),
         }
     }
 }
@@ -183,6 +189,8 @@ pub struct GenInput<'a> {
     pub local_prefix: &'a str,
     /// Source text of local modules to embed, keyed by module name, when requested.
     pub embedded_sources: Option<&'a BTreeMap<String, String>>,
+    /// The application's shaping of the generated facade.
+    pub shaping: &'a Shaping,
 }
 
 /// The generated files, keyed by path relative to the output directory.
@@ -255,7 +263,9 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
         .filter(|(_, r)| matches!(r, Resolution::User { .. }))
         .filter_map(|(d, _)| requirements.get(d.as_str()).copied())
         .collect();
-    let reachable = facade::reachable_types(&interface.types, &interface.exports, &user_externs);
+    let selector = shaping::Selector::new(input.shaping);
+    let is_extern = |n: &str| input.shaping.extern_types.contains_key(n);
+    let reachable = facade::reachable_types(&interface.types, &interface.exports, &user_externs, &is_extern);
     let types: Vec<patina_protocol::TypeDecl> =
         interface.types.iter().filter(|t| reachable.contains(t.name.as_str())).cloned().collect();
     let mut naming = Naming::new(input.facade_namespace);
@@ -263,7 +273,7 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
         Layer::PureRust => None,
         Layer::Oracle => Some("__oracle".to_owned()),
     };
-    let mut facade = match Facade::new(&types, &mut naming, &interface.exports, backend_module) {
+    let mut facade = match Facade::new(&types, &mut naming, &interface.exports, backend_module, &selector) {
         Ok(f) => f,
         Err(e) => return Err(vec![e]),
     };
@@ -318,6 +328,10 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
                 None => errors.push(CodegenError::internal(format!("no extern requirement for {decl_name}"))),
             }
         }
+    }
+    // Settings that selected nothing; only meaningful once every item has been generated.
+    if errors.is_empty() {
+        errors.extend(selector.unused());
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -386,7 +400,18 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
 
     // Machine-readable metadata.
     // Items first (in placement order), then the constructors and fields of emitted types.
-    let names: Vec<&NameRecord> = naming.records.iter().chain(&facade.members).collect();
+    let external: Vec<NameRecord> = input
+        .shaping
+        .extern_types
+        .iter()
+        .map(|(lean, rust)| NameRecord {
+            lean_name: lean.clone(),
+            kind: "extern type".into(),
+            rust_path: rust.clone(),
+            renamed: true,
+        })
+        .collect();
+    let names: Vec<&NameRecord> = naming.records.iter().chain(&facade.members).chain(&external).collect();
     files.insert("names.json".into(), to_json(&names));
     files.insert("externs.json".into(), to_json(&extern_report(&externs, input)));
     files.insert("sources.json".into(), to_json(&sources_report(input)));

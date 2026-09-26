@@ -1,11 +1,12 @@
 //! `cargo patina`: inspect and build Lean projects integrated with patina.
 //!
-//! Every command runs the same library pipeline as `build.rs` (`patina_build::Config`), so
+//! Every command runs the same library pipeline as `build.rs` (`patina_build::Builder`), so
 //! the CLI never produces output that differs from Cargo generation. The configuration is read
-//! from `patina.toml` in the package directory, or given on the command line.
+//! from `patina.toml` in the package directory (see `patina_build::ProjectFile`), or given on
+//! the command line.
 
 use clap::{Args, Parser, Subcommand};
-use patina_build::{Analysis, Config, Environment, Mode};
+use patina_build::{Analysis, Builder, Environment, Mode, ProjectFile};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -36,7 +37,7 @@ struct Options {
     /// The Lake project directory, relative to the package (instead of a configuration file).
     #[arg(long, global = true)]
     project: Option<PathBuf>,
-    /// A root module (repeatable).
+    /// A root module (repeatable; default: the Lake package's default targets).
     #[arg(long = "root", global = true)]
     roots: Vec<String>,
     /// A declaration to export (repeatable).
@@ -48,7 +49,8 @@ struct Options {
     /// Use Lean's native backend (`LeanOracle`) instead of PureRust.
     #[arg(long, global = true)]
     oracle: bool,
-    /// Where generated files are written (default: `<package>/target/patina/out`).
+    /// Where generated modules are written, each as `<out-dir>/<name>` (default:
+    /// `<package>/target/patina/out`).
     #[arg(long, global = true)]
     out_dir: Option<PathBuf>,
 }
@@ -88,18 +90,23 @@ fn main() -> ExitCode {
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn load_config(opts: &Options, package: &Path) -> Result<Config> {
+/// The Lake project and build settings: `patina.toml` (or `--config`), or `--project`, with the
+/// command-line options added.
+fn load_config(opts: &Options, package: &Path) -> Result<(PathBuf, Builder)> {
     let file = opts.config.clone().or_else(|| {
         let default = package.join("patina.toml");
         default.is_file().then_some(default)
     });
-    let mut cfg = match (&file, &opts.project) {
-        (Some(path), None) => Config::load(path)?,
-        (None, Some(project)) => Config::new(project),
+    let (project, mut cfg) = match (&file, &opts.project) {
+        (Some(path), None) => {
+            let file = ProjectFile::load(path)?;
+            (file.project, file.build)
+        }
+        (None, Some(project)) => (project.clone(), patina_build::configure()),
         (Some(_), Some(_)) => return Err("give either a configuration file or --project, not both".into()),
         (None, None) => {
             return Err(format!(
-                "no patina configuration: create {} or pass --project and --root",
+                "no patina configuration: create {} or pass --project",
                 package.join("patina.toml").display()
             )
             .into());
@@ -117,7 +124,7 @@ fn load_config(opts: &Options, package: &Path) -> Result<Config> {
     if opts.oracle {
         cfg = cfg.mode(Mode::LeanOracle);
     }
-    Ok(cfg)
+    Ok((project, cfg))
 }
 
 fn environment(opts: &Options, package: &Path) -> Environment {
@@ -135,40 +142,43 @@ fn run(cli: Cli) -> Result<()> {
     if let Command::Setup = cli.command {
         return setup(&cli.options, &package, &env);
     }
-    let cfg = load_config(&cli.options, &package)?;
+    let (project, cfg) = load_config(&cli.options, &package)?;
+    let project = project.as_path();
     match cli.command {
         Command::Check => {
-            let analysis = cfg.analyze(&env)?;
-            let generation = cfg.generate(&env, &analysis)?;
+            let analysis = cfg.analyze(project, &env)?;
+            let generation = cfg.generate(project, &env, &analysis)?;
             report_summary(&analysis);
             println!("generation succeeded: {} files", generation.files.len() + generation.binary_files.len());
         }
         Command::Build => {
-            let outcome = cfg.run(&env)?;
-            println!("{} {}", if outcome.reused { "up to date:" } else { "generated" }, env.out_dir.display());
+            let outcome = cfg.run(project, &env)?;
+            let dir = env.out_dir.join(&outcome.name);
+            println!("{} {}", if outcome.reused { "up to date:" } else { "generated" }, dir.display());
         }
         Command::Inspect { declaration } => {
-            let ctx = cfg.context(&env)?;
-            inspect(&cfg.analyze(&env)?, &declaration, &ctx.local_prefix)?
+            let ctx = cfg.context(project, &env)?;
+            inspect(&cfg.analyze(project, &env)?, &declaration, &ctx.local_prefix)?
         }
-        Command::Ir { declaration } => ir(&cfg.analyze(&env)?, &declaration)?,
+        Command::Ir { declaration } => ir(&cfg.analyze(project, &env)?, &declaration)?,
         Command::Rust { declaration } => {
-            let analysis = cfg.analyze(&env)?;
-            let generation = cfg.generate(&env, &analysis)?;
-            rust(&analysis, &generation, &declaration, &cfg.aggregate_name())?;
+            let ctx = cfg.context(project, &env)?;
+            let analysis = cfg.analyze(project, &env)?;
+            let generation = cfg.generate(project, &env, &analysis)?;
+            rust(&analysis, &generation, &declaration, &ctx.name)?;
         }
         Command::Externs => {
-            let analysis = cfg.analyze(&env)?;
-            let generation = cfg.generate(&env, &analysis)?;
+            let analysis = cfg.analyze(project, &env)?;
+            let generation = cfg.generate(project, &env, &analysis)?;
             print!("{}", generation.files.get("externs.json").ok_or("no extern report generated")?);
         }
         Command::Mappings => {
-            let analysis = cfg.analyze(&env)?;
-            let generation = cfg.generate(&env, &analysis)?;
+            let analysis = cfg.analyze(project, &env)?;
+            let generation = cfg.generate(project, &env, &analysis)?;
             print!("{}", generation.files.get("names.json").ok_or("no name mappings generated")?);
         }
         Command::Prepare => {
-            let ctx = cfg.context(&env)?;
+            let ctx = cfg.context(project, &env)?;
             let worker = cfg.prepare_worker(&ctx, &env)?;
             println!("Lean {} ({})", ctx.toolchain.version, ctx.toolchain.githash);
             println!("worker {} at {}", worker.identity, worker.binary.display());
@@ -179,8 +189,9 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 fn setup(opts: &Options, package: &Path, env: &Environment) -> Result<()> {
-    let cfg = load_config(opts, package)?.toolchain_policy(patina_build::ToolchainPolicy::Install);
-    let project = if cfg.project.is_absolute() { cfg.project.clone() } else { package.join(&cfg.project) };
+    let (project, cfg) = load_config(opts, package)?;
+    let cfg = cfg.toolchain_policy(patina_build::ToolchainPolicy::Install);
+    let project = if project.is_absolute() { project } else { package.join(project) };
     let pin = patina_build::read_pin(&project)?;
     let toolchain = patina_build::Toolchain::resolve_pin(
         &pin,
@@ -195,7 +206,7 @@ fn setup(opts: &Options, package: &Path, env: &Environment) -> Result<()> {
     if !status.success() {
         return Err(format!("materializing Lake dependencies failed ({status})").into());
     }
-    let ctx = cfg.context(env)?;
+    let ctx = cfg.context(&project, env)?;
     let worker = cfg.prepare_worker(&ctx, env)?;
     println!("toolchain {} ready; worker {}", ctx.toolchain.pin, worker.identity);
     Ok(())

@@ -12,7 +12,7 @@ namespace Patina.Protocol
 
 open Cbor
 
-def version : Nat := 1
+def version : Nat := 2
 
 def requestKind : UInt8 := 1
 def responseKind : UInt8 := 2
@@ -20,6 +20,15 @@ def responseKind : UInt8 := 2
 structure ExportPolicy where
   declarations : Array String
   modules : Array String
+  /-- Also export the root modules (and their submodules). -/
+  roots : Bool
+
+/-- The modules whose code the program is made of. -/
+inductive Roots where
+  /-- The root modules of the root package's default targets, as Lake resolves them. -/
+  | defaultTargets
+  /-- These modules of the root package. -/
+  | modules (names : Array String)
 
 inductive Endian where
   | little
@@ -38,7 +47,7 @@ structure CompilerOption where
 structure Request where
   bridgeVersion : String
   projectRoot : System.FilePath
-  rootModules : Array String
+  roots : Roots
   exports : ExportPolicy
   hostTriple : String
   target : Target
@@ -51,14 +60,21 @@ private def strings (v : Value) : Except String (Array String) := do
   (← v.asArray).mapM (·.asString)
 
 def decodeRequest (v : Value) : Except String Request := do
-  v.checkFields ["protocol_version", "bridge_version", "project_root", "root_modules",
+  v.checkFields ["protocol_version", "bridge_version", "project_root", "roots",
     "export_policy", "host_triple", "target", "compiler_options", "hermetic", "diagnostics",
     "runtime_exports"]
   let protocolVersion ← (← v.field "protocol_version").asNat
   if protocolVersion != version then
     throw s!"request uses protocol version {protocolVersion}; this worker implements {version}"
   let policy ← v.field "export_policy"
-  policy.checkFields ["declarations", "modules"]
+  policy.checkFields ["declarations", "modules", "roots"]
+  let roots ← match ← v.field "roots" with
+    | .text "default_targets" => pure Roots.defaultTargets
+    | .map #[("modules", names)] => do
+      let names ← strings names
+      if names.isEmpty then throw "an explicit list of root modules must not be empty"
+      pure (Roots.modules names)
+    | _ => throw "roots must be \"default_targets\" or {\"modules\": [...]}"
   let target ← v.field "target"
   target.checkFields ["triple", "pointer_width", "endian"]
   let endian ← match ← (← target.field "endian").asString with
@@ -78,10 +94,11 @@ def decodeRequest (v : Value) : Except String Request := do
   return {
     bridgeVersion := ← (← v.field "bridge_version").asString
     projectRoot
-    rootModules := ← strings (← v.field "root_modules")
+    roots
     exports := {
       declarations := ← strings (← policy.field "declarations")
       modules := ← strings (← policy.field "modules")
+      roots := ← (← policy.field "roots").asBool
     }
     hostTriple := ← (← v.field "host_triple").asString
     target := {

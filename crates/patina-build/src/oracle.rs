@@ -7,7 +7,7 @@
 //! the object backend. This mode exists to serve as a reference oracle.
 
 use crate::error::{Error, Result};
-use crate::{Analysis, Config, Context, Environment, Generation};
+use crate::{Analysis, Builder, Context, Environment, Generation};
 use patina_protocol::PackageOrigin;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -27,12 +27,12 @@ fn tool(ctx: &Context, name: &str) -> PathBuf {
 }
 
 pub(crate) fn generate(
-    cfg: &Config,
+    cfg: &Builder,
     ctx: &Context,
     env: &Environment,
     analysis: &Analysis,
     namespace: &str,
-    aggregate: &str,
+    shaping: &patina_codegen::Shaping,
     embedded: Option<&BTreeMap<String, String>>,
 ) -> Result<Generation> {
     if env.target.triple != env.host {
@@ -73,7 +73,7 @@ pub(crate) fn generate(
             modules.len()
         )));
     }
-    let objects_dir = env.work_dir.join("oracle-objects");
+    let objects_dir = ctx.work_dir.join("oracle-objects");
     if objects_dir.exists() {
         std::fs::remove_dir_all(&objects_dir).map_err(|e| Error::io("cannot clear oracle objects", e))?;
     }
@@ -90,19 +90,22 @@ pub(crate) fn generate(
         )?;
         objects.push(obj);
     }
-    let archive = objects_dir.join("libpatina_oracle.a");
+    // One archive per generated module, so that a crate may link several.
+    let library = format!("patina_oracle_{}", ctx.name.replace('-', "_"));
+    let archive = objects_dir.join(format!("lib{library}.a"));
     run(Command::new(tool(ctx, "llvm-ar")).arg("rcs").arg(&archive).args(&objects), "llvm-ar")?;
     let archive_bytes = std::fs::read(&archive).map_err(|e| Error::io("cannot read the oracle archive", e))?;
-    let link_directives = link_directives(&leanc, &ctx.toolchain.root, &env.out_dir.join("native"))?;
+    let link_directives = link_directives(&leanc, &ctx.toolchain.root, &ctx.out_dir.join("native"), &library)?;
     let input = patina_codegen::GenInput {
         layer: patina_codegen::Layer::Oracle,
         success: &analysis.success,
         toolchain: &analysis.toolchain,
         facade_namespace: namespace,
-        aggregate,
+        aggregate: &ctx.name,
         rust_externs: &cfg.rust_externs,
         local_prefix: &ctx.local_prefix,
         embedded_sources: embedded,
+        shaping,
     };
     let generated = patina_codegen::generate(&input).map_err(|errors| Error::Codegen {
         toolchain: format!("v{}", analysis.toolchain.lean_version),
@@ -110,7 +113,7 @@ pub(crate) fn generate(
         errors,
     })?;
     let mut binary_files = BTreeMap::new();
-    binary_files.insert("native/libpatina_oracle.a".to_owned(), archive_bytes);
+    binary_files.insert(format!("native/lib{library}.a"), archive_bytes);
     Ok(Generation { files: generated.files, binary_files, link_directives })
 }
 
@@ -119,11 +122,11 @@ pub(crate) fn generate(
 /// The toolchain's own link flags (`leanc --print-ldflags`) are passed verbatim and in order,
 /// preserving library order and grouping. Cargo applies such linker arguments to the targets of
 /// the package whose build script generated the code, which is where oracle code is used.
-fn link_directives(leanc: &Path, root: &Path, native_dir: &Path) -> Result<Vec<String>> {
+fn link_directives(leanc: &Path, root: &Path, native_dir: &Path, library: &str) -> Result<Vec<String>> {
     let flags = run(Command::new(leanc).arg("--print-ldflags"), "leanc --print-ldflags")?;
     let mut out = vec![
         format!("cargo::rustc-link-search=native={}", native_dir.display()),
-        "cargo::rustc-link-lib=static:-bundle=patina_oracle".to_owned(),
+        format!("cargo::rustc-link-lib=static:-bundle={library}"),
         format!("cargo::rustc-link-arg=-L{}", root.join("lib").display()),
     ];
     let mut tokens = flags.split_whitespace().peekable();

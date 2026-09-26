@@ -1,6 +1,6 @@
 //! A Rust application hosting Lean code that calls back into it.
 
-include!(concat!(env!("OUT_DIR"), "/patina/host.rs"));
+patina::include_lean!("host");
 
 /// The Rust implementations of the Lean `@[extern]` declarations in `Host.Callbacks`.
 pub mod host {

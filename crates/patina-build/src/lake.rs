@@ -4,6 +4,7 @@
 use crate::error::{Error, Result};
 use crate::fingerprint::hash_bytes;
 use crate::toolchain::Toolchain;
+use patina_protocol::Roots;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,6 +31,8 @@ pub fn snapshot(project: &Path) -> Result<Vec<(PathBuf, String)>> {
 
 #[derive(Deserialize)]
 struct Manifest {
+    /// The root package's name.
+    name: String,
     #[serde(rename = "packagesDir", default)]
     packages_dir: Option<String>,
     #[serde(default)]
@@ -45,9 +48,15 @@ struct ManifestPackage {
     dir: Option<String>,
 }
 
+/// What the build needs to know about a Lake project before Lake runs.
+pub struct LakeProject {
+    /// The root package's name, as the committed manifest records it.
+    pub name: String,
+}
+
 /// Checks that the project is a complete Lake project whose locked dependencies are all
 /// materialized, so that building it requires no network access and no manifest changes.
-pub fn validate_project(project: &Path) -> Result<()> {
+pub fn validate_project(project: &Path) -> Result<LakeProject> {
     if !project.join("lakefile.toml").is_file() && !project.join("lakefile.lean").is_file() {
         return Err(Error::Project(format!("{} has neither lakefile.toml nor lakefile.lean", project.display())));
     }
@@ -77,19 +86,22 @@ pub fn validate_project(project: &Path) -> Result<()> {
             )));
         }
     }
-    Ok(())
+    Ok(LakeProject { name: manifest.name })
 }
 
-/// Builds the root modules (and everything they import) with Lake.
-pub fn build(toolchain: &Toolchain, project: &Path, roots: &[String], offline: bool) -> Result<()> {
+/// Builds the root modules (and everything they import) with Lake: the given modules, or the
+/// package's default targets.
+pub fn build(toolchain: &Toolchain, project: &Path, roots: &Roots, offline: bool) -> Result<()> {
     let before = snapshot(project)?;
     let mut cmd = Command::new(&toolchain.lake);
     cmd.arg("build");
     if offline {
         cmd.arg("--no-cache");
     }
-    for r in roots {
-        cmd.arg(format!("+{r}"));
+    if let Roots::Modules(modules) = roots {
+        for r in modules {
+            cmd.arg(format!("+{r}"));
+        }
     }
     cmd.current_dir(project);
     for var in ["LEAN_PATH", "LEAN_SRC_PATH", "LEAN_SYSROOT", "LAKE", "LAKE_HOME", "ELAN_TOOLCHAIN"] {

@@ -8,7 +8,7 @@ use patina_bir::{ExternEntry, IrType, Param, Program};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 const MAGIC: &[u8; 4] = b"PTNF";
 const HEADER_SIZE: usize = 17;
 /// Nesting permitted in a response: bounded by the control-flow nesting of compiled code.
@@ -98,7 +98,7 @@ pub struct Request {
     pub bridge_version: String,
     /// Absolute path of the Lake project root.
     pub project_root: String,
-    pub root_modules: Vec<String>,
+    pub roots: Roots,
     pub export_policy: ExportPolicy,
     pub host_triple: String,
     pub target: Target,
@@ -111,12 +111,25 @@ pub struct Request {
     pub runtime_exports: Vec<String>,
 }
 
+/// The modules whose code the program is made of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Roots {
+    /// The root modules of the root package's default targets (`defaultTargets`), as Lake
+    /// resolves the package's configuration: a library's `roots`, an executable's `root`.
+    DefaultTargets,
+    /// These modules of the root package.
+    Modules(Vec<String>),
+}
+
 /// Which declarations receive public Rust facades. This never restricts what is compiled.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExportPolicy {
     pub declarations: Vec<String>,
     pub modules: Vec<String>,
+    /// Also export the root modules (and their submodules).
+    pub roots: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -181,6 +194,9 @@ pub enum Outcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Success {
+    /// The root modules the program was built from, as requested or resolved from Lake's
+    /// default targets, in order.
+    pub root_modules: Vec<String>,
     /// Native symbols of Lean's own C backend for the program.
     pub oracle: OracleSymbols,
     pub module_graph: Vec<ModuleNode>,

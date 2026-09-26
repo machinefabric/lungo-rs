@@ -1,7 +1,7 @@
 //! A Lean specification of a session state machine, compiled to Rust.
 
 pub mod formal {
-    include!(concat!(env!("OUT_DIR"), "/patina/formal.rs"));
+    patina::include_lean!("formal");
 }
 
 /// Advances `session` by `op`, as specified by `Formal.apply`.
