@@ -1,4 +1,4 @@
-use patina::{Int, List, Nat};
+use lungo::{Int, List, Nat};
 use serde_json::json;
 use shaping::drawing;
 use shaping::geometry::{self, Point, Secret, Shape};
@@ -40,7 +40,7 @@ fn skipped_debug_leaves_the_implementation_to_the_application() {
 
 #[test]
 fn disabled_comments_are_omitted_only_where_selected() {
-    let generated = include_str!(concat!(env!("OUT_DIR"), "/patina/geometry/geometry.rs"));
+    let generated = include_str!(concat!(env!("OUT_DIR"), "/lungo/geometry/geometry.rs"));
     assert!(generated.contains("/// Lean: `Geometry.translate"));
     assert!(!generated.contains("Lean: `Geometry.reveal"));
 }

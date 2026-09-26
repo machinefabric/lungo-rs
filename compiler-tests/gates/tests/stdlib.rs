@@ -3,7 +3,7 @@
 //! `Init` and `Std`; its complete program is analyzed by the worker, verified, and translated to
 //! Rust.
 
-use patina_build::{Environment, configure};
+use lungo_build::{Environment, configure};
 use std::path::Path;
 
 #[test]
@@ -29,7 +29,7 @@ fn the_executable_standard_library_translates() {
     let (init, std) = (count("Init"), count("Std"));
     assert!(init > 8_000 && std > 30_000, "Init: {init} declarations, Std: {std} declarations");
 
-    patina_build::bir::validate(program).unwrap_or_else(|errors| {
+    lungo_build::bir::validate(program).unwrap_or_else(|errors| {
         panic!("{} verifier errors, first: {}", errors.len(), errors[0]);
     });
     let generated = cfg.generate(&project, &env, &analysis).unwrap();

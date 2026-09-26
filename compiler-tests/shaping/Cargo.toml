@@ -7,11 +7,11 @@ publish = false
 description = "Release-gate project: attributes, serde, skip_debug, disable_comments, and types shared between Lean projects"
 
 [dependencies]
-patina = { workspace = true, features = ["serde"] }
+lungo = { workspace = true, features = ["serde"] }
 serde.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 
 [build-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true

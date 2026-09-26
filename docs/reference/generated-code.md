@@ -1,7 +1,7 @@
 # Generated code
 
 A build publishes the module `<name>` into `<out_dir>/<name>`, by default
-`$OUT_DIR/patina/<name>`, where `<name>` is the Lake package's name unless configured (see
+`$OUT_DIR/lungo/<name>`, where `<name>` is the Lake package's name unless configured (see
 [configuration](configuration.md#output)). The directory is replaced atomically: it holds
 either the previous complete output or the new one.
 
@@ -16,7 +16,7 @@ either the previous complete output or the new one.
 | `sources.json` | Source locations of compiled declarations. |
 | `manifest.json` | Versions, modules and exports. |
 | `build-info.json` | Build key and inputs, for incremental rebuilds. Not compiled into the crate. |
-| `native/libpatina_oracle_<name>.a` | `LeanOracle` mode only: Lean's native code for the project (`-` in `<name>` becomes `_`). |
+| `native/liblungo_oracle_<name>.a` | `LeanOracle` mode only: Lean's native code for the project (`-` in `<name>` becomes `_`). |
 
 Paths recorded in these files are relative to the Cargo package; files outside it are written
 `<lean>/…` (toolchain sources) or `<package>/…` (Lake dependencies). No file except
@@ -24,13 +24,13 @@ Paths recorded in these files are relative to the Cargo package; files outside i
 
 ## The aggregate module
 
-`patina::include_lean!("<name>")` includes the aggregate from the default output directory,
-where it expands to `include!(concat!(env!("OUT_DIR"), "/patina/<name>/<name>.rs"))`. It is
+`lungo::include_lean!("<name>")` includes the aggregate from the default output directory,
+where it expands to `include!(concat!(env!("OUT_DIR"), "/lungo/<name>/<name>.rs"))`. It is
 usually the only item of a Rust module:
 
 ```rust
 pub mod formal {
-    patina::include_lean!("formal");
+    lungo::include_lean!("formal");
 }
 ```
 
@@ -53,8 +53,8 @@ attributes.
 | --- | --- |
 | `LEAN_VERSION`, `LEAN_GITHASH` | `&str`: the toolchain the code was compiled with. |
 | `BIR_VERSION` | `u32` |
-| `GENERATOR_VERSION` | `&str`: the patina version. |
-| `declaration(lean_name)` | `Option<&'static patina::DeclarationInfo>` for an exported declaration. |
+| `GENERATOR_VERSION` | `&str`: the lungo version. |
+| `declaration(lean_name)` | `Option<&'static lungo::DeclarationInfo>` for an exported declaration. |
 | `declarations()` | `&'static [DeclarationInfo]`, sorted by Lean name. |
 | `module_source(module)`, `source(lean_name)` | `Option<&'static str>`: embedded Lean source. Present with `embed_sources`. |
 
@@ -102,7 +102,7 @@ An array, one record per extern declaration in the program:
 | --- | --- |
 | `declaration` | The Lean extern declaration. |
 | `key` | The symbol (or the declaration's name for `adhoc` externs). |
-| `resolution` | `lean_export` (a Lean `@[export]` definition), `runtime` (a patina primitive), or `application` (a `rust_extern` function). |
+| `resolution` | `lean_export` (a Lean `@[export]` definition), `runtime` (a lungo primitive), or `application` (a `rust_extern` function). |
 | `implementation` | The Lean definition, runtime path, or Rust path. |
 | `lean_type` | The Lean type, when the declaration has a source-level constant. |
 | `source` | Source location, when known. |
@@ -117,7 +117,7 @@ An array of `{ lean_name, file, start, end }`, with `start`/`end` as `[line, col
 | Field | Meaning |
 | --- | --- |
 | `lean_version`, `lean_githash` | The toolchain. |
-| `bir_version`, `generator_version`, `runtime_abi` | patina versions. |
+| `bir_version`, `generator_version`, `runtime_abi` | lungo versions. |
 | `modules` | Modules of the program, in initialization order. |
 | `declarations` | Number of compiled declarations. |
 | `exports` | Per export: `lean_name`, `module`, `rust_path`, `lean_type`, `source`, `trust` (as in `ExportTrust`). |
@@ -126,8 +126,8 @@ An array of `{ lean_name, file, start, end }`, with `start`/`end` as `[line, col
 
 | Field | Meaning |
 | --- | --- |
-| `build_key` | Digest of everything the output depends on besides input files: toolchain identity, configuration, target, patina and worker versions, generator binary. |
-| `lean_version`, `lean_githash`, `bir_version`, `adapter_version`, `patina_version`, `runtime_abi`, `worker_identity` | Versions. |
+| `build_key` | Digest of everything the output depends on besides input files: toolchain identity, configuration, target, lungo and worker versions, generator binary. |
+| `lean_version`, `lean_githash`, `bir_version`, `adapter_version`, `lungo_version`, `runtime_abi`, `worker_identity` | Versions. |
 | `input_digests` | Input files (relative to the Lean project) and their content digests. |
 | `project` | The Lean project directory, relative to the package. |
 | `link_directives` | Cargo link directives (empty in `PureRust` mode). |
@@ -135,5 +135,5 @@ An array of `{ lean_name, file, start, end }`, with `start`/`end` as `[line, col
 ## Versioning
 
 Generated code asserts the runtime ABI it was generated for at compile time
-(`patina::__runtime::assert_abi::<N>()`), so output generated by a different patina
+(`lungo::__runtime::assert_abi::<N>()`), so output generated by a different lungo
 version fails to compile rather than running against an incompatible runtime.

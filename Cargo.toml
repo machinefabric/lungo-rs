@@ -2,13 +2,13 @@
 
 [workspace]
 members = [
-    "crates/cargo-patina",
-    "crates/patina",
-    "crates/patina-bir",
-    "crates/patina-build",
-    "crates/patina-codegen",
-    "crates/patina-protocol",
-    "crates/patina-runtime",
+    "crates/cargo-lungo",
+    "crates/lungo",
+    "crates/lungo-bir",
+    "crates/lungo-build",
+    "crates/lungo-codegen",
+    "crates/lungo-protocol",
+    "crates/lungo-runtime",
     "examples/session",
     "compiler-tests/runner",
     "compiler-tests/facade-runner",
@@ -19,24 +19,24 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.23.943"
+version = "0.24.955"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
 authors = ["Bahram Joharshamshiri <jowharshamshiri@gmail.com>"]
-repository = "https://github.com/jowharshamshiri/patina"
-homepage = "https://github.com/jowharshamshiri/patina"
+repository = "https://github.com/jowharshamshiri/lungo"
+homepage = "https://github.com/jowharshamshiri/lungo"
 
 [workspace.dependencies]
-# The patina crates are released together and depend on each other's unstable internals (the
+# The lungo crates are released together and depend on each other's unstable internals (the
 # generated code, the Bridge IR, the worker protocol), so they require each other's exact
 # version.
-patina = { path = "crates/patina", version = "=0.23.943" }
-patina-bir = { path = "crates/patina-bir", version = "=0.23.943" }
-patina-build = { path = "crates/patina-build", version = "=0.23.943" }
-patina-codegen = { path = "crates/patina-codegen", version = "=0.23.943" }
-patina-protocol = { path = "crates/patina-protocol", version = "=0.23.943" }
-patina-runtime = { path = "crates/patina-runtime", version = "=0.23.943" }
+lungo = { path = "crates/lungo", version = "=0.24.955" }
+lungo-bir = { path = "crates/lungo-bir", version = "=0.24.955" }
+lungo-build = { path = "crates/lungo-build", version = "=0.24.955" }
+lungo-codegen = { path = "crates/lungo-codegen", version = "=0.24.955" }
+lungo-protocol = { path = "crates/lungo-protocol", version = "=0.24.955" }
+lungo-runtime = { path = "crates/lungo-runtime", version = "=0.24.955" }
 
 ciborium = "0.2.2"
 libc = "0.2"

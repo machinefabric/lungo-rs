@@ -1,4 +1,4 @@
-use patina::{List, Nat};
+use lungo::{List, Nat};
 use session::formal::{self, Op, Sess};
 
 fn sess(open: bool, count: u64) -> Sess {

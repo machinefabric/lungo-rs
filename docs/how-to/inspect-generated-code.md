@@ -1,17 +1,17 @@
-# How to see what patina generated for a declaration
+# How to see what lungo generated for a declaration
 
 This guide shows how to find out what a Lean declaration became: its Rust name and signature,
 the Lean compiler output it came from, and what it depends on.
 
 ## Set up the command line
 
-Install `cargo patina` from the repository:
+Install `cargo lungo` from the repository:
 
 ```sh
-cargo install --path crates/cargo-patina
+cargo install --path crates/cargo-lungo
 ```
 
-It reads the build configuration from `patina.toml` in the package directory. Write one
+It reads the build configuration from `lungo.toml` in the package directory. Write one
 that matches your `build.rs`: the Lake project, and in `[build]` the settings `build.rs`
 changes (see [configuration](../reference/configuration.md)). For
 `configure().export_module("Formal").compile_lean("lean")`:
@@ -30,7 +30,7 @@ Without the file, pass the Lake project and settings as options:
 ## Find the Rust name of a Lean name
 
 ```sh
-cargo patina mappings
+cargo lungo mappings
 ```
 
 prints every mapping (items, constructors and fields), for example:
@@ -49,7 +49,7 @@ The same file is generated as `names.json` in the build output.
 ## Inspect one declaration
 
 ```sh
-cargo patina inspect Formal.apply
+cargo lungo inspect Formal.apply
 ```
 
 shows its Lean type, module, source file, trust metadata, compiled signature and the
@@ -58,17 +58,17 @@ compiler auxiliaries Lean derived from it.
 To see the code:
 
 ```sh
-cargo patina ir Formal.apply     # Lean's compiled form (Bridge IR)
-cargo patina rust Formal.apply   # the generated Rust
+cargo lungo ir Formal.apply     # Lean's compiled form (Bridge IR)
+cargo lungo rust Formal.apply   # the generated Rust
 ```
 
 ## Find out how externs are implemented
 
 ```sh
-cargo patina externs
+cargo lungo externs
 ```
 
-lists every extern the program reaches, with whether the patina runtime, a Lean
+lists every extern the program reaches, with whether the lungo runtime, a Lean
 `@[export]` definition, or one of your `rust_extern` functions implements it.
 
 ## Read the metadata at run time

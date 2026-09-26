@@ -4,18 +4,18 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Runs the Lean conformance programs through patina's PureRust backend"
+description = "Runs the Lean conformance programs through lungo's PureRust backend"
 
 [[bin]]
 name = "conformance"
 path = "src/main.rs"
 
 [dependencies]
-patina.workspace = true
+lungo.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
 
 [build-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true
 toml.workspace = true

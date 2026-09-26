@@ -3,8 +3,8 @@
 //! differential conformance test compares every such instruction's Rust implementation against
 //! Lean's native backend.
 
-use patina_build::bir::{Block, Body, Expr, Literal, Stmt, Terminator};
-use patina_build::{Environment, configure};
+use lungo_build::bir::{Block, Body, Expr, Literal, Stmt, Terminator};
+use lungo_build::{Environment, configure};
 use std::collections::BTreeSet;
 use std::path::Path;
 

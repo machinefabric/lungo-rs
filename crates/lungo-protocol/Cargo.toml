@@ -1,0 +1,15 @@
+[package]
+name = "lungo-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The versioned protocol between lungo-build and its Lean worker. An internal part of lungo: depend on `lungo` and `lungo-build`."
+
+[dependencies]
+ciborium.workspace = true
+lungo-bir.workspace = true
+serde.workspace = true

@@ -6,7 +6,7 @@ links, how each is checked, and what the build isolates and what it does not.
 
 ## What a proof covers
 
-Lean's kernel checks proofs during `lake build`, before patina sees anything. patina
+Lean's kernel checks proofs during `lake build`, before lungo sees anything. lungo
 adds no reasoning of its own: a theorem about `Shapes.area` holds for the Rust `area` exactly
 insofar as the Rust code computes what the Lean definition computes. The question is
 therefore how much one has to trust to believe that it does.
@@ -20,12 +20,12 @@ therefore how much one has to trust to believe that it does.
 - **The Rust backend.** The translation of each Bridge IR instruction, the facade's
   conversions, and the runtime's primitives.
 
-The first is Lean's responsibility. The other two are patina's, and each is checked from a
+The first is Lean's responsibility. The other two are lungo's, and each is checked from a
 different side.
 
 ## How the backend is checked
 
-**Independent verification of the input.** Before generating code, patina checks the
+**Independent verification of the input.** Before generating code, lungo checks the
 Bridge IR on its own terms: variables and join points in scope, calls with the right number
 and representation of arguments, literals in range, every called declaration present. A
 defect in the worker surfaces as a verification error instead of wrong Rust.
@@ -47,7 +47,7 @@ tested against a reference implementation, and the reference is Lean's own.
 ## Trust metadata
 
 Some Lean code is outside what proofs vouch for: definitions that use `sorry`, axioms beyond
-Lean's standard three, `unsafe` code, `partial` definitions, and native externs. patina
+Lean's standard three, `unsafe` code, `partial` definitions, and native externs. lungo
 computes, for every export, which of these its executable code depends on, records it in the
 generated metadata, and can refuse to build when an export depends on `sorry`, extra axioms
 or `unsafe` code. This makes the assumptions behind a Rust function visible where it is used.

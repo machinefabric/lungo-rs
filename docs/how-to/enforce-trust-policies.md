@@ -16,16 +16,16 @@ Three policies apply to every exported declaration:
 Enable the ones you need in `build.rs`:
 
 ```rust
-fn main() -> patina_build::Result<()> {
-    patina_build::configure().deny_axioms(true).deny_unsafe(true).compile_lean("lean")
+fn main() -> lungo_build::Result<()> {
+    lungo_build::configure().deny_axioms(true).deny_unsafe(true).compile_lean("lean")
 }
 ```
 
-A violation fails with [`PTN0601`](../reference/errors.md#ptn0601) and lists each export with
+A violation fails with [`LNG0601`](../reference/errors.md#ptn0601) and lists each export with
 the offending dependencies:
 
 ```text
-error[PTN0601]: exported declarations violate the configured trust policy:
+error[LNG0601]: exported declarations violate the configured trust policy:
   Formal.step depends on `sorry` (deny_sorry)
 ```
 
@@ -38,7 +38,7 @@ Remove the dependency in Lean, or stop exporting the declaration.
 
 To see the dependencies of every export without enforcing a policy, read `manifest.json` in
 the build output (the `trust` of each export), inspect one declaration with
-`cargo patina inspect <name>`, or read the metadata at run time:
+`cargo lungo inspect <name>`, or read the metadata at run time:
 
 ```rust
 for d in formal::__meta::declarations() {

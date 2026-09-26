@@ -1,0 +1,11 @@
+name = "lungo-worker"
+version = "0.1.0"
+defaultTargets = ["lungo-worker"]
+
+[[lean_lib]]
+name = "Lungo"
+
+[[lean_exe]]
+name = "lungo-worker"
+root = "Main"
+supportInterpreter = true

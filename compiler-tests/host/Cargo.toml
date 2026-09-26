@@ -7,10 +7,10 @@ publish = false
 description = "Release-gate project: Rust callbacks, custom Lean syntax and macros, PureRust linking"
 
 [dependencies]
-patina.workspace = true
+lungo.workspace = true
 
 [dev-dependencies]
 object = "0.36"
 
 [build-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true

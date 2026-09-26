@@ -1,6 +1,6 @@
 name: Set up Lean
 description: >
-  Installs elan and the pinned Lean toolchain explicitly. patina builds never install
+  Installs elan and the pinned Lean toolchain explicitly. lungo builds never install
   toolchains themselves.
 runs:
   using: composite

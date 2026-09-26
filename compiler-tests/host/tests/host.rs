@@ -2,7 +2,7 @@
 //! project using custom syntax and macros, and a PureRust binary free of Lean's native runtime.
 
 use host::{Token, host as callbacks};
-use patina::{LeanClosure, List, Nat};
+use lungo::{LeanClosure, List, Nat};
 
 fn nat(n: u64) -> Nat {
     Nat::from(n as u128)
@@ -69,7 +69,7 @@ fn custom_syntax_and_macros_compile_unchanged() {
 /// Gate: PureRust mode links no Lean runtime: the build records no native link directives.
 #[test]
 fn pure_rust_build_links_no_native_libraries() {
-    let info = include_str!(concat!(env!("OUT_DIR"), "/patina/build-info.json"));
+    let info = include_str!(concat!(env!("OUT_DIR"), "/lungo/build-info.json"));
     assert!(info.contains("\"link_directives\": []"), "PureRust build links native libraries:\n{info}");
 }
 

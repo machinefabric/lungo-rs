@@ -38,11 +38,11 @@ def resolve (k : String) : IO Nat := do
 
 Write a function whose parameters and result are the Rust forms of the Lean types (see
 [Lean types in Rust](../reference/type-mapping.md)). `IO α` becomes
-`Result<A, patina::IoError>`:
+`Result<A, lungo::IoError>`:
 
 ```rust
 pub mod host {
-    use patina::{IoError, Nat};
+    use lungo::{IoError, Nat};
 
     pub fn lookup(key: String) -> Option<Nat> {
         match key.as_str() {
@@ -69,8 +69,8 @@ In `build.rs`, map each symbol to the Rust path of its implementation, as seen f
 root:
 
 ```rust
-fn main() -> patina_build::Result<()> {
-    patina_build::configure()
+fn main() -> lungo_build::Result<()> {
+    lungo_build::configure()
         .rust_extern("host_lookup", "crate::host::lookup")
         .rust_extern("host_log", "crate::host::log")
         .compile_lean("lean")
@@ -78,9 +78,9 @@ fn main() -> patina_build::Result<()> {
 ```
 
 Build. If a Lean declaration's symbol has no implementation, the build fails with
-[`PTN0401`](../reference/errors.md#ptn0401), naming the declaration and the Rust signature it
+[`LNG0401`](../reference/errors.md#ptn0401), naming the declaration and the Rust signature it
 needs. A mapping for a symbol nothing uses fails with
-[`PTN0405`](../reference/errors.md#ptn0405).
+[`LNG0405`](../reference/errors.md#ptn0405).
 
 ## Pass functions across the boundary
 
@@ -92,7 +92,7 @@ opaque hostTransform (f : Nat → Nat) (xs : List Nat) : List Nat
 ```
 
 ```rust
-use patina::{LeanClosure, List, Nat};
+use lungo::{LeanClosure, List, Nat};
 
 pub fn transform(f: LeanClosure<fn(Nat) -> Nat>, xs: List<Nat>) -> List<Nat> {
     xs.into_iter().map(|x| f.call(x)).collect()
@@ -106,6 +106,6 @@ In the other direction, Rust passes its own functions to generated Lean function
 
 The same mappings work in `LeanOracle` mode for externs declared `@[extern "symbol"]`: the
 generated adapter is exported under that C symbol. Other extern forms fail with
-[`PTN0407`](../reference/errors.md#ptn0407).
+[`LNG0407`](../reference/errors.md#ptn0407).
 
 A complete example is `compiler-tests/host` in the repository.

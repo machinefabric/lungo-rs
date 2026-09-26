@@ -2,7 +2,7 @@
 .lake/
 target/
 *.partial
-.patina-cache/
+.lungo-cache/
 .scrap/
 .atest/
 atest/

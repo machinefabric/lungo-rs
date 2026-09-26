@@ -14,9 +14,9 @@ Compile each package in `build.rs`, and tell the build of `drawing` which Rust t
 provides each Lean type of `geometry` it uses:
 
 ```rust
-fn main() -> patina_build::Result<()> {
-    patina_build::compile_lean("lean/geometry")?;
-    patina_build::configure()
+fn main() -> lungo_build::Result<()> {
+    lungo_build::compile_lean("lean/geometry")?;
+    lungo_build::configure()
         .extern_type("Geometry.Point", "crate::geometry::Point")
         .extern_type("Geometry.Shape", "crate::geometry::Shape")
         .compile_lean("lean/drawing")
@@ -27,11 +27,11 @@ The Rust paths are as seen from the crate root; each module is named after its L
 
 ```rust
 pub mod geometry {
-    patina::include_lean!("geometry");
+    lungo::include_lean!("geometry");
 }
 
 pub mod drawing {
-    patina::include_lean!("drawing");
+    lungo::include_lean!("drawing");
 }
 ```
 
@@ -41,24 +41,24 @@ pub mod drawing {
 
 ```rust
 use my_crate::{drawing, geometry::Point};
-use patina::Int;
+use lungo::Int;
 
 let a = Point { x: Int::from(-4), y: Int::from(2) };
 let b = Point { x: Int::from(8), y: Int::from(6) };
 let mid: Point = drawing::midpoint(a, b);
 ```
 
-`cargo patina mappings` for `drawing` lists `Geometry.Point` with kind `extern type`.
+`cargo lungo mappings` for `drawing` lists `Geometry.Point` with kind `extern type`.
 
 ## What an extern type must be
 
-The Rust type represents the Lean type's values as patina represents them: it implements
-`patina::LeanType` for the backend in use and has the Lean type's parameters. A type generated
-by another patina build of the same Lean type, in the same mode, is such a type.
+The Rust type represents the Lean type's values as lungo represents them: it implements
+`lungo::LeanType` for the backend in use and has the Lean type's parameters. A type generated
+by another lungo build of the same Lean type, in the same mode, is such a type.
 
-Types of `drawing` that contain an extern type derive only `Clone` and `Debug`, since patina
+Types of `drawing` that contain an extern type derive only `Clone` and `Debug`, since lungo
 does not know which other traits the extern type implements; add further derives with
 `type_attribute`. A mapping for a Lean type that no exported declaration uses fails the build
-with [`PTN0107`](../reference/errors.md#ptn0107).
+with [`LNG0107`](../reference/errors.md#ptn0107).
 
 `compiler-tests/shaping` in the repository builds two such packages.

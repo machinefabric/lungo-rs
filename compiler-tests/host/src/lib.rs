@@ -1,10 +1,10 @@
 //! A Rust application hosting Lean code that calls back into it.
 
-patina::include_lean!("host");
+lungo::include_lean!("host");
 
 /// The Rust implementations of the Lean `@[extern]` declarations in `Host.Callbacks`.
 pub mod host {
-    use patina::{IoError, LeanClosure, List, Nat};
+    use lungo::{IoError, LeanClosure, List, Nat};
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 

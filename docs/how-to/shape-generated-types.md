@@ -1,24 +1,24 @@
 # How to derive `serde` and other traits for generated types
 
-This guide shows how to add attributes to the Rust types patina generates, such as
+This guide shows how to add attributes to the Rust types lungo generates, such as
 `serde` derives, and how to control their `Debug` implementations and documentation.
 
 ## Derive `serde`
 
-Enable the `serde` feature of `patina`, which implements `serde` for `Nat`, `Int`, `List` and
+Enable the `serde` feature of `lungo`, which implements `serde` for `Nat`, `Int`, `List` and
 the other facade types, and depend on `serde` yourself:
 
 ```toml
 [dependencies]
-patina = { path = "../patina/crates/patina", features = ["serde"] }
+lungo = { path = "../lungo/crates/lungo", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 ```
 
 Add the derive to the types of a namespace in `build.rs`:
 
 ```rust
-fn main() -> patina_build::Result<()> {
-    patina_build::configure()
+fn main() -> lungo_build::Result<()> {
+    lungo_build::configure()
         .type_attribute("Geometry", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile_lean("lean")
 }
@@ -35,7 +35,7 @@ type, and `Geometry.Point` only that one. `Nat` and `Int` values serialize as de
 `<Constructor>.<binder>` for other constructors.
 
 ```rust
-patina_build::configure()
+lungo_build::configure()
     .type_attribute("Geometry", "#[derive(serde::Serialize, serde::Deserialize)]")
     .struct_attribute("Geometry.Point", "#[serde(deny_unknown_fields)]")
     .enum_attribute("Geometry.Shape", r#"#[serde(tag = "kind", rename_all = "snake_case")]"#)
@@ -44,8 +44,8 @@ patina_build::configure()
     .compile_lean("lean")
 ```
 
-`cargo patina mappings` lists the Lean name of every generated type and field. A path that
-selects nothing fails the build with [`PTN0107`](../reference/errors.md#ptn0107), so a
+`cargo lungo mappings` lists the Lean name of every generated type and field. A path that
+selects nothing fails the build with [`LNG0107`](../reference/errors.md#ptn0107), so a
 misspelled or stale path does not go unnoticed.
 
 ## Implement `Debug` yourself
@@ -54,14 +54,14 @@ Generated types derive `Debug`. To format a type yourself, for example to keep a
 logs, skip the derive:
 
 ```rust
-patina_build::configure().skip_debug(["Geometry.Secret"]).compile_lean("lean")
+lungo_build::configure().skip_debug(["Geometry.Secret"]).compile_lean("lean")
 ```
 
 and implement it next to the generated module:
 
 ```rust
 pub mod geometry {
-    patina::include_lean!("geometry");
+    lungo::include_lean!("geometry");
 
     impl std::fmt::Debug for Secret {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -77,12 +77,12 @@ Generated types and functions carry doc comments with their Lean name, type and 
 `disable_comments` omits them for the types and functions a path selects:
 
 ```rust
-patina_build::configure().disable_comments(["Geometry.Internal"]).compile_lean("lean")
+lungo_build::configure().disable_comments(["Geometry.Internal"]).compile_lean("lean")
 ```
 
-## In `patina.toml`
+## In `lungo.toml`
 
-The same settings in `patina.toml`, for `cargo patina`:
+The same settings in `lungo.toml`, for `cargo lungo`:
 
 ```toml
 project = "lean"

@@ -3,7 +3,7 @@
 //! Each test copies a fixture from `fixtures/` into its own scratch directory and runs the same
 //! library pipeline `build.rs` runs (`Builder::run`) against it.
 
-use patina_build::{BuildOutcome, Builder, Environment, Error, ErrorCode, configure};
+use lungo_build::{BuildOutcome, Builder, Environment, Error, ErrorCode, configure};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -83,7 +83,7 @@ fn imports_config() -> Builder {
 
 impl Scratch {
     /// Builds the scratch project with `cfg`, publishing under `<package>/<out>`.
-    fn build(&self, cfg: &Builder, out: &str) -> patina_build::Result<BuildOutcome> {
+    fn build(&self, cfg: &Builder, out: &str) -> lungo_build::Result<BuildOutcome> {
         cfg.run(Path::new("lean"), &self.env(out))
     }
 
@@ -137,7 +137,7 @@ fn invalid_lean_fails_with_source_diagnostics() {
     let text = err.to_string();
     assert!(matches!(err, Error::LeanElaboration { .. }), "{err:?}");
     assert_eq!(err.code(), ErrorCode::LeanRejected);
-    assert!(text.starts_with("error[PTN0201]: "), "{text}");
+    assert!(text.starts_with("error[LNG0201]: "), "{text}");
     assert!(text.contains("TypeError.lean:5:"), "the diagnostic names the source position:\n{text}");
     assert!(text.contains("error"), "{text}");
     assert!(!s.package.join("out").exists(), "no output is published for a failed build");
@@ -162,7 +162,7 @@ fn toolchain_mismatch_is_detected_before_compilation() {
         let err = s.build(&imports_config(), "out").unwrap_err();
         assert!(matches!(&err, Error::UnsupportedToolchain { found, .. } if found == pin), "{err:?}");
         assert!(err.to_string().contains("v4.34.1"), "the error names the supported toolchains: {err}");
-        assert!(err.to_string().starts_with("error[PTN0102]: "), "{err}");
+        assert!(err.to_string().starts_with("error[LNG0102]: "), "{err}");
     }
     assert!(!s.project().join(".lake").exists(), "nothing was compiled");
 }
@@ -174,7 +174,7 @@ fn unknown_extern_symbols_are_hard_errors() {
     let text = err.to_string();
     assert!(matches!(err, Error::Codegen { .. }), "{err:?}");
     assert_eq!(err.code(), ErrorCode::UnresolvedExtern);
-    assert!(text.starts_with("error[PTN0401]: unresolved Lean external symbol"), "{text}");
+    assert!(text.starts_with("error[LNG0401]: unresolved Lean external symbol"), "{text}");
     for needle in ["unresolved Lean external symbol", "provider_send", "Unknown.providerSend", "Unknown.lean"] {
         assert!(text.contains(needle), "the error mentions {needle}:\n{text}");
     }

@@ -2,7 +2,7 @@
 
 /// The `geometry` Lake package, with serde support added to its types.
 pub mod geometry {
-    patina::include_lean!("geometry");
+    lungo::include_lean!("geometry");
 
     /// `Secret` is generated without `Debug` so that its code never appears in logs.
     impl std::fmt::Debug for Secret {
@@ -14,5 +14,5 @@ pub mod geometry {
 
 /// The `drawing` Lake package, which requires `geometry` and uses its Rust types.
 pub mod drawing {
-    patina::include_lean!("drawing");
+    lungo::include_lean!("drawing");
 }

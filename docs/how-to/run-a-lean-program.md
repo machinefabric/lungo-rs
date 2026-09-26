@@ -11,8 +11,8 @@ configuration. `main` may have any of Lean's forms: `IO Unit`, `IO UInt32`,
 
 ```rust
 // build.rs
-fn main() -> patina_build::Result<()> {
-    patina_build::configure().root_module("Tool.Main").name("program").compile_lean("lean")
+fn main() -> lungo_build::Result<()> {
+    lungo_build::configure().root_module("Tool.Main").name("program").compile_lean("lean")
 }
 ```
 
@@ -23,7 +23,7 @@ The generated module then has `__lean_main()` and `__lean_main_with(args)`.
 ```rust
 // src/main.rs
 mod program {
-    patina::include_lean!("program");
+    lungo::include_lean!("program");
 }
 
 fn main() {
@@ -44,9 +44,9 @@ Give each program its own name:
 
 ```rust
 // build.rs
-fn main() -> patina_build::Result<()> {
+fn main() -> lungo_build::Result<()> {
     for (name, root) in [("fmt", "Tool.Fmt"), ("check", "Tool.Check")] {
-        patina_build::configure().root_module(root).name(name).compile_lean("lean")?;
+        lungo_build::configure().root_module(root).name(name).compile_lean("lean")?;
     }
     Ok(())
 }
@@ -57,10 +57,10 @@ and dispatch on it:
 ```rust
 // src/main.rs
 mod fmt {
-    patina::include_lean!("fmt");
+    lungo::include_lean!("fmt");
 }
 mod check {
-    patina::include_lean!("check");
+    lungo::include_lean!("check");
 }
 
 fn main() {

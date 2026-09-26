@@ -1,0 +1,21 @@
+[package]
+name = "cargo-lungo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Inspect and build Lean projects integrated with lungo"
+keywords = ["lean", "lean4", "cargo", "subcommand"]
+categories = ["development-tools::cargo-plugins"]
+
+[[bin]]
+name = "cargo-lungo"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+lungo-build.workspace = true
+serde_json.workspace = true

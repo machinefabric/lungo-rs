@@ -1,5 +1,5 @@
-//! Lean's executable standard library, compiled through patina.
+//! Lean's executable standard library, compiled through lungo.
 
 pub mod corpus {
-    patina::include_lean!("stdlib");
+    lungo::include_lean!("stdlib");
 }

@@ -1,5 +1,5 @@
 //! Differential property tests of the generated facade: every exported function is called with
-//! the same generated inputs on the patina runtime (`pure`) and on Lean's own native backend
+//! the same generated inputs on the lungo runtime (`pure`) and on Lean's own native backend
 //! and runtime (`oracle`), and the results must agree exactly.
 //!
 //! The two facades declare their own (structurally identical) Rust types, so inputs are built
@@ -9,7 +9,7 @@
 
 use facade_runner::{oracle, pure};
 use num_bigint::{BigInt, BigUint, Sign};
-use patina::{ByteArray, FloatArray, Int, LeanClosure, List, Nat};
+use lungo::{ByteArray, FloatArray, Int, LeanClosure, List, Nat};
 use proptest::prelude::*;
 
 fn same<T: std::fmt::Debug, U: std::fmt::Debug>(what: &str, p: T, o: U) -> Result<(), TestCaseError> {

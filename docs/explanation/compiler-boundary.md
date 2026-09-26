@@ -1,6 +1,6 @@
 # The compiler boundary
 
-patina takes Lean's program at the point where Lean's compiler is done with it. This page
+lungo takes Lean's program at the point where Lean's compiler is done with it. This page
 explains what that point is for Lean 4.34.1, and what follows from choosing it.
 
 ## What Lean hands over
@@ -34,8 +34,8 @@ the same memory behaviour as native Lean, including destructive updates of unsha
 
 **Some Bridge IR is never produced.** Lean 4.34.1 expands every `reset`/`reuse` pair into
 `is_shared`, `set`, `set_tag` and `del` before the IR is final, so `reset` and `reuse` never
-reach patina from this toolchain. They stay in Bridge IR because they are part of Lean's IR
-and another release may emit them; the backend implements them. patina's tests check both
+reach lungo from this toolchain. They stay in Bridge IR because they are part of Lean's IR
+and another release may emit them; the backend implements them. lungo's tests check both
 that every instruction this toolchain emits is exercised and that the set it never emits is
 exactly these two.
 

@@ -1,6 +1,6 @@
 # How to bound the resources a build may use
 
-The patina worker runs Lean code of your project and its dependencies during the build.
+The lungo worker runs Lean code of your project and its dependencies during the build.
 This guide shows how to limit its time and memory and isolate it from your environment, for
 example in CI.
 
@@ -11,17 +11,17 @@ To stop a build that runs too long, set a wall-clock limit:
 ```rust
 use std::time::Duration;
 
-fn main() -> patina_build::Result<()> {
-    patina_build::configure().worker_timeout(Duration::from_secs(600)).compile_lean("lean")
+fn main() -> lungo_build::Result<()> {
+    lungo_build::configure().worker_timeout(Duration::from_secs(600)).compile_lean("lean")
 }
 ```
 
 When the limit passes, the worker and every process it started are killed and the build fails
-with [`PTN0304`](../reference/errors.md#ptn0304).
+with [`LNG0304`](../reference/errors.md#ptn0304).
 
 To bound processor time instead (a busy loop, rather than a slow machine), use
 `.worker_cpu_limit(Duration::from_secs(300))`; exceeding it fails with
-[`PTN0305`](../reference/errors.md#ptn0305). On Unix the limit applies to each process of the
+[`LNG0305`](../reference/errors.md#ptn0305). On Unix the limit applies to each process of the
 worker; on Windows to all of them together.
 
 ## Limit memory
@@ -33,11 +33,11 @@ worker; on Windows to all of them together.
 The limit is enforced on Linux (address space of each worker process) and Windows (memory of
 the worker's processes together). Lean maps the compiled files of every imported module into
 memory, so leave room above what `lake build` needs. On other systems, such as macOS, setting
-it fails with [`PTN0104`](../reference/errors.md#ptn0104) rather than being ignored; set it
+it fails with [`LNG0104`](../reference/errors.md#ptn0104) rather than being ignored; set it
 only for the platforms that enforce it:
 
 ```rust
-let mut config = patina_build::configure();
+let mut config = lungo_build::configure();
 if cfg!(any(target_os = "linux", windows)) {
     config = config.worker_memory_limit(8 << 30);
 }

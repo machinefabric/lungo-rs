@@ -21,15 +21,15 @@ Install the Lean toolchain we will use:
 elan toolchain install leanprover/lean4:v4.34.1
 ```
 
-patina is used from its repository. Make a working directory and clone it there:
+lungo is used from its repository. Make a working directory and clone it there:
 
 ```sh
-mkdir patina-tutorial
-cd patina-tutorial
-git clone https://github.com/jowharshamshiri/patina.git
+mkdir lungo-tutorial
+cd lungo-tutorial
+git clone https://github.com/jowharshamshiri/lungo.git
 ```
 
-Everything else in this tutorial happens inside `patina-tutorial`.
+Everything else in this tutorial happens inside `lungo-tutorial`.
 
 ## Create the crate
 
@@ -102,7 +102,7 @@ info: shapes: no previous manifest, creating one from scratch
 ```
 
 and a `lake-manifest.json` appears next to the other files. Our project has no dependencies,
-but patina always builds from a committed manifest (see
+but lungo always builds from a committed manifest (see
 [Architecture](../explanation/architecture.md)).
 
 Go back to the crate:
@@ -113,35 +113,35 @@ cd ..
 
 ## Connect Cargo to the Lean project
 
-Open `Cargo.toml` and add the two patina crates below the existing `[dependencies]` line:
+Open `Cargo.toml` and add the two lungo crates below the existing `[dependencies]` line:
 
 ```toml
 [dependencies]
-patina = { path = "../patina/crates/patina" }
+lungo = { path = "../lungo/crates/lungo" }
 
 [build-dependencies]
-patina-build = { path = "../patina/crates/patina-build" }
+lungo-build = { path = "../lungo/crates/lungo-build" }
 ```
 
-`patina` is what the generated code uses at run time; `patina-build` runs at build time.
+`lungo` is what the generated code uses at run time; `lungo-build` runs at build time.
 
 Create `build.rs` in the crate directory, next to `Cargo.toml`:
 
 ```rust
-fn main() -> patina_build::Result<()> {
-    patina_build::compile_lean("lean")
+fn main() -> lungo_build::Result<()> {
+    lungo_build::compile_lean("lean")
 }
 ```
 
-This tells patina where the Lake project is (`lean`). Everything else comes from the
-project itself: patina compiles what `lake build` builds, the `Shapes` library named in
+This tells lungo where the Lake project is (`lean`). Everything else comes from the
+project itself: lungo compiles what `lake build` builds, the `Shapes` library named in
 `defaultTargets`, and gives the declarations of `Shapes` public Rust functions.
 
 Finally, replace the contents of `src/lib.rs` with:
 
 ```rust
 pub mod shapes {
-    patina::include_lean!("shapes");
+    lungo::include_lean!("shapes");
 }
 ```
 
@@ -155,14 +155,14 @@ as the module `shapes`.
 cargo build
 ```
 
-The first build takes a few minutes: patina compiles its Lean worker for the toolchain
+The first build takes a few minutes: lungo compiles its Lean worker for the toolchain
 once and keeps it for later builds. When it finishes, Cargo reports:
 
 ```text
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 45s
 ```
 
-Lean has checked the proof of `area_scale`, compiled the definitions, and patina has
+Lean has checked the proof of `area_scale`, compiled the definitions, and lungo has
 generated Rust from them.
 
 ## Call Lean from Rust
@@ -170,7 +170,7 @@ generated Rust from them.
 Create `tests/rect.rs`:
 
 ```rust
-use patina::Nat;
+use lungo::Nat;
 use shapes::shapes::{Rect, area, scale};
 
 #[test]
@@ -190,7 +190,7 @@ fn scaling_multiplies_the_area() {
 
 Notice that the Lean structure `Rect` is a Rust struct with the same fields, and that
 `area` and `scale` are plain functions. Lean's `Nat` is unbounded, so it is the Rust type
-`patina::Nat` rather than a fixed-width integer.
+`lungo::Nat` rather than a fixed-width integer.
 
 Run the tests:
 
@@ -245,7 +245,7 @@ cargo build
 The build fails, and Cargo shows Lean's own report:
 
 ```text
-  Error: error[PTN0201]: Lean elaboration failed
+  Error: error[LNG0201]: Lean elaboration failed
   ...
   error: Shapes.lean:12:75: unsolved goals
   k : Nat
@@ -254,7 +254,7 @@ The build fails, and Cargo shows Lean's own report:
 ```
 
 No Rust was generated from the broken project: the crate cannot be built while its Lean
-code does not check. `PTN0201` is the code of this kind of error; every patina error has
+code does not check. `LNG0201` is the code of this kind of error; every lungo error has
 one (see the [error reference](../reference/errors.md)).
 
 Put the statement back to `k * k * area r` and run `cargo test`; everything passes again.

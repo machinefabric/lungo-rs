@@ -1,8 +1,8 @@
-use patina_build::Mode;
+use lungo_build::Mode;
 
-fn main() -> patina_build::Result<()> {
+fn main() -> lungo_build::Result<()> {
     for (name, mode) in [("pure", Mode::PureRust), ("oracle", Mode::LeanOracle)] {
-        patina_build::configure().mode(mode).name(name).compile_lean("../facade")?;
+        lungo_build::configure().mode(mode).name(name).compile_lean("../facade")?;
     }
     Ok(())
 }

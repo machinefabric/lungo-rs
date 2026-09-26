@@ -1,12 +1,12 @@
 # The runtime
 
 Compiled Lean code assumes a runtime: an object model, reference counting, big numbers,
-strings, arrays, closures, tasks and IO. patina brings its own, written in Rust. This page
+strings, arrays, closures, tasks and IO. lungo brings its own, written in Rust. This page
 explains how it relates to Lean's.
 
 ## A port, not a reinterpretation
 
-`patina-runtime` is a port of Lean's `lean.h` and its C++ runtime. Objects have Lean's
+`lungo-runtime` is a port of Lean's `lean.h` and its C++ runtime. Objects have Lean's
 exact layout — a header of reference count, size and tag, followed by fields — and small
 values are tagged scalars as in Lean. Reference counting has Lean's semantics, including
 objects shared between threads and persistent objects that are never freed. Freeing a large

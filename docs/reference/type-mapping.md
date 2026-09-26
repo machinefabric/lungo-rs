@@ -1,14 +1,14 @@
 # Lean types in Rust
 
 The facade represents each Lean type in an exported signature as follows. Types from the
-`patina` crate are documented in its API documentation (`cargo doc -p patina --open`).
+`lungo` crate are documented in its API documentation (`cargo doc -p lungo --open`).
 
 ## Builtin types
 
 | Lean | Rust |
 | --- | --- |
-| `Nat` | `patina::Nat` (unbounded) |
-| `Int` | `patina::Int` (unbounded) |
+| `Nat` | `lungo::Nat` (unbounded) |
+| `Int` | `lungo::Int` (unbounded) |
 | `Bool` | `bool` |
 | `UInt8`, `UInt16`, `UInt32`, `UInt64`, `USize` | `u8`, `u16`, `u32`, `u64`, `usize` |
 | `Int8`, `Int16`, `Int32`, `Int64`, `ISize` | `i8`, `i16`, `i32`, `i64`, `isize` |
@@ -16,10 +16,10 @@ The facade represents each Lean type in an exported signature as follows. Types 
 | `Char` | `char` |
 | `String` | `String` |
 | `Unit`, `PUnit` | `()` |
-| `ByteArray` | `patina::ByteArray` |
-| `FloatArray` | `patina::FloatArray` |
+| `ByteArray` | `lungo::ByteArray` |
+| `FloatArray` | `lungo::FloatArray` |
 | `Option α` | `Option<A>` |
-| `List α` | `patina::List<A>` |
+| `List α` | `lungo::List<A>` |
 | `Array α` | `Vec<A>` |
 | `α × β` | `(A, B)` |
 | `Except ε α` | `Result<A, E>` |
@@ -28,7 +28,7 @@ The facade represents each Lean type in an exported signature as follows. Types 
 
 | Lean result type | Rust result type |
 | --- | --- |
-| `IO α` | `Result<A, patina::IoError>` |
+| `IO α` | `Result<A, lungo::IoError>` |
 | `EIO ε α` | `Result<A, E>` |
 | `BaseIO α` | `A` |
 
@@ -38,13 +38,13 @@ The facade represents each Lean type in an exported signature as follows. Types 
 ## Functions
 
 A parameter or result of function type `α₁ → … → αₙ → β` is
-`patina::LeanClosure<fn(A1, …, An) -> B>`. `call(a1, …, an)` applies it;
+`lungo::LeanClosure<fn(A1, …, An) -> B>`. `call(a1, …, an)` applies it;
 `LeanClosure::from_fn(f)` wraps a Rust function (`Fn + Send + Sync + 'static`). Arities 1 to 8
 are supported. Functions returning `IO` are opaque (see below).
 
 ## Polymorphism
 
-Type parameters become generic parameters bounded by `patina::LeanType`. Instance arguments
+Type parameters become generic parameters bounded by `lungo::LeanType`. Instance arguments
 become ordinary parameters whose type is the class structure, when it is first-order.
 
 ## Inductive types
@@ -67,27 +67,27 @@ further derives are added with `type_attribute` (see
 
 ## serde
 
-With the `serde` feature of the `patina` crate, the facade types implement `serde`'s
+With the `serde` feature of the `lungo` crate, the facade types implement `serde`'s
 `Serialize` and `Deserialize`, so generated types can derive them through `type_attribute`:
 
 ```toml
 [dependencies]
-patina = { version = "0.23.943", features = ["serde"] }
+lungo = { version = "0.24.955", features = ["serde"] }
 ```
 
 | Rust | Serialized as |
 | --- | --- |
-| `patina::Nat`, `patina::Int` | a decimal string (`"12"`, `"-3"`), since the values are unbounded; deserialized from such a string or from an integer |
-| `patina::List<A>` | a sequence |
-| `patina::ByteArray` | bytes |
-| `patina::FloatArray` | a sequence of floats |
+| `lungo::Nat`, `lungo::Int` | a decimal string (`"12"`, `"-3"`), since the values are unbounded; deserialized from such a string or from an integer |
+| `lungo::List<A>` | a sequence |
+| `lungo::ByteArray` | bytes |
+| `lungo::FloatArray` | a sequence of floats |
 
 Opaque values and closures have no serialized form.
 
 ## Opaque values
 
 Values of any other type (dependent types, types with proofs or type-valued fields, functions
-returning `IO`) are `patina::LeanValue<M>`, where `M` is a marker type in `__opaque` named
+returning `IO`) are `lungo::LeanValue<M>`, where `M` is a marker type in `__opaque` named
 after the type's head constant. They can be stored, cloned and passed back to Lean.
 
 ## Names

@@ -1,8 +1,8 @@
-//! Generates every executable of the conformance Lake project through patina.
+//! Generates every executable of the conformance Lake project through lungo.
 
 use std::fmt::Write;
 
-fn main() -> patina_build::Result<()> {
+fn main() -> lungo_build::Result<()> {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("set by Cargo");
     let lakefile = std::path::Path::new(&manifest).join("../conformance/lakefile.toml");
     println!("cargo::rerun-if-changed={}", lakefile.display());
@@ -14,8 +14,8 @@ fn main() -> patina_build::Result<()> {
     for exe in exes {
         let name = exe["name"].as_str().expect("executable name");
         let root = exe["root"].as_str().expect("executable root module");
-        patina_build::configure().root_module(root).name(name).compile_lean("../conformance")?;
-        writeln!(dispatch, "#[allow(dead_code)]\nmod p_{name} {{ patina::include_lean!({name:?}); }}").unwrap();
+        lungo_build::configure().root_module(root).name(name).compile_lean("../conformance")?;
+        writeln!(dispatch, "#[allow(dead_code)]\nmod p_{name} {{ lungo::include_lean!({name:?}); }}").unwrap();
         writeln!(arms, "        {name:?} => Some(p_{name}::__lean_main_with(args)),").unwrap();
     }
     writeln!(

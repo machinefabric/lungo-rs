@@ -11,7 +11,7 @@ env:
   # The toolchain every project in this repository pins (`lean-toolchain`).
   LEAN_TOOLCHAIN: leanprover/lean4:v4.34.1
   # Keep compiled Lean workers inside the cached area.
-  PATINA_CACHE_DIR: ${{ github.workspace }}/.patina-cache
+  LUNGO_CACHE_DIR: ${{ github.workspace }}/.lungo-cache
 
 jobs:
   lint:
@@ -54,8 +54,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v4
         with:
-          path: ${{ env.PATINA_CACHE_DIR }}
-          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/patina-build/worker/**') }}
+          path: ${{ env.LUNGO_CACHE_DIR }}
+          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-build/worker/**') }}
       - name: Build
         run: cargo build --workspace --all-targets --all-features ${{ matrix.exclude }}
       - name: Test
@@ -79,7 +79,7 @@ jobs:
           workspaces: compiler-tests/stdlib-corpus
       - uses: actions/cache@v4
         with:
-          path: ${{ env.PATINA_CACHE_DIR }}
-          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/patina-build/worker/**') }}
+          path: ${{ env.LUNGO_CACHE_DIR }}
+          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-build/worker/**') }}
       # Every executable declaration of Init and Std, generated as Rust and type-checked.
       - run: cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml

@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "The patina design example: a Lean state machine with proofs, used from Rust"
+description = "The lungo design example: a Lean state machine with proofs, used from Rust"
 
 [dependencies]
-patina.workspace = true
+lungo.workspace = true
 
 [build-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true

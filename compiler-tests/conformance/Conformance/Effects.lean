@@ -45,7 +45,7 @@ def main : IO Unit := do
   IO.FS.removeFile file
   IO.FS.removeDirAll dir
   IO.println (← dir.pathExists)
-  IO.println ((← IO.getEnv "PATINA_CONFORMANCE_VAR"), (← IO.getEnv "PATINA_UNSET_VARIABLE_XYZ"))
+  IO.println ((← IO.getEnv "LUNGO_CONFORMANCE_VAR"), (← IO.getEnv "LUNGO_UNSET_VARIABLE_XYZ"))
   let stdout ← IO.getStdout
   stdout.putStrLn "direct to stdout handle"
   IO.eprintln "to stderr"

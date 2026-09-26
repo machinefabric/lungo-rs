@@ -12,11 +12,11 @@ results. Use it to test the Rust translation of your own Lean code.
 Give each mode its own name in `build.rs`:
 
 ```rust
-use patina_build::Mode;
+use lungo_build::Mode;
 
-fn main() -> patina_build::Result<()> {
+fn main() -> lungo_build::Result<()> {
     for (name, mode) in [("pure", Mode::PureRust), ("oracle", Mode::LeanOracle)] {
-        patina_build::configure().mode(mode).name(name).compile_lean("lean")?;
+        lungo_build::configure().mode(mode).name(name).compile_lean("lean")?;
     }
     Ok(())
 }
@@ -26,11 +26,11 @@ and include each as its own module:
 
 ```rust
 pub mod pure {
-    patina::include_lean!("pure");
+    lungo::include_lean!("pure");
 }
 
 pub mod oracle {
-    patina::include_lean!("oracle");
+    lungo::include_lean!("oracle");
 }
 ```
 
@@ -44,7 +44,7 @@ Lean project are distinct Rust types in each module, so build inputs separately 
 compare results through a common form, such as their `Debug` rendering:
 
 ```rust
-use patina::Nat;
+use lungo::Nat;
 
 #[test]
 fn both_backends_agree() {

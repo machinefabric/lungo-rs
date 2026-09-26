@@ -7,11 +7,11 @@ publish = false
 description = "Generates one Lean project in PureRust and LeanOracle modes for differential facade tests"
 
 [dependencies]
-patina.workspace = true
+lungo.workspace = true
 
 [dev-dependencies]
 num-bigint.workspace = true
 proptest = "1.7"
 
 [build-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true

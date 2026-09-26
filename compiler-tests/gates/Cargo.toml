@@ -4,11 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Release-gate tests of the patina build pipeline on small Lake projects"
+description = "Release-gate tests of the lungo build pipeline on small Lake projects"
 
 [lib]
 path = "src/lib.rs"
 
 [dev-dependencies]
-patina-build.workspace = true
+lungo-build.workspace = true
 serde_json.workspace = true

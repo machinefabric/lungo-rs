@@ -1,0 +1,13 @@
+[package]
+name = "lungo-bir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Bridge IR: the versioned compiler boundary between Lean and the Rust backend. An internal part of lungo: depend on `lungo` and `lungo-build`."
+
+[dependencies]
+serde.workspace = true
