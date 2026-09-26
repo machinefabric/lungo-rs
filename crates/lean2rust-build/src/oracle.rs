@@ -108,7 +108,7 @@ pub(crate) fn generate(
     let generated = lean2rust_codegen::generate(&input).map_err(|errors| Error::Codegen {
         toolchain: format!("v{}", analysis.toolchain.lean_version),
         bir_version: analysis.success.bir.bir_version,
-        messages: errors.iter().map(|e| e.to_string()).collect(),
+        errors,
     })?;
     let mut binary_files = BTreeMap::new();
     binary_files.insert("native/liblean2rust_oracle.a".to_owned(), archive_bytes);

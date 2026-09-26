@@ -1,3 +1,4 @@
+use lean2rust_codegen::{CodegenError, ErrorCode};
 use lean2rust_protocol::{Diagnostic, DiagnosticKind, Severity};
 use std::fmt;
 use std::path::PathBuf;
@@ -5,8 +6,11 @@ use std::path::PathBuf;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Every way generation can fail. Lean errors, project errors, and backend errors are kept
-/// distinct so that invalid Lean is never reported as a backend failure or vice versa.
-#[derive(Debug)]
+/// distinct so that invalid Lean is never reported as a backend failure or vice versa. Each
+/// error has a stable [`ErrorCode`] ([`Error::code`]), printed as `error[L2R0401]: …`.
+///
+/// `Debug` formats like `Display`, so a build script returning this error (`fn main() ->
+/// Result<()>`) shows Cargo the readable message.
 pub enum Error {
     Io {
         context: String,
@@ -50,11 +54,11 @@ pub enum Error {
         stderr: String,
     },
     Protocol(String),
-    /// Code generation failed.
+    /// Code generation failed; every error found is reported.
     Codegen {
         toolchain: String,
         bir_version: u32,
-        messages: Vec<String>,
+        errors: Vec<CodegenError>,
     },
     /// An export violates the configured trust policy.
     Trust(Vec<String>),
@@ -71,6 +75,42 @@ pub enum Error {
 impl Error {
     pub fn io(context: impl Into<String>, source: std::io::Error) -> Self {
         Error::Io { context: context.into(), source }
+    }
+
+    /// The stable code of this error. For several code generation errors, the code of the
+    /// first; each is printed with its own code.
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            Error::Io { .. } => ErrorCode::Io,
+            Error::Project(_) => ErrorCode::InvalidProject,
+            Error::UnsupportedToolchain { .. } => ErrorCode::UnsupportedToolchain,
+            Error::ToolchainNotInstalled { .. } => ErrorCode::ToolchainNotInstalled,
+            Error::LeanElaboration { .. } => ErrorCode::LeanRejected,
+            Error::Worker { diagnostics, .. } => worker_code(diagnostics),
+            Error::WorkerCrashed { .. } => ErrorCode::WorkerCrashed,
+            Error::WorkerResourceLimit { .. } => ErrorCode::WorkerResourceLimit,
+            Error::WorkerTimeout { .. } => ErrorCode::WorkerTimeout,
+            Error::Protocol(_) => ErrorCode::Protocol,
+            Error::Codegen { errors, .. } => errors.first().map_or(ErrorCode::InternalGenerator, |e| e.code()),
+            Error::Trust(_) => ErrorCode::TrustPolicy,
+            Error::Command { .. } => ErrorCode::CommandFailed,
+            Error::Environment(_) => ErrorCode::Environment,
+        }
+    }
+}
+
+/// The code of a worker failure, by the most fundamental kind of error it reports: a Lean error
+/// explains any consequent failure, then project, adapter, and request errors.
+fn worker_code(diagnostics: &[Diagnostic]) -> ErrorCode {
+    let has = |k: DiagnosticKind| diagnostics.iter().any(|d| d.kind == k && d.severity == Severity::Error);
+    if has(DiagnosticKind::Lean) {
+        ErrorCode::LeanRejected
+    } else if has(DiagnosticKind::Project) {
+        ErrorCode::InvalidProject
+    } else if has(DiagnosticKind::Adapter) {
+        ErrorCode::AdapterRejected
+    } else {
+        ErrorCode::UnsatisfiableRequest
     }
 }
 
@@ -93,32 +133,38 @@ fn render_diagnostic(f: &mut fmt::Formatter<'_>, d: &Diagnostic) -> fmt::Result 
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Error::Codegen { toolchain, bir_version, errors } = self {
+            for e in errors {
+                writeln!(f, "error[{}]: {e}\n", e.code())?;
+            }
+            return write!(f, "Lean toolchain: {toolchain}\nBridge IR: {bir_version}");
+        }
+        write!(f, "error[{}]: ", self.code())?;
         match self {
-            Error::Io { context, source } => write!(f, "lean2rust: {context}: {source}"),
-            Error::Project(msg) => write!(f, "lean2rust: invalid Lean project: {msg}"),
+            Error::Io { context, source } => write!(f, "{context}: {source}"),
+            Error::Project(msg) => write!(f, "invalid Lean project: {msg}"),
             Error::UnsupportedToolchain { found, supported } => write!(
                 f,
-                "lean2rust: the Lean project pins toolchain {found:?}, which this bridge does not support.\nSupported toolchains: {}\nPin one of them in lean-toolchain.",
+                "the Lean project pins toolchain {found:?}, which this bridge does not support.\nSupported toolchains: {}\nPin one of them in lean-toolchain.",
                 supported.join(", ")
             ),
             Error::ToolchainNotInstalled { toolchain, expected_at } => write!(
                 f,
-                "lean2rust: Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `cargo lean2rust setup`; builds never install toolchains implicitly.",
+                "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `cargo lean2rust setup`; builds never install toolchains implicitly.",
                 expected_at.display()
             ),
             Error::LeanElaboration { output } => {
-                writeln!(f, "lean2rust: Lean elaboration failed\n")?;
+                writeln!(f, "Lean elaboration failed\n")?;
                 f.write_str(output.trim_end())
             }
             Error::Worker { toolchain, diagnostics } => {
-                let lean = diagnostics.iter().any(|d| d.kind == DiagnosticKind::Lean);
-                let adapter = diagnostics.iter().any(|d| d.kind == DiagnosticKind::Adapter);
-                if lean {
-                    writeln!(f, "lean2rust: Lean elaboration failed\n")?;
-                } else if adapter {
-                    writeln!(f, "lean2rust: the Lean {toolchain} adapter cannot process the compiler output\n")?;
-                } else {
-                    writeln!(f, "lean2rust: the request cannot be satisfied\n")?;
+                match worker_code(diagnostics) {
+                    ErrorCode::LeanRejected => writeln!(f, "Lean elaboration failed\n")?,
+                    ErrorCode::InvalidProject => writeln!(f, "invalid Lean project\n")?,
+                    ErrorCode::AdapterRejected => {
+                        writeln!(f, "the Lean {toolchain} adapter cannot process the compiler output\n")?
+                    }
+                    _ => writeln!(f, "the request cannot be satisfied\n")?,
                 }
                 for d in diagnostics {
                     render_diagnostic(f, d)?;
@@ -126,37 +172,36 @@ impl fmt::Display for Error {
                 Ok(())
             }
             Error::WorkerCrashed { status, stderr, limits } => {
-                write!(f, "lean2rust: the Lean worker process failed ({status}) without producing a response")?;
+                write!(f, "the Lean worker process failed ({status}) without producing a response")?;
                 if let Some(l) = limits {
                     write!(f, " (worker resource limits: {l})")?;
                 }
                 write!(f, "\n{stderr}")
             }
             Error::WorkerResourceLimit { limit, stderr } => {
-                write!(f, "lean2rust: the Lean worker exceeded its {limit} limit and was stopped\n{stderr}")
+                write!(f, "the Lean worker exceeded its {limit} limit and was stopped\n{stderr}")
             }
             Error::WorkerTimeout { seconds, stderr } => {
-                write!(f, "lean2rust: the Lean worker did not finish within {seconds} s and was terminated\n{stderr}")
+                write!(f, "the Lean worker did not finish within {seconds} s and was terminated\n{stderr}")
             }
-            Error::Protocol(msg) => write!(f, "lean2rust: worker protocol error: {msg}"),
-            Error::Codegen { toolchain, bir_version, messages } => {
-                for m in messages {
-                    writeln!(f, "error: {m}\n")?;
-                }
-                write!(f, "Lean toolchain: {toolchain}\nBridge IR: {bir_version}")
-            }
+            Error::Protocol(msg) => write!(f, "worker protocol error: {msg}"),
+            Error::Codegen { .. } => unreachable!("rendered above"),
             Error::Trust(violations) => {
-                writeln!(f, "lean2rust: exported declarations violate the configured trust policy:")?;
+                writeln!(f, "exported declarations violate the configured trust policy:")?;
                 for v in violations {
                     writeln!(f, "  {v}")?;
                 }
                 Ok(())
             }
-            Error::Command { program, status, output } => {
-                write!(f, "lean2rust: `{program}` failed ({status})\n{output}")
-            }
-            Error::Environment(msg) => write!(f, "lean2rust: {msg}"),
+            Error::Command { program, status, output } => write!(f, "`{program}` failed ({status})\n{output}"),
+            Error::Environment(msg) => f.write_str(msg),
         }
+    }
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 

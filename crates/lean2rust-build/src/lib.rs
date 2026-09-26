@@ -35,6 +35,7 @@ mod toolchain;
 mod worker;
 
 pub use error::{Error, Result};
+pub use lean2rust_codegen::{CodegenError, ErrorCode};
 pub use toolchain::{SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, read_pin};
 pub use worker::{ADAPTER_VERSION, Limits, WorkerCache};
 
@@ -267,6 +268,12 @@ impl Config {
         self
     }
 
+    /// Reports at most `n` errors from the worker (`0`, the default, reports all).
+    pub fn max_errors(mut self, n: u32) -> Self {
+        self.max_errors = n;
+        self
+    }
+
     pub fn lean_option(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.lean_options.insert(name.into(), value.into());
         self
@@ -445,7 +452,7 @@ impl Config {
                 let generated = lean2rust_codegen::generate(&input).map_err(|errors| Error::Codegen {
                     toolchain: format!("v{}", analysis.toolchain.lean_version),
                     bir_version: analysis.success.bir.bir_version,
-                    messages: errors.iter().map(|e| e.to_string()).collect(),
+                    errors,
                 })?;
                 Ok(Generation { files: generated.files, binary_files: BTreeMap::new(), link_directives: Vec::new() })
             }

@@ -3,3 +3,4 @@
 target/
 *.partial
 .lean2rust-cache/
+.scrap/

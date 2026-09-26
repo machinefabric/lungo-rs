@@ -11,6 +11,7 @@
 //! borrowed argument to a primitive that consumes it, the caller retains it first.
 
 use crate::CodegenError;
+use crate::codes::ErrorCode;
 use crate::compiler::RT;
 use crate::names::mangle;
 use lean2rust_bir::{Body, Declaration, ExternEntry, IrType, Param};
@@ -121,7 +122,7 @@ impl ExternPlan {
             let intrinsic = registry::lookup(&key);
             if let Body::Extern { exported_by: Some(implementation), .. } = &decl.body {
                 if intrinsic.is_some() || user.contains_key(&key) {
-                    errors.push(CodegenError::Extern(format!(
+                    errors.push(CodegenError::external(ErrorCode::ConflictingExtern, format!(
                         "the symbol `{key}` is provided both by the Lean definition {implementation} (via @[export]) and by {}\n\n{}",
                         if intrinsic.is_some() { "the lean2rust runtime" } else { "a Config::rust_extern mapping" },
                         describe(req, decl, &key, source)
@@ -133,7 +134,7 @@ impl ExternPlan {
                 continue;
             }
             match (intrinsic, user.get(&key)) {
-                (Some(_), Some(path)) => errors.push(CodegenError::Extern(format!(
+                (Some(_), Some(path)) => errors.push(CodegenError::external(ErrorCode::RuntimeExternRemapped, format!(
                     "the Lean runtime symbol `{key}` is implemented by lean2rust and cannot be remapped to `{path}`\n\n{}",
                     describe(req, decl, &key, source)
                 ))),
@@ -141,7 +142,7 @@ impl ExternPlan {
                     Ok(()) => {
                         plan.resolutions.insert(decl.name.clone(), Resolution::Intrinsic(intrinsic));
                     }
-                    Err(msg) => errors.push(CodegenError::Extern(format!(
+                    Err(msg) => errors.push(CodegenError::external(ErrorCode::ExternRepresentation, format!(
                         "lean2rust runtime primitive `{key}` does not match the representation Lean's compiler expects: {msg}\n\n{}",
                         describe(req, decl, &key, source)
                     ))),
@@ -163,7 +164,7 @@ impl ExternPlan {
                         ),
                         None => String::new(),
                     };
-                    errors.push(CodegenError::Extern(format!(
+                    errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
                         "unresolved Lean external symbol\n\n{}{reason}\nProvide a Rust mapping with Config::rust_extern({:?}, \"crate::path::to::function\")",
                         describe(req, decl, &key, source),
                         key
@@ -174,7 +175,7 @@ impl ExternPlan {
         for key in user.keys() {
             let used = plan.resolutions.values().any(|r| matches!(r, Resolution::User { key: k, .. } if k == key));
             if !used {
-                errors.push(CodegenError::Extern(format!(
+                errors.push(CodegenError::external(ErrorCode::UnusedExternMapping, format!(
                     "Config::rust_extern maps `{key}`, but no extern declaration reachable from the root modules uses that symbol"
                 )));
             }

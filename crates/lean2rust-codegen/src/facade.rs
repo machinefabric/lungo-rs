@@ -12,7 +12,7 @@
 use crate::compiler::rust_type;
 use crate::names::{components, mangle};
 use crate::rust::{self, Writer, camel, snake};
-use crate::{CodegenError, NameRecord};
+use crate::{CodegenError, ErrorCode, NameRecord};
 use lean2rust_bir::IrType;
 use lean2rust_protocol::{
     CtorDecl, Export, ExternRequirement, FacadeParam, FacadeSignature, FacadeType, FieldKind, TypeDecl,
@@ -1107,7 +1107,8 @@ impl<'a> Facade<'a> {
                     }
                     let mut arg = snake(if name.is_empty() { "arg" } else { name });
                     arg = arg.trim_start_matches("r#").to_owned();
-                    if rust::is_keyword(&arg) || arg == "rt" || arg.starts_with("p_") || arg == "r" {
+                    // Generated locals use the reserved `__` prefix; `rt` names the runtime module.
+                    if rust::is_keyword(&arg) || arg == "rt" || arg.starts_with("__") {
                         arg = format!("{arg}_");
                     }
                     let mut unique = arg.clone();
@@ -1118,10 +1119,10 @@ impl<'a> Facade<'a> {
                     }
                     let rty = self.rust_type(ty, depth, &generics)?;
                     sig.push(format!("{unique}: {rty}"));
-                    body_pre.push(format!("let p_{i}: {} = {};", rust_type(p.ty), to_compiler(p.ty, &unique, &b)));
-                    call_args.push(format!("p_{i}"));
+                    body_pre.push(format!("let __p{i}: {} = {};", rust_type(p.ty), to_compiler(p.ty, &unique, &b)));
+                    call_args.push(format!("__p{i}"));
                     if p.ty.is_object() && p.borrow {
-                        body_post.push(format!("::lean2rust::__facade::dec::<{b}>(p_{i});"));
+                        body_post.push(format!("::lean2rust::__facade::dec::<{b}>(__p{i});"));
                     }
                 }
             }
@@ -1145,7 +1146,7 @@ impl<'a> Facade<'a> {
             w.line(l);
         }
         w.line(format!(
-            "let r: {} = {l2r}::{}({});",
+            "let __r: {} = {l2r}::{}({});",
             rust_type(spec.ir_result),
             mangle(spec.lean_name),
             call_args.join(", ")
@@ -1159,14 +1160,14 @@ impl<'a> Facade<'a> {
                     return Err(CodegenError::internal(format!("{}: IO result compiled as a scalar", export.name)));
                 }
                 let inner = self.rust_type(t, depth, &generics)?;
-                format!("::lean2rust::__facade::take_io::<{b}, {inner}>(r)")
+                format!("::lean2rust::__facade::take_io::<{b}, {inner}>(__r)")
             }
             FacadeType::Eio { error, value } => {
                 let e = self.rust_type(error, depth, &generics)?;
                 let v = self.rust_type(value, depth, &generics)?;
-                format!("::lean2rust::__facade::take_eio::<{b}, {v}, {e}>(r)")
+                format!("::lean2rust::__facade::take_eio::<{b}, {v}, {e}>(__r)")
             }
-            _ => from_compiler(spec.ir_result, &ret, "r", true, &b),
+            _ => from_compiler(spec.ir_result, &ret, "__r", true, &b),
         };
         w.line(result);
         w.close("}");
@@ -1190,7 +1191,7 @@ impl<'a> Facade<'a> {
         export_symbol: Option<&str>,
     ) -> Result<(), CodegenError> {
         let sig: &FacadeSignature = req.facade.as_ref().ok_or_else(|| {
-            CodegenError::Extern(format!(
+            CodegenError::external(ErrorCode::ExternSignature, format!(
                 "cannot generate a Rust adapter for extern {} (`{}`): its Lean type does not determine a Rust signature",
                 decl.name,
                 req.lean_type.as_deref().unwrap_or("unknown type")

@@ -3,7 +3,7 @@
 //! Each test copies a fixture from `fixtures/` into its own scratch directory and runs the same
 //! library pipeline `build.rs` runs (`Config::run`) against it.
 
-use lean2rust_build::{Config, Environment, Error};
+use lean2rust_build::{Config, Environment, Error, ErrorCode};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -121,6 +121,8 @@ fn invalid_lean_fails_with_source_diagnostics() {
     let err = Config::new("lean").root_module("TypeError").run(&s.env("out")).unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::LeanElaboration { .. }), "{err:?}");
+    assert_eq!(err.code(), ErrorCode::LeanRejected);
+    assert!(text.starts_with("error[L2R0201]: "), "{text}");
     assert!(text.contains("TypeError.lean:5:"), "the diagnostic names the source position:\n{text}");
     assert!(text.contains("error"), "{text}");
     assert!(!s.package.join("out").exists(), "no output is published for a failed build");
@@ -132,6 +134,7 @@ fn proofs_are_checked_during_the_build() {
     let err = Config::new("lean").root_module("FalseProof").run(&s.env("out")).unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::LeanElaboration { .. }), "{err:?}");
+    assert_eq!(err.code(), ErrorCode::LeanRejected);
     assert!(text.contains("FalseProof.lean:7:"), "the failing proof is reported at its source:\n{text}");
     assert!(text.contains("decide"), "{text}");
 }
@@ -144,6 +147,7 @@ fn toolchain_mismatch_is_detected_before_compilation() {
         let err = imports_config().run(&s.env("out")).unwrap_err();
         assert!(matches!(&err, Error::UnsupportedToolchain { found, .. } if found == pin), "{err:?}");
         assert!(err.to_string().contains("v4.34.1"), "the error names the supported toolchains: {err}");
+        assert!(err.to_string().starts_with("error[L2R0102]: "), "{err}");
     }
     assert!(!s.project().join(".lake").exists(), "nothing was compiled");
 }
@@ -154,6 +158,8 @@ fn unknown_extern_symbols_are_hard_errors() {
     let err = Config::new("lean").root_module("Unknown").export_module("Unknown").run(&s.env("out")).unwrap_err();
     let text = err.to_string();
     assert!(matches!(err, Error::Codegen { .. }), "{err:?}");
+    assert_eq!(err.code(), ErrorCode::UnresolvedExtern);
+    assert!(text.starts_with("error[L2R0401]: unresolved Lean external symbol"), "{text}");
     for needle in ["unresolved Lean external symbol", "provider_send", "Unknown.providerSend", "Unknown.lean"] {
         assert!(text.contains(needle), "the error mentions {needle}:\n{text}");
     }
@@ -165,6 +171,7 @@ fn unused_rust_extern_mappings_are_rejected() {
     let s = Scratch::new("imports", "unused-mapping");
     let err = imports_config().rust_extern("never_declared", "crate::f").run(&s.env("out")).unwrap_err();
     assert!(err.to_string().contains("never_declared"), "{err}");
+    assert_eq!(err.code(), ErrorCode::UnusedExternMapping);
 }
 
 #[test]

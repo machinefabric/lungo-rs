@@ -592,7 +592,10 @@ mod tests {
         let s = setup("crash");
         let err = run_fake(&s, "echo 'about to crash' >&2\nkill -SEGV $$", None).unwrap_err();
         match err {
-            Error::WorkerCrashed { stderr, .. } => assert!(stderr.contains("about to crash"), "{stderr}"),
+            ref e @ Error::WorkerCrashed { ref stderr, .. } => {
+                assert!(stderr.contains("about to crash"), "{stderr}");
+                assert!(e.to_string().starts_with("error[L2R0303]: "), "{e}");
+            }
             other => panic!("expected a crash report, got {other:?}"),
         }
     }

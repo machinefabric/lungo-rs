@@ -6,6 +6,7 @@
 //! Alongside the Rust sources, machine-readable metadata records name mappings, extern
 //! resolutions, and source provenance.
 
+mod codes;
 mod compiler;
 mod externs;
 mod facade;
@@ -13,6 +14,7 @@ mod names;
 mod oracle;
 mod rust;
 
+pub use codes::ErrorCode;
 pub use externs::{Resolution, resolution_key};
 pub use names::{mangle, module_file_stem};
 pub use oracle::C_SHIM as ORACLE_C_SHIM;
@@ -38,8 +40,8 @@ pub enum CodegenError {
     Validation(Vec<ValidationError>),
     /// The compiler output contains a construct this backend does not implement.
     Adapter { declaration: String, message: String },
-    /// An extern cannot be resolved or implemented.
-    Extern(String),
+    /// An extern cannot be resolved or implemented; `code` identifies the condition.
+    Extern { code: ErrorCode, message: String },
     /// A violated internal invariant of the generator.
     Internal(String),
 }
@@ -51,6 +53,20 @@ impl CodegenError {
 
     pub fn internal(message: impl Into<String>) -> Self {
         CodegenError::Internal(message.into())
+    }
+
+    pub fn external(code: ErrorCode, message: impl Into<String>) -> Self {
+        CodegenError::Extern { code, message: message.into() }
+    }
+
+    /// The stable code of this error.
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            CodegenError::Validation(_) => ErrorCode::InvalidBridgeIr,
+            CodegenError::Adapter { .. } => ErrorCode::UnsupportedCompilerOutput,
+            CodegenError::Extern { code, .. } => *code,
+            CodegenError::Internal(_) => ErrorCode::InternalGenerator,
+        }
     }
 }
 
@@ -71,7 +87,7 @@ impl fmt::Display for CodegenError {
                 f,
                 "lean2rust backend does not implement this compiler output: {message}\n\nLean declaration: {declaration}"
             ),
-            CodegenError::Extern(message) => f.write_str(message),
+            CodegenError::Extern { message, .. } => f.write_str(message),
             CodegenError::Internal(message) => write!(f, "internal lean2rust code generator error: {message}"),
         }
     }
@@ -284,9 +300,12 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
                     Some(key.as_str())
                 }
                 (Layer::Oracle, _) => {
-                    errors.push(CodegenError::Extern(format!(
-                        "LeanOracle mode can only provide application externs declared with `@[extern \"symbol\"]`; {decl_name} uses another extern form"
-                    )));
+                    errors.push(CodegenError::external(
+                        ErrorCode::OracleExternForm,
+                        format!(
+                            "LeanOracle mode can only provide application externs declared with `@[extern \"symbol\"]`; {decl_name} uses another extern form"
+                        ),
+                    ));
                     continue;
                 }
             };
