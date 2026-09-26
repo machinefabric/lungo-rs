@@ -87,18 +87,21 @@ def Initializer.decls : Initializer → Array Name
   | .value d f => #[d, f]
 
 /--
-The initializers module `modIdx` runs when the program starts, mirroring the runtime-phase module
-initialization emitted by Lean's C backend: builtin and regular `[init]` declarations in
-declaration order, excluding `meta` declarations of `module` files.
+The initializers module `modIdx` runs when the program starts in initialization phase `phases`,
+mirroring the module initialization emitted by Lean's C backend: builtin and regular `[init]`
+declarations in declaration order; the runtime phase excludes `meta` declarations.
 -/
-def initializers (env : Environment) (modIdx : Nat) : Array Initializer := Id.run do
+def initializers (env : Environment) (modIdx : Nat) (phases : IRPhases) : Array Initializer := Id.run do
   let some data := env.header.moduleData[modIdx]? | return #[]
   let mut out := #[]
   for n in data.constNames do
-    if data.isModule && isMarkedMeta env n then continue
-    if isIOUnitInitFn env n then
+    -- The runtime phase leaves out `meta` (compile-time) declarations.
+    if phases == .runtime && isMarkedMeta env n then continue
+    -- Programs initialize with `builtin = true`, so builtin initializers run as well, and a
+    -- builtin initialization function takes precedence (as in Lean's `emitDeclInit`).
+    if isIOUnitBuiltinInitFn env n || isIOUnitInitFn env n then
       out := out.push (.io n)
-    else if let some f := getInitFnNameFor? env n then
+    else if let some f := getBuiltinInitFnNameFor? env n <|> getInitFnNameFor? env n then
       out := out.push (.value n f)
   return out
 

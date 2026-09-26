@@ -966,6 +966,49 @@ pub fn flush_stdio() {
     }
 }
 
+/// Flushes the buffered output of every open handle in a child process between `fork` and
+/// `exec`. Lean's runtime ends a child that cannot run its program with C's `exit`, which
+/// flushes the `FILE` buffers the child inherited, so output the parent had buffered is written
+/// again, to the child's streams. Only async-signal-safe operations are used: nothing is
+/// allocated or waited for, and a handle that was locked when the process forked is skipped.
+///
+/// # Safety
+///
+/// Must only be called in a forked child that will exit without returning to Rust code.
+#[cfg(unix)]
+pub(crate) unsafe fn flush_stdio_in_forked_child() {
+    use std::os::fd::AsRawFd;
+    use std::sync::TryLockError;
+    let open = match OPEN_HANDLES.try_lock() {
+        Ok(g) => g,
+        Err(TryLockError::Poisoned(p)) => p.into_inner(),
+        Err(TryLockError::WouldBlock) => return,
+    };
+    for weak in open.iter() {
+        let Some(handle) = weak.upgrade() else { continue };
+        {
+            let state = match handle.state.try_lock() {
+                Ok(g) => Some(g),
+                Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
+                Err(TryLockError::WouldBlock) => None,
+            };
+            if let Some(mut state) = state {
+                let fd = state.device.file().as_raw_fd();
+                let mut rest: &[u8] = &state.write_buf;
+                while !rest.is_empty() {
+                    let n = unsafe { libc::write(fd, rest.as_ptr() as *const libc::c_void, rest.len()) };
+                    if n <= 0 {
+                        break;
+                    }
+                    rest = &rest[n as usize..];
+                }
+            }
+        }
+        // The child exits without returning; releasing the reference could only deallocate.
+        std::mem::forget(handle);
+    }
+}
+
 static INITIALIZING: AtomicBool = AtomicBool::new(true);
 
 /// Marks the end of module initialization (`lean_io_mark_end_initialization`).

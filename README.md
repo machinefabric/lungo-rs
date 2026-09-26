@@ -156,6 +156,7 @@ cargo lean2rust setup              # install the pinned toolchain and locked dep
 | `compiler-tests/facade` | A Lean library compared between PureRust and LeanOracle |
 | `compiler-tests/host` | Rust callbacks, custom syntax and macros, link checks |
 | `compiler-tests/gates` | Release gates of the build pipeline |
+| `compiler-tests/stdlib-corpus` | Lean's whole executable `Init`/`Std`, generated as Rust (checked in CI) |
 | `runtime-tests/` | Inventories of the toolchain's native interface |
 
 ## Testing
@@ -171,4 +172,6 @@ The suite includes:
 - property tests comparing PureRust with LeanOracle call by call;
 - a check that every `@[extern]` symbol of the toolchain is classified and every BIR
   instruction the toolchain emits is exercised;
-- the release gates of design §49.
+- the release gates of design §49;
+- the whole executable `Init` and `Std` library translated, verified and (in CI,
+  `cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml`) type-checked.

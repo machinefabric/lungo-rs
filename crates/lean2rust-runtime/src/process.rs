@@ -141,12 +141,13 @@ mod imp {
         if mode == PIPED { pipe().map(Some) } else { Ok(None) }
     }
 
-    /// Writes `msg` to the standard error of the forked child without allocating.
+    /// Reports a failure of the forked child and ends it as Lean's runtime does: the message
+    /// goes to standard error, then `exit(-1)` flushes the output buffers the child inherited
+    /// from the parent (see [`crate::io::flush_stdio_in_forked_child`]). Nothing is allocated.
     unsafe fn child_error(msg: &[u8]) -> ! {
         unsafe {
             libc::write(2, msg.as_ptr() as *const libc::c_void, msg.len());
-            // `_exit` rather than `exit`: stdio buffers inherited from the parent must not be
-            // flushed twice.
+            crate::io::flush_stdio_in_forked_child();
             libc::_exit(-1)
         }
     }

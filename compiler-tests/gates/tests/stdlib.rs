@@ -21,10 +21,11 @@ fn the_executable_standard_library_translates() {
     assert!(!modules.contains(&"StdlibCorpus.Generate"), "meta imports are not linked");
     assert!(!modules.iter().any(|m| m.starts_with("Lean.Elab")), "the elaborator is not linked");
 
-    // Every Init/Std module with compiled code contributes declarations.
+    // The whole executable library is in the program (about 10,000 compiled declarations from
+    // Init and 40,000 from Std with Lean 4.34.1); the bound guards against a shrinking corpus.
     let count = |prefix: &str| program.declarations.iter().filter(|d| d.module.starts_with(prefix)).count();
     let (init, std) = (count("Init"), count("Std"));
-    assert!(init > 10_000 && std > 10_000, "Init: {init} declarations, Std: {std} declarations");
+    assert!(init > 8_000 && std > 30_000, "Init: {init} declarations, Std: {std} declarations");
 
     lean2rust_bir::validate(program).unwrap_or_else(|errors| {
         panic!("{} verifier errors, first: {}", errors.len(), errors[0]);

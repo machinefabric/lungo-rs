@@ -9,7 +9,7 @@
 use crate::error::{Error, Result};
 use crate::{Analysis, Config, Context, Environment, Generation};
 use lean2rust_protocol::PackageOrigin;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -46,11 +46,14 @@ pub(crate) fn generate(
             "LeanOracle mode links Lean's native runtime, which is built for the GNU ABI on Windows; use a `*-windows-gnu` target".into(),
         ));
     }
-    // C code of every module outside the toolchain, produced by Lean's C emitter through Lake.
+    // C code of every linked module outside the toolchain, produced by Lean's C emitter through
+    // Lake. Modules only `meta`-imported are compile-time code and are not linked.
+    let linked: BTreeSet<&str> = analysis.success.bir.modules.iter().map(|m| m.name.as_str()).collect();
     let modules: Vec<&str> = analysis
         .success
         .module_graph
         .iter()
+        .filter(|m| linked.contains(m.name.as_str()))
         .filter(|m| m.source.as_ref().is_some_and(|s| s.origin != PackageOrigin::Toolchain))
         .map(|m| m.name.as_str())
         .collect();

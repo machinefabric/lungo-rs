@@ -76,6 +76,34 @@ def moduleGraph (env : Environment) (ws : LakeInfo.Workspace) : WorkerM (Array M
 def ModuleNode.isLocal (m : ModuleNode) : Bool :=
   m.location.any fun l => l.origin matches .root
 
+/--
+The modules linked into the program and the initialization phase each one runs, following the
+module initialization Lean's C backend emits. A `module` file runs its runtime phase, which
+leaves out its `meta` imports (compile-time code); a legacy file runs every phase of all its
+imports (`.all`). A module reached in both ways runs `.all`.
+-/
+def linkedPhases (env : Environment) (roots : Array Name) : Std.HashMap Nat IRPhases := Id.run do
+  let isModule (i : Nat) := (env.header.moduleData[i]?.map (·.isModule)).getD false
+  let mut phases : Std.HashMap Nat IRPhases := {}
+  let mut work : Array (Nat × IRPhases) := #[]
+  for r in roots do
+    if let some i := env.getModuleIdx? r then
+      work := work.push (i.toNat, if isModule i.toNat then .runtime else .all)
+  while h : work.size > 0 do
+    let (i, p) := work[work.size - 1]
+    work := work.pop
+    match phases[i]?, p with
+    | some .all, _ | some .runtime, .runtime => continue
+    | _, _ => pure ()
+    phases := phases.insert i p
+    let some data := env.header.moduleData[i]? | continue
+    for imp in data.imports do
+      if p == .runtime && imp.isMeta then continue
+      let some j := env.getModuleIdx? imp.module | continue
+      let j := j.toNat
+      work := work.push (j, if p == .all || !isModule j then .all else .runtime)
+  return phases
+
 def ModuleNode.toCbor (m : ModuleNode) : Value :=
   obj [
     ("name", BridgeIR.name m.name),
@@ -187,18 +215,23 @@ def run (request : Protocol.Request) : WorkerM Value := do
     unless modules[idx.toNat]!.isLocal do
       fail .request s!"root module {r} is not a module of the project's root package"
   let ctx : Context := { request, ws, env, modules }
-  -- Compilation roots: every compiler declaration of the project's local modules, every
-  -- initializer of every loaded module, and explicitly exported declarations.
+  let linked := linkedPhases env roots
+  -- Compilation roots: every runtime declaration of the project's linked local modules, every
+  -- initializer of every linked module, and explicitly exported declarations.
   let mut idx : LCNFAdapter.IRIndex := { env }
   let mut compileRoots : Array Name := #[]
   for h : i in [0:modules.size] do
+    let some phases := linked[i]? | continue
     if modules[i].isLocal then
       let (decls, idx') := LCNFAdapter.moduleDecls idx i
       idx := idx'
-      compileRoots := compileRoots ++ (decls.toArray.map (·.1)).qsort (fun a b => BridgeIR.nameString a < BridgeIR.nameString b)
+      let runtime := decls.toArray.filter fun (n, _) =>
+        phases == .all || !(isMarkedMeta env n || (LCNFAdapter.origin env n).any (isMarkedMeta env))
+      compileRoots := compileRoots ++ (runtime.map (·.1)).qsort (fun a b => BridgeIR.nameString a < BridgeIR.nameString b)
   let mut initCbor := #[]
   for h : i in [0:modules.size] do
-    let inits := LCNFAdapter.initializers env i
+    let some phases := linked[i]? | continue
+    let inits := LCNFAdapter.initializers env i phases
     for init in inits do compileRoots := compileRoots ++ init.decls
     initCbor := initCbor.push (obj [
       ("name", BridgeIR.name modules[i].name),

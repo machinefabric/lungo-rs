@@ -27,16 +27,23 @@ fn build_native() {
     assert!(status.success(), "the native conformance build failed");
 }
 
+fn native_exe(name: &str) -> PathBuf {
+    conformance_project().join(".lake/build/bin").join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
+/// Arguments, environment and working directory shared by both runs of a program. The
+/// `process` program spawns the natively built `child` helper in both runs.
 fn configure(cmd: &mut Command) -> &mut Command {
     cmd.args(["first", "second arg", "ünïcode"])
+        .current_dir(conformance_project())
         .env("LEAN_BACKTRACE", "0")
         .env("LEAN2RUST_CONFORMANCE_VAR", "present")
+        .env("LEAN2RUST_CONFORMANCE_CHILD", native_exe("child"))
         .env_remove("LEAN_ABORT_ON_PANIC")
 }
 
 fn run_native(name: &str) -> Output {
-    let exe = conformance_project().join(".lake/build/bin").join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    configure(&mut Command::new(exe)).output().unwrap()
+    configure(&mut Command::new(native_exe(name))).output().unwrap()
 }
 
 fn run_pure_rust(name: &str) -> Output {

@@ -52,3 +52,12 @@ root = "Conformance.Syntax"
 [[lean_exe]]
 name = "unsafe"
 root = "Conformance.Unsafe"
+
+[[lean_exe]]
+name = "process"
+root = "Conformance.Process"
+
+# A helper process spawned by `process`; the same native binary serves both backends' runs.
+[[lean_exe]]
+name = "child"
+root = "Conformance.Child"
