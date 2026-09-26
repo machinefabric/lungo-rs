@@ -7,10 +7,10 @@ Rust API.
 
 ```toml
 [dependencies]
-patina = "0.23.943"
+patina = "{{ project.version }}"
 
 [build-dependencies]
-patina-build = "0.23.943"
+patina-build = "{{ project.version }}"
 ```
 
 Use the same version of both: generated code runs on exactly the runtime it was generated for.

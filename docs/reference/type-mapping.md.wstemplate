@@ -72,7 +72,7 @@ With the `serde` feature of the `patina` crate, the facade types implement `serd
 
 ```toml
 [dependencies]
-patina = { version = "0.23.943", features = ["serde"] }
+patina = { version = "{{ project.version }}", features = ["serde"] }
 ```
 
 | Rust | Serialized as |
