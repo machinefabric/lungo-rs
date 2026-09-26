@@ -16,10 +16,10 @@ mod rust;
 mod shaping;
 
 pub use codes::ErrorCode;
-pub use shaping::{Attribute, Shaping, selects};
 pub use externs::{Resolution, resolution_key};
 pub use names::{mangle, module_file_stem};
 pub use oracle::C_SHIM as ORACLE_C_SHIM;
+pub use shaping::{Attribute, Shaping, selects};
 
 use compiler::Emitter;
 use externs::ExternPlan;

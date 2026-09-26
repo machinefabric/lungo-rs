@@ -311,6 +311,7 @@ version = "0.1.0"
 dependencies = [
  "patina-bir",
  "patina-build",
+ "serde_json",
 ]
 
 [[package]]
@@ -719,6 +720,16 @@ version = "0.1.0"
 dependencies = [
  "patina",
  "patina-build",
+]
+
+[[package]]
+name = "shaping"
+version = "0.1.0"
+dependencies = [
+ "patina",
+ "patina-build",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

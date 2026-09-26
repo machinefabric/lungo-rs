@@ -1,0 +1,10 @@
+name = "drawing"
+version = "0.1.0"
+defaultTargets = ["Drawing"]
+
+[[require]]
+name = "geometry"
+path = "../geometry"
+
+[[lean_lib]]
+name = "Drawing"

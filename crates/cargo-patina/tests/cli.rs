@@ -51,10 +51,30 @@ fn build_generates_then_reuses() {
     assert!(first.starts_with("generated ") || first.starts_with("up to date: "), "{first}");
     let second = ok(&["build"]);
     assert!(second.starts_with("up to date: "), "{second}");
-    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-out");
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-out").join("formal");
+    assert!(second.trim_end().ends_with(&*out.to_string_lossy()), "{second}");
     for f in ["formal.rs", "names.json", "externs.json", "sources.json", "manifest.json", "build-info.json"] {
         assert!(out.join(f).is_file(), "{f} is published");
     }
+}
+
+#[test]
+fn build_publishes_into_the_configured_out_dir() {
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let out = tmp.join("configured-out");
+    let config = tmp.join("out-dir.toml");
+    std::fs::write(&config, format!("project = \"lean\"\n\n[build]\nout-dir = {:?}\n", out.to_str().unwrap())).unwrap();
+    let run = Command::new(env!("CARGO_BIN_EXE_cargo-patina"))
+        .args(["patina", "build", "--package-dir"])
+        .arg(package())
+        .arg("--config")
+        .arg(&config)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(run.stdout).unwrap();
+    assert!(run.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&run.stderr));
+    assert!(stdout.trim_end().ends_with(&*out.join("formal").to_string_lossy()), "{stdout}");
+    assert!(out.join("formal").join("formal.rs").is_file());
 }
 
 #[test]
@@ -83,6 +103,15 @@ fn rust_prints_generated_code() {
     let out = ok(&["rust", "Formal.run"]);
     assert!(out.contains("// Lean: Formal.run"), "{out}");
     assert!(out.contains("pub fn run("), "the facade function is shown:\n{out}");
+}
+
+#[test]
+fn rust_finds_facade_functions_without_documentation() {
+    let config = Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-comments.toml");
+    std::fs::write(&config, "project = \"lean\"\n\n[build]\ndisable-comments = [\"Formal.run\"]\n").unwrap();
+    let out = ok(&["rust", "Formal.run", "--config", config.to_str().unwrap()]);
+    assert!(out.contains("pub fn run("), "the facade function is shown:\n{out}");
+    assert!(!out.contains("/// Lean: `Formal.run"), "its documentation is disabled:\n{out}");
 }
 
 #[test]

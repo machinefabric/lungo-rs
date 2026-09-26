@@ -245,3 +245,67 @@ fn builds_never_rewrite_the_lean_project() {
     let after = snapshot(&s.project(), &[".lake"]);
     assert_eq!(before, after, "the build modified files of the Lean project");
 }
+
+/// The `lean_name`s of the records in a published `names.json`.
+fn lean_names(module: &Path) -> Vec<String> {
+    let text = std::fs::read_to_string(module.join("names.json")).unwrap();
+    let records: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+    records.iter().map(|r| r["lean_name"].as_str().unwrap().to_owned()).collect()
+}
+
+#[test]
+fn default_targets_of_a_lakefile_lean_are_the_roots() {
+    let s = Scratch::new("targets", "default-targets");
+    let outcome = s.build(&configure(), "out").unwrap();
+    assert_eq!(outcome.name, "targets");
+    let module = s.module("out", "targets");
+    let names = lean_names(&module);
+    for exported in ["Shapes.Circle.diameter", "Shapes.Square.area", "Tool.report", "main"] {
+        assert!(names.iter().any(|n| n == exported), "every root of every default target is exported: {names:?}");
+    }
+    let aggregate = std::fs::read_to_string(module.join("targets.rs")).unwrap();
+    assert!(aggregate.contains("pub fn __lean_main()"), "the executable's root defines `main`");
+}
+
+#[test]
+fn a_package_without_default_targets_needs_explicit_roots() {
+    let s = Scratch::new("imports", "no-default-targets");
+    s.write("lakefile.toml", "name = \"imports\"\nversion = \"0.1.0\"\n\n[[lean_lib]]\nname = \"Imports\"\n");
+    let err = s.build(&configure(), "out").unwrap_err();
+    assert_eq!(err.code(), ErrorCode::UnsatisfiableRequest, "{err}");
+    assert!(err.to_string().contains("no default targets"), "{err}");
+    let explicit = s.build(&configure().root_module("Imports"), "out").unwrap();
+    assert!(lean_names(&s.module("out", explicit.name.as_str())).iter().any(|n| n == "Imports.scaled"));
+}
+
+#[test]
+fn two_projects_cannot_generate_the_same_module() {
+    let a = Scratch::new("imports", "same-name-a");
+    let b = Scratch::new("imports", "same-name-b");
+    let env = a.env("out");
+    configure().run(&a.project(), &env).unwrap();
+    let err = configure().run(&b.project(), &env).unwrap_err();
+    assert_eq!(err.code(), ErrorCode::InvalidConfiguration, "{err}");
+    assert!(err.to_string().contains("would both generate the module `imports`"), "{err}");
+    let renamed = configure().name("imports_b").run(&b.project(), &env).unwrap();
+    assert_eq!(renamed.name, "imports_b");
+    assert!(a.module("out", "imports_b").join("imports_b.rs").is_file());
+}
+
+#[test]
+fn shaping_paths_that_select_nothing_are_rejected() {
+    let s = Scratch::new("imports", "unmatched-paths");
+    let cfg = configure()
+        .type_attribute("Imports.Missing", "#[derive(Default)]")
+        .field_attribute("Imports.scaled", "#[doc(hidden)]")
+        .skip_debug(["Imports.Scaled"]);
+    let Error::Codegen { errors, .. } = s.build(&cfg, "out").unwrap_err() else {
+        panic!("shaping is checked by the code generator");
+    };
+    let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+    assert!(errors.iter().all(|e| e.code() == ErrorCode::InvalidConfiguration), "{messages:?}");
+    assert_eq!(messages.len(), 3, "{messages:?}");
+    for path in ["`Imports.Missing`", "`Imports.scaled`", "`Imports.Scaled`"] {
+        assert!(messages.iter().any(|m| m.contains(path)), "{path} is reported: {messages:?}");
+    }
+}

@@ -485,8 +485,11 @@ impl<'a> Facade<'a> {
                 }
                 w.close("}");
             } else {
-                let items: Vec<String> =
-                    fields.iter().enumerate().map(|(i, f)| format!("{}pub {f}", self.inline_field_attributes(t, c, i))).collect();
+                let items: Vec<String> = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| format!("{}pub {f}", self.inline_field_attributes(t, c, i)))
+                    .collect();
                 w.line(format!("pub struct {ident}{generics}({});", items.join(", ")));
             }
         } else {
@@ -504,8 +507,11 @@ impl<'a> Facade<'a> {
                         .collect();
                     w.line(format!("{v} {{ {} }},", items.join(", ")));
                 } else {
-                    let items: Vec<String> =
-                        fields.iter().enumerate().map(|(i, f)| format!("{}{f}", self.inline_field_attributes(t, c, i))).collect();
+                    let items: Vec<String> = fields
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| format!("{}{f}", self.inline_field_attributes(t, c, i)))
+                        .collect();
                     w.line(format!("{v}({}),", items.join(", ")));
                 }
             }

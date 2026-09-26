@@ -49,8 +49,8 @@ struct Options {
     /// Use Lean's native backend (`LeanOracle`) instead of PureRust.
     #[arg(long, global = true)]
     oracle: bool,
-    /// Where generated modules are written, each as `<out-dir>/<name>` (default:
-    /// `<package>/target/patina/out`).
+    /// Where generated modules are written, each as `<out-dir>/<name>` (default: the
+    /// configuration's `out-dir`, else `<package>/target/patina/out`).
     #[arg(long, global = true)]
     out_dir: Option<PathBuf>,
 }
@@ -127,9 +127,15 @@ fn load_config(opts: &Options, package: &Path) -> Result<(PathBuf, Builder)> {
     Ok((project, cfg))
 }
 
-fn environment(opts: &Options, package: &Path) -> Environment {
+/// Where the command works: `--out-dir`, else the configuration's `out-dir` (relative to the
+/// package), else `<package>/target/patina/out`.
+fn environment(opts: &Options, cfg: &Builder, package: &Path) -> Environment {
     let base = package.join("target").join("patina");
-    let out = opts.out_dir.clone().unwrap_or_else(|| base.join("out"));
+    let out = match (&opts.out_dir, &cfg.out_dir) {
+        (Some(dir), _) => dir.clone(),
+        (None, Some(dir)) => package.join(dir),
+        (None, None) => base.join("out"),
+    };
     Environment::native(package.to_path_buf(), out, base.join("work"))
 }
 
@@ -138,11 +144,11 @@ fn run(cli: Cli) -> Result<()> {
         Some(p) => patina_build::canonical_path(p)?,
         None => std::env::current_dir()?,
     };
-    let env = environment(&cli.options, &package);
-    if let Command::Setup = cli.command {
-        return setup(&cli.options, &package, &env);
-    }
     let (project, cfg) = load_config(&cli.options, &package)?;
+    let env = environment(&cli.options, &cfg, &package);
+    if let Command::Setup = cli.command {
+        return setup(project, cfg, &package, &env);
+    }
     let project = project.as_path();
     match cli.command {
         Command::Check => {
@@ -188,8 +194,7 @@ fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn setup(opts: &Options, package: &Path, env: &Environment) -> Result<()> {
-    let (project, cfg) = load_config(opts, package)?;
+fn setup(project: PathBuf, cfg: Builder, package: &Path, env: &Environment) -> Result<()> {
     let cfg = cfg.toolchain_policy(patina_build::ToolchainPolicy::Install);
     let project = if project.is_absolute() { project } else { package.join(project) };
     let pin = patina_build::read_pin(&project)?;
@@ -288,16 +293,19 @@ fn ir(analysis: &Analysis, name: &str) -> Result<()> {
 fn rust(analysis: &Analysis, generation: &patina_build::Generation, name: &str, aggregate: &str) -> Result<()> {
     let d =
         analysis.success.bir.declaration(name).ok_or_else(|| format!("{name} has no compiled code in the program"))?;
-    let mut printed = false;
     let file = format!("modules/{}.rs", patina_codegen::module_file_stem(&d.module));
-    if let Some(text) = generation.files.get(&file) {
-        printed |= print_items(text, &format!("// Lean: {name}"));
+    let module = generation.files.get(&file).ok_or_else(|| format!("{file} was not generated"))?;
+    if !print_items(module, &format!("// Lean: {name}")) {
+        return Err(format!("no generated Rust found for {name} in {file}").into());
     }
-    if let Some(text) = generation.files.get(&format!("{aggregate}.rs")) {
-        printed |= print_items(text, &format!("/// Lean: `{name} :"));
-    }
-    if !printed {
-        return Err(format!("no generated Rust found for {name}").into());
+    // The facade function, found by its Rust path: its documentation may be disabled.
+    let names = generation.files.get("names.json").ok_or("no name mappings generated")?;
+    let records: Vec<serde_json::Value> = serde_json::from_str(names)?;
+    let facade = records.iter().find(|r| r["lean_name"] == name && r["kind"] == "function");
+    if let Some(path) = facade.and_then(|r| r["rust_path"].as_str()) {
+        let text = generation.files.get(&format!("{aggregate}.rs")).ok_or("the aggregate module was not generated")?;
+        let item = facade_function(text, path).ok_or_else(|| format!("the facade function {path} was not found"))?;
+        println!("{item}");
     }
     Ok(())
 }
@@ -321,4 +329,81 @@ fn print_items(text: &str, marker: &str) -> bool {
         }
     }
     printed
+}
+
+/// The item (with its documentation and attributes) defining the facade function at `path`, such
+/// as `eval_tokens::go`, in a generated aggregate module. Items end at a blank line, and
+/// `pub mod m {` opens a module whose closing brace is at the same indentation.
+fn facade_function(text: &str, path: &str) -> Option<String> {
+    let (modules, function) = match path.rsplit_once("::") {
+        Some((modules, function)) => (modules.split("::").collect(), function),
+        None => (Vec::new(), path),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let mut open: Vec<(&str, usize)> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let indent = line.len() - line.trim_start().len();
+        let body = line.trim_start();
+        if let Some(name) = body.strip_prefix("pub mod ").and_then(|rest| rest.strip_suffix(" {")) {
+            open.push((name, indent));
+        } else if body == "}" && open.last().is_some_and(|&(_, at)| at == indent) {
+            open.pop();
+        } else if indent == 4 * open.len()
+            && open.iter().map(|&(name, _)| name).eq(modules.iter().copied())
+            && body
+                .strip_prefix("pub fn ")
+                .and_then(|rest| rest.strip_prefix(function))
+                .is_some_and(|rest| rest.starts_with('('))
+        {
+            let preamble = |l: &&&str| {
+                let body = l.trim_start();
+                l.len() - body.len() == indent && (body.starts_with("///") || body.starts_with("#["))
+            };
+            let start = i - lines[..i].iter().rev().take_while(preamble).count();
+            let end = lines[i..].iter().position(|l| l.trim().is_empty()).map_or(lines.len(), |e| i + e);
+            return Some(lines[start..end].join("\n"));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::facade_function;
+
+    const AGGREGATE: &str = "\
+/// Lean: `Host.evalTokens`
+#[allow(unused_imports)]
+pub fn eval_tokens(ts: List) -> Nat {
+    go(ts)
+}
+
+pub mod eval_tokens {
+    #[allow(unused_imports)]
+    pub fn go(ts: List) -> Nat {
+        inner()
+    }
+
+    pub fn go_on(ts: List) -> Nat {
+        inner()
+    }
+
+}
+
+pub fn go(n: Nat) -> Nat {
+    n
+}
+";
+
+    #[test]
+    fn facade_functions_are_found_by_rust_path() {
+        let top = facade_function(AGGREGATE, "eval_tokens").unwrap();
+        assert!(top.starts_with("/// Lean: `Host.evalTokens`") && top.ends_with("    go(ts)\n}"), "{top}");
+        let nested = facade_function(AGGREGATE, "eval_tokens::go").unwrap();
+        assert!(nested.starts_with("    #[allow(unused_imports)]\n    pub fn go(ts: List)"), "{nested}");
+        assert!(facade_function(AGGREGATE, "go").unwrap().starts_with("pub fn go(n: Nat)"));
+        assert!(facade_function(AGGREGATE, "eval_tokens::go_on").unwrap().contains("pub fn go_on("));
+        assert_eq!(facade_function(AGGREGATE, "eval_tokens::missing"), None);
+        assert_eq!(facade_function(AGGREGATE, "other::go"), None);
+    }
 }

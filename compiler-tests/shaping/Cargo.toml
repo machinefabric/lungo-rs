@@ -1,0 +1,16 @@
+[package]
+name = "shaping"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Release-gate project: attributes, serde, skip_debug, disable_comments, and types shared between Lean projects"
+
+[dependencies]
+patina = { path = "../../crates/patina", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[build-dependencies]
+patina-build = { path = "../../crates/patina-build" }

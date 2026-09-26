@@ -124,6 +124,8 @@ pub fn publish(
     if previous.exists() {
         fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
     }
+    let parent = out_dir.parent().expect("the output directory has a parent");
+    fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
     let had_previous = out_dir.exists();
     if had_previous {
         fs::rename(out_dir, &previous).map_err(|e| Error::io(format!("cannot move aside {}", out_dir.display()), e))?;

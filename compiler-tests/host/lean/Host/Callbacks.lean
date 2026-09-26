@@ -1,6 +1,6 @@
 /-!
 Lean code calling back into the Rust application through `@[extern]` declarations that the
-application maps with `Config::rust_extern`.
+application maps with `Builder::rust_extern`.
 -/
 namespace Host
 

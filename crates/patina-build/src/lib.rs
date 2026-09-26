@@ -827,8 +827,9 @@ pub struct BuildKey {
 }
 
 fn env_string(var: &str) -> Result<String> {
-    std::env::var(var)
-        .map_err(|_| Error::Environment(format!("{var} is not set; Builder::compile_lean must run in a Cargo build script")))
+    std::env::var(var).map_err(|_| {
+        Error::Environment(format!("{var} is not set; Builder::compile_lean must run in a Cargo build script"))
+    })
 }
 
 fn cargo_target() -> Result<Target> {

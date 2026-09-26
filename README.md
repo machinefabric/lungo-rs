@@ -8,22 +8,21 @@ Rust API. No Lean runtime or C code is linked.
 ```rust
 // build.rs
 fn main() -> patina_build::Result<()> {
-    patina_build::Config::new("lean")
-        .root_module("Formal.Session")
-        .export_module("Formal")
-        .compile()
+    patina_build::compile_lean("lean")
 }
 ```
 
 ```rust
 // src/lib.rs
 pub mod formal {
-    include!(concat!(env!("OUT_DIR"), "/patina/formal.rs"));
+    patina::include_lean!("formal");
 }
 ```
 
-Lean definitions in `lean/Formal/Session.lean` are then ordinary Rust functions and types in
-`formal`.
+The Lake project in `lean` (package `formal`) is built as Lake builds it, from its default
+targets, and its Lean definitions are then ordinary Rust functions and types in `formal`.
+`patina_build::configure()` changes what is compiled and exported and shapes the generated
+types, for example to derive `serde` traits.
 
 ## Documentation
 
@@ -57,6 +56,6 @@ Lean definitions in `lean/Formal/Session.lean` are then ordinary Rust functions 
 
 ```sh
 elan toolchain install leanprover/lean4:v4.34.1
-cargo test --workspace
+cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
 ```

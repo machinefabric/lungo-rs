@@ -1,0 +1,13 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "geometry",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../geometry",
+   "configFile": "lakefile.toml"}],
+ "name": "drawing",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

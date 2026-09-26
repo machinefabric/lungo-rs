@@ -1,7 +1,7 @@
 //! Resolution of Lean `@[extern]` declarations.
 //!
 //! Externs resolve, in order, to runtime primitives implemented by `patina-runtime` and to
-//! Rust functions the application maps with `Config::rust_extern`. An extern that resolves to
+//! Rust functions the application maps with `Builder::rust_extern`. An extern that resolves to
 //! neither is a build error naming the Lean declaration, the symbol, its Lean type, the runtime
 //! representation it must have, and its source location; it is never replaced or ignored.
 //!
@@ -124,7 +124,7 @@ impl ExternPlan {
                 if intrinsic.is_some() || user.contains_key(&key) {
                     errors.push(CodegenError::external(ErrorCode::ConflictingExtern, format!(
                         "the symbol `{key}` is provided both by the Lean definition {implementation} (via @[export]) and by {}\n\n{}",
-                        if intrinsic.is_some() { "the patina runtime" } else { "a Config::rust_extern mapping" },
+                        if intrinsic.is_some() { "the patina runtime" } else { "a Builder::rust_extern mapping" },
                         describe(req, decl, &key, source)
                     )));
                 } else {
@@ -165,7 +165,7 @@ impl ExternPlan {
                         None => String::new(),
                     };
                     errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
-                        "unresolved Lean external symbol\n\n{}{reason}\nProvide a Rust mapping with Config::rust_extern({:?}, \"crate::path::to::function\")",
+                        "unresolved Lean external symbol\n\n{}{reason}\nProvide a Rust mapping with Builder::rust_extern({:?}, \"crate::path::to::function\")",
                         describe(req, decl, &key, source),
                         key
                     )));
@@ -176,7 +176,7 @@ impl ExternPlan {
             let used = plan.resolutions.values().any(|r| matches!(r, Resolution::User { key: k, .. } if k == key));
             if !used {
                 errors.push(CodegenError::external(ErrorCode::UnusedExternMapping, format!(
-                    "Config::rust_extern maps `{key}`, but no extern declaration reachable from the root modules uses that symbol"
+                    "Builder::rust_extern maps `{key}`, but no extern declaration reachable from the root modules uses that symbol"
                 )));
             }
         }

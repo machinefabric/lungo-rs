@@ -11,3 +11,4 @@ path = "src/lib.rs"
 [dev-dependencies]
 patina-bir = { path = "../../crates/patina-bir" }
 patina-build = { path = "../../crates/patina-build" }
+serde_json = "1"
