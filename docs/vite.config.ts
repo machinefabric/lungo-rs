@@ -1,25 +1,37 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 
-/** The version of the lungo crates: `version` in the workspace manifest's `[workspace.package]`. */
-function lungoVersion(): string {
-	const manifest = readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8');
-	let inPackage = false;
-	for (const line of manifest.split('\n')) {
-		if (line.startsWith('[')) inPackage = line.trim() === '[workspace.package]';
-		const version = inPackage && /^version = "(.*)"/.exec(line);
-		if (version) return version[1];
+/** The crate users add to a build, whose releases the site shows. */
+const crate = 'lungo-build';
+
+/**
+ * The latest release of `crate` on crates.io. The site shows the published version users get
+ * from `cargo add`, not the version of the sources it is built from; a build that cannot
+ * determine it fails.
+ */
+async function latestRelease(): Promise<string> {
+	const url = `https://crates.io/api/v1/crates/${crate}`;
+	// crates.io requires a User-Agent that identifies the client.
+	const response = await fetch(url, {
+		headers: { 'User-Agent': 'lungo-docs (https://github.com/jowharshamshiri/lungo)' }
+	});
+	if (!response.ok) {
+		throw new Error(`${url}: ${response.status} ${response.statusText}`);
 	}
-	throw new Error('../Cargo.toml has no [workspace.package] version');
+	const version = (await response.json())?.crate?.max_stable_version;
+	if (typeof version !== 'string' || version === '') {
+		throw new Error(`${url}: ${crate} has no released version`);
+	}
+	return version;
 }
 
-export default defineConfig({
+export default defineConfig(async () => ({
 	plugins: [sveltekit()],
 	define: {
-		__LUNGO_VERSION__: JSON.stringify(lungoVersion())
+		__LUNGO_CRATE__: JSON.stringify(crate),
+		__LUNGO_VERSION__: JSON.stringify(await latestRelease())
 	},
 	build: {
 		target: 'esnext'
 	}
-});
+}));

@@ -16,7 +16,7 @@ export const siteConfig: SiteConfig = {
     description:
         'Compile ordinary Lake projects into Rust at Cargo build time. Lean checks and compiles the program; lungo runs it on a Rust port of Lean\'s runtime behind an idiomatic Rust API.',
     github: 'https://github.com/jowharshamshiri/lungo',
-    crate: 'lungo-build',
+    crate: __LUNGO_CRATE__,
     install: 'cargo add lungo && cargo add --build lungo-build',
 
     quickLinks: [

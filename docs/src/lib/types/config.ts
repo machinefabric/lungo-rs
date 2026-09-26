@@ -21,7 +21,7 @@ export interface Section {
 }
 
 export interface SiteConfig {
-    /** The version of the crates the site documents, from the workspace manifest */
+    /** The latest release of `crate` on crates.io, when the site was built */
     version: string;
 
     /** Main title of the documentation site */
@@ -33,7 +33,7 @@ export interface SiteConfig {
     /** GitHub repository URL */
     github: string;
 
-    /** The crate whose crates.io page the version links to */
+    /** The crate whose latest release the site shows and links to */
     crate: string;
 
     /** The command that adds the project to a Cargo package */

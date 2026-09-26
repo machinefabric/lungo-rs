@@ -31,7 +31,7 @@
 		<!-- Version badge -->
 		<div class="flex justify-center">
 			<a
-				href="https://crates.io/crates/{siteConfig.crate}/{siteConfig.version}"
+				href="https://crates.io/crates/{siteConfig.crate}"
 				class="inline-flex items-center gap-x-2 rounded-full border border-gray-200 bg-white p-1 ps-3 text-sm text-gray-800 transition hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
 			>
 				Version {siteConfig.version}

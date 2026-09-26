@@ -1,14 +1,16 @@
 name: Docs
 
 # Builds the documentation site in docs/ and, on main, publishes it with GitHub Pages
-# (Settings → Pages → Source: GitHub Actions). The site shows the crates' version, which it
-# reads from the workspace manifest.
+# (Settings → Pages → Source: GitHub Actions). The site shows the latest release of
+# lungo-build on crates.io as of its build, so it is also rebuilt daily to pick up releases.
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'Cargo.toml', '.github/workflows/docs.yml']
+    paths: ['docs/**', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', 'Cargo.toml', '.github/workflows/docs.yml']
+    paths: ['docs/**', '.github/workflows/docs.yml']
+  schedule:
+    - cron: '17 4 * * *'
   workflow_dispatch:
 
 permissions:
