@@ -26,9 +26,14 @@ types, for example to derive `serde` traits.
 
 ## Documentation
 
-- New to lungo: [Your first Rust crate built from Lean](docs/tutorials/first-crate.md)
-- Everything else: [docs/index.md](docs/index.md) — how-to guides, reference (configuration,
-  command line, generated code, errors) and explanation (architecture, trust)
+The documentation is published at <https://jowharshamshiri.github.io/lungo/docs>.
+
+- New to lungo: [Your first Rust crate built from Lean](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-crate)
+- Everything else: how-to guides, reference (configuration, command line, generated code,
+  errors) and explanation (architecture, trust)
+
+Its sources are the Markdown files in `docs/src/content`; `docs/` is the site that publishes
+them (see [Documentation site](#documentation-site)).
 
 ## Requirements
 
@@ -50,6 +55,7 @@ types, for example to derive `serde` traits.
 | `examples/session` | A Lean state machine with proofs, used from Rust |
 | `compiler-tests/` | Differential, property, integration and corpus tests |
 | `runtime-tests/` | Inventories of the toolchain's native interface |
+| `docs/` | The documentation site; its pages are in `docs/src/content` |
 
 ## Testing
 
@@ -57,6 +63,20 @@ types, for example to derive `serde` traits.
 elan toolchain install leanprover/lean4:v4.34.1
 cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
+```
+
+## Documentation site
+
+`docs/` is a SvelteKit site (mdsvex, Tailwind CSS), deployed to GitHub Pages by
+`.github/workflows/docs.yml`. Pages are the Markdown files in `docs/src/content`, each with a
+`title` and `description` in its front matter; links between them are relative links to the
+Markdown files, which work on GitHub and on the site alike.
+
+```sh
+cd docs
+npm ci
+npm run dev      # http://localhost:5173
+npm run build    # the static site, in docs/build
 ```
 
 ## License

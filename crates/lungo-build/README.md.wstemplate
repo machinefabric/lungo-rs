@@ -44,4 +44,4 @@ fn main() -> lungo_build::Result<()> {
 
 The Lake project needs the toolchain its `lean-toolchain` pins, installed with
 [elan](https://github.com/leanprover/elan). See the
-[documentation](https://github.com/jowharshamshiri/lungo/blob/main/docs/index.md).
+[documentation](https://jowharshamshiri.github.io/lungo/docs).

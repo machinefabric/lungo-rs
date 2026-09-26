@@ -7,10 +7,10 @@ Rust API.
 
 ```toml
 [dependencies]
-lungo = "0.27.1270"
+lungo = "0.29.1295"
 
 [build-dependencies]
-lungo-build = "0.27.1270"
+lungo-build = "0.29.1295"
 ```
 
 Use the same version of both: generated code runs on exactly the runtime it was generated for.
@@ -44,4 +44,4 @@ fn main() -> lungo_build::Result<()> {
 
 The Lake project needs the toolchain its `lean-toolchain` pins, installed with
 [elan](https://github.com/leanprover/elan). See the
-[documentation](https://github.com/jowharshamshiri/lungo/blob/main/docs/index.md).
+[documentation](https://jowharshamshiri.github.io/lungo/docs).

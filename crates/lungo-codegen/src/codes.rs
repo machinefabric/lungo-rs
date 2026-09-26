@@ -2,7 +2,7 @@
 //!
 //! Every error lungo reports carries one code, printed as `error[LNG0401]: …`. Codes are
 //! stable identifiers: a code is never reused for a different condition. They are grouped by
-//! the stage that detects the error, and each one is described in `docs/reference/errors.md`.
+//! the stage that detects the error, and each one is described in `docs/src/content/reference/errors.md`.
 
 use std::fmt;
 

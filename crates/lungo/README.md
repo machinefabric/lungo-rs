@@ -19,4 +19,4 @@ pub mod formal {
   derive them (`lungo_build::Builder::type_attribute`). `Nat` and `Int` serialize as decimal
   strings.
 
-See the [documentation](https://github.com/jowharshamshiri/lungo/blob/main/docs/index.md).
+See the [documentation](https://jowharshamshiri.github.io/lungo/docs).
