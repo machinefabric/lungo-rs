@@ -1,6 +1,6 @@
 name = "conformance"
 version = "0.1.0"
-defaultTargets = ["numbers", "strings", "data", "higher_order", "collections", "floats", "effects", "concurrency", "panics", "initialization", "syntax", "unsafe"]
+defaultTargets = ["numbers", "strings", "data", "higher_order", "collections", "floats", "effects", "concurrency", "panics", "initialization", "syntax", "unsafe", "process", "child"]
 
 [[lean_lib]]
 name = "Conformance"

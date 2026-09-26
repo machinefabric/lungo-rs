@@ -419,17 +419,44 @@ fn exceeded_cpu_limit(status: &std::process::ExitStatus) -> bool {
     }
 }
 
+/// A directory private to one worker invocation, holding its request and response and removed
+/// afterwards. Builds and `cargo lean2rust` commands on the same package share a scratch
+/// directory and may run at the same time; each worker exchanges its files in its own.
+struct Exchange {
+    dir: PathBuf,
+}
+
+impl Exchange {
+    fn create(scratch: &Path) -> Result<Exchange> {
+        static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        fs::create_dir_all(scratch).map_err(|e| Error::io(format!("cannot create {}", scratch.display()), e))?;
+        loop {
+            let n = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let dir = scratch.join(format!("worker-{}-{n}", std::process::id()));
+            match fs::create_dir(&dir) {
+                Ok(()) => return Ok(Exchange { dir }),
+                // Left by an earlier process with the same id: take the next name.
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(Error::io(format!("cannot create {}", dir.display()), e)),
+            }
+        }
+    }
+}
+
+impl Drop for Exchange {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
 /// Runs the worker on `request` in the project's Lake environment.
 ///
 /// The worker is a direct child process, so the supervision (the timeout in particular) acts
 /// on the worker itself rather than on a wrapper that could leave it running.
 pub fn run(worker: &Worker, toolchain: &Toolchain, request: &Request, opts: &RunOptions) -> Result<Response> {
-    fs::create_dir_all(opts.scratch).map_err(|e| Error::io(format!("cannot create {}", opts.scratch.display()), e))?;
-    let req_path = opts.scratch.join("request.l2rf");
-    let resp_path = opts.scratch.join("response.l2rf");
-    if resp_path.exists() {
-        fs::remove_file(&resp_path).map_err(|e| Error::io("cannot remove a stale worker response", e))?;
-    }
+    let exchange = Exchange::create(opts.scratch)?;
+    let req_path = exchange.dir.join("request.l2rf");
+    let resp_path = exchange.dir.join("response.l2rf");
     let frame = request.to_frame().map_err(|e| Error::Protocol(e.to_string()))?;
     fs::write(&req_path, frame).map_err(|e| Error::io("cannot write the worker request", e))?;
     let lake_env = lake_environment(toolchain, opts)?;

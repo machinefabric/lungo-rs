@@ -8,6 +8,7 @@ license = "Apache-2.0"
 
 [dependencies]
 blake3 = "1.8"
+dunce = "1.0"
 lean2rust-bir = { path = "../lean2rust-bir", version = "0.1.0" }
 lean2rust-codegen = { path = "../lean2rust-codegen", version = "0.1.0" }
 lean2rust-protocol = { path = "../lean2rust-protocol", version = "0.1.0" }

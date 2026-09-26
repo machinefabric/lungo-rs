@@ -396,8 +396,43 @@ mod imp {
         }
     }
 
+    /// A Lean string as the operating system sees it: like the C runtime, which passes C
+    /// strings, the bytes after an embedded NUL are not seen.
     fn os(bytes: &[u8]) -> OsString {
-        OsString::from(String::from_utf8_lossy(bytes).into_owned())
+        let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        OsString::from(String::from_utf8_lossy(&bytes[..end]).into_owned())
+    }
+
+    /// The system's message for a Windows error code, as Lean's runtime reports it: the text
+    /// `FormatMessage` gives, without inserts and without its trailing line break.
+    fn system_message(code: u32) -> String {
+        use windows_sys::Win32::System::Diagnostics::Debug::{
+            FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS, FormatMessageW,
+        };
+        let mut buf = [0u16; 1024];
+        let n = unsafe {
+            FormatMessageW(
+                FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                std::ptr::null(),
+                code,
+                0,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                std::ptr::null(),
+            )
+        };
+        String::from_utf16_lossy(&buf[..n as usize]).trim_end().to_owned()
+    }
+
+    /// The Windows error code of a failed spawn. Lean's runtime calls `CreateProcessW`, which
+    /// reports a program it cannot find as `ERROR_FILE_NOT_FOUND`; the standard library looks
+    /// the program up itself first and reports that failure without a code.
+    fn spawn_error_code(e: &std::io::Error) -> u32 {
+        match (e.raw_os_error(), e.kind()) {
+            (Some(code), _) => code as u32,
+            (None, std::io::ErrorKind::NotFound) => windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND,
+            (None, _) => lean_internal_panic(&format!("process creation failed without an OS error code: {e}")),
+        }
     }
 
     fn code_of(e: &std::io::Error) -> String {
@@ -450,13 +485,11 @@ mod imp {
             let mut child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => {
-                    let code = e.raw_os_error().unwrap_or(0) as u32;
-                    let text = e.to_string();
-                    let message = match text.rfind(" (os error ") {
-                        Some(i) => text[..i].to_owned(),
-                        None => text,
-                    };
-                    return lean_io_result_mk_error(crate::io::mk::other_error(code, lean_mk_string(&message)));
+                    let code = spawn_error_code(&e);
+                    return lean_io_result_mk_error(crate::io::mk::other_error(
+                        code,
+                        lean_mk_string(&system_message(code)),
+                    ));
                 }
             };
             let to_handle = |f: File, readable: bool| wrap_file(f, readable, !readable);

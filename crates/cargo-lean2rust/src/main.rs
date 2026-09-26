@@ -128,7 +128,7 @@ fn environment(opts: &Options, package: &Path) -> Environment {
 
 fn run(cli: Cli) -> Result<()> {
     let package = match &cli.options.package_dir {
-        Some(p) => std::fs::canonicalize(p)?,
+        Some(p) => lean2rust_build::canonical_path(p)?,
         None => std::env::current_dir()?,
     };
     let env = environment(&cli.options, &package);

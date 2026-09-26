@@ -312,6 +312,10 @@ impl Config {
 
     /// Runs the complete pipeline for `env`, publishing the generated files into `env.out_dir`.
     pub fn run(&self, env: &Environment) -> Result<BuildOutcome> {
+        on_large_stack(|| self.run_here(env))
+    }
+
+    fn run_here(&self, env: &Environment) -> Result<BuildOutcome> {
         let ctx = self.context(env)?;
         let key = self.build_key(&ctx, env)?;
         if let Some(previous) = output::read_build_info(&env.out_dir, &ctx.project)
@@ -340,7 +344,7 @@ impl Config {
         let project_rel = &self.project;
         let project_path =
             if project_rel.is_absolute() { project_rel.clone() } else { env.manifest_dir.join(project_rel) };
-        let project = std::fs::canonicalize(&project_path)
+        let project = canonical_path(&project_path)
             .map_err(|e| Error::io(format!("cannot resolve the Lean project {}", project_path.display()), e))?;
         let pin = toolchain::read_pin(&project)?;
         lake::validate_project(&project)?;
@@ -353,7 +357,9 @@ impl Config {
             WorkerCache::Shared(worker::default_shared_cache()?)
         };
         let worker_identity = worker::identity(&toolchain, &env.host);
-        let local_prefix = relative_path(&env.manifest_dir, &project);
+        let package = canonical_path(&env.manifest_dir)
+            .map_err(|e| Error::io(format!("cannot resolve the package {}", env.manifest_dir.display()), e))?;
+        let local_prefix = relative_path(&package, &project);
         Ok(Context { project, toolchain, cache, worker_identity, local_prefix })
     }
 
@@ -384,8 +390,10 @@ impl Config {
 
     /// Builds the Lean project with Lake and runs the worker.
     pub fn analyze(&self, env: &Environment) -> Result<Analysis> {
-        let ctx = self.context(env)?;
-        self.analyze_with(&ctx, env)
+        on_large_stack(|| {
+            let ctx = self.context(env)?;
+            self.analyze_with(&ctx, env)
+        })
     }
 
     fn analyze_with(&self, ctx: &Context, env: &Environment) -> Result<Analysis> {
@@ -427,8 +435,10 @@ impl Config {
 
     /// Checks trust policies and generates the Rust files for an analysis.
     pub fn generate(&self, env: &Environment, analysis: &Analysis) -> Result<Generation> {
-        let ctx = self.context(env)?;
-        self.generate_with(&ctx, env, analysis)
+        on_large_stack(|| {
+            let ctx = self.context(env)?;
+            self.generate_with(&ctx, env, analysis)
+        })
     }
 
     fn generate_with(&self, ctx: &Context, env: &Environment, analysis: &Analysis) -> Result<Generation> {
@@ -627,6 +637,31 @@ fn cargo_target() -> Result<Target> {
 }
 
 /// `path` relative to `base`, `/`-separated, using `..` where needed. Never absolute.
+/// Stack reserved for the pipeline. Decoding, verifying and translating Bridge IR recurse over
+/// the nesting of compiled code, which large programs make deep; the main thread's default
+/// stack (1 MiB on Windows) is not enough for them. The memory is reserved, not committed.
+const PIPELINE_STACK: usize = 512 << 20;
+
+/// Runs `f` on a thread with [`PIPELINE_STACK`] of stack, forwarding a panic.
+fn on_large_stack<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|s| {
+        std::thread::Builder::new()
+            .name("lean2rust".into())
+            .stack_size(PIPELINE_STACK)
+            .spawn_scoped(s, f)
+            .expect("cannot start the lean2rust pipeline thread")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+/// The canonical form of an existing path: absolute, with symbolic links resolved. On Windows
+/// the path keeps its ordinary form (`C:\…`) rather than the verbatim form (`\\?\C:\…`)
+/// wherever both denote the same file, so that it compares with paths from Cargo and Lake.
+pub fn canonical_path(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
 pub fn relative_path(base: &Path, path: &Path) -> String {
     let base: Vec<Component> = base.components().collect();
     let path_c: Vec<Component> = path.components().collect();

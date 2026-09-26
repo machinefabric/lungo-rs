@@ -22,8 +22,9 @@ fn programs() -> Vec<String> {
     config["lean_exe"].as_array().unwrap().iter().map(|exe| exe["name"].as_str().unwrap().to_owned()).collect()
 }
 
-fn build_native() {
-    let status = Command::new(lake()).arg("build").current_dir(conformance_project()).status().unwrap();
+/// Builds every executable of the conformance project with Lean's native backend.
+fn build_native(programs: &[String]) {
+    let status = Command::new(lake()).arg("build").args(programs).current_dir(conformance_project()).status().unwrap();
     assert!(status.success(), "the native conformance build failed");
 }
 
@@ -43,7 +44,8 @@ fn configure(cmd: &mut Command) -> &mut Command {
 }
 
 fn run_native(name: &str) -> Output {
-    configure(&mut Command::new(native_exe(name))).output().unwrap()
+    let exe = native_exe(name);
+    configure(&mut Command::new(&exe)).output().unwrap_or_else(|e| panic!("cannot run {}: {e}", exe.display()))
 }
 
 fn run_pure_rust(name: &str) -> Output {
@@ -54,9 +56,10 @@ fn run_pure_rust(name: &str) -> Output {
 
 #[test]
 fn pure_rust_matches_the_native_lean_backend() {
-    build_native();
+    let programs = programs();
+    build_native(&programs);
     let mut failures = Vec::new();
-    for name in programs() {
+    for name in programs {
         let native = run_native(&name);
         let ours = run_pure_rust(&name);
         let same =

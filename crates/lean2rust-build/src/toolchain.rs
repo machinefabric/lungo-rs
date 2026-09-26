@@ -99,7 +99,7 @@ pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) 
             }
         }
     }
-    let root = std::fs::canonicalize(&root).map_err(|e| Error::io(format!("cannot resolve {}", root.display()), e))?;
+    let root = crate::canonical_path(&root).map_err(|e| Error::io(format!("cannot resolve {}", root.display()), e))?;
     let lean = root.join("bin").join(exe("lean"));
     let lake = root.join("bin").join(exe("lake"));
     let out = Command::new(&lean)
