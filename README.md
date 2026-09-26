@@ -88,7 +88,7 @@ dependencies.
 | `deny_sorry` (default on), `deny_axioms`, `deny_unsafe` | Trust policies for exported code |
 | `embed_sources` | Embed the local Lean sources in the generated code |
 | `facade_namespace`, `output_name`, `output_dir` | Placement of the generated code |
-| `worker_timeout`, `hermetic`, `hermetic_worker_cache` | Worker supervision and isolation |
+| `worker_timeout`, `worker_cpu_limit`, `worker_memory_limit`, `hermetic`, `hermetic_worker_cache` | Worker supervision and isolation |
 | `toolchain_dir`, `install_toolchain` | Toolchain resolution (builds never install by default) |
 
 ### Modes

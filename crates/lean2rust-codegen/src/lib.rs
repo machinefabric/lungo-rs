@@ -645,7 +645,6 @@ fn extern_report(plan: &ExternPlan, input: &GenInput) -> Vec<ExternReportEntry> 
 #[derive(Serialize)]
 struct SourceReportEntry {
     lean_name: String,
-    module: Option<String>,
     file: String,
     start: Option<(u32, u32)>,
     end: Option<(u32, u32)>,
@@ -658,7 +657,6 @@ fn sources_report(input: &GenInput) -> Vec<SourceReportEntry> {
         .iter()
         .map(|e| SourceReportEntry {
             lean_name: e.name.clone(),
-            module: None,
             file: display_path(&e.source.location, input.local_prefix),
             start: e.source.range.map(|r| (r.start.line, r.start.column)),
             end: e.source.range.map(|r| (r.end.line, r.end.column)),
