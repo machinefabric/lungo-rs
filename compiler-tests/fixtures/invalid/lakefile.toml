@@ -1,0 +1,6 @@
+name = "invalid"
+version = "0.1.0"
+defaultTargets = ["Invalid"]
+
+[[lean_lib]]
+name = "Invalid"

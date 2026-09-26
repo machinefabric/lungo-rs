@@ -1,0 +1,11 @@
+name = "lean2rust-worker"
+version = "0.1.0"
+defaultTargets = ["lean2rust-worker"]
+
+[[lean_lib]]
+name = "Lean2Rust"
+
+[[lean_exe]]
+name = "lean2rust-worker"
+root = "Main"
+supportInterpreter = true
