@@ -1,0 +1,35 @@
+//! Design §38: Lean's standard library compiles through the bridge to the extent it has
+//! executable code. The `stdlib` fixture references every constant with compiled runtime code in
+//! `Init` and `Std`; its complete program is analyzed by the worker, verified, and translated to
+//! Rust.
+
+use lean2rust_build::{Config, Environment};
+use std::path::Path;
+
+#[test]
+fn the_executable_standard_library_translates() {
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/stdlib").canonicalize().unwrap();
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("stdlib");
+    let env = Environment::native(project.clone(), scratch.join("out"), scratch.join("work"));
+    let cfg = Config::new(&project).root_module("StdlibCorpus");
+    let analysis = cfg.analyze(&env).unwrap();
+    let program = &analysis.success.bir;
+
+    // The corpus generator is compile-time code: neither it nor the Lean compiler it uses is
+    // part of the program.
+    let modules: Vec<&str> = program.modules.iter().map(|m| m.name.as_str()).collect();
+    assert!(!modules.contains(&"StdlibCorpus.Generate"), "meta imports are not linked");
+    assert!(!modules.iter().any(|m| m.starts_with("Lean.Elab")), "the elaborator is not linked");
+
+    // Every Init/Std module with compiled code contributes declarations.
+    let count = |prefix: &str| program.declarations.iter().filter(|d| d.module.starts_with(prefix)).count();
+    let (init, std) = (count("Init"), count("Std"));
+    assert!(init > 10_000 && std > 10_000, "Init: {init} declarations, Std: {std} declarations");
+
+    lean2rust_bir::validate(program).unwrap_or_else(|errors| {
+        panic!("{} verifier errors, first: {}", errors.len(), errors[0]);
+    });
+    let generated = cfg.generate(&env, &analysis).unwrap();
+    let rust_bytes: usize = generated.files.iter().filter(|(k, _)| k.ends_with(".rs")).map(|(_, v)| v.len()).sum();
+    assert!(rust_bytes > 10_000_000, "generated {rust_bytes} bytes of Rust");
+}
