@@ -8,8 +8,8 @@
 //! and distinguishes `-0.0` and NaN.
 
 use facade_runner::{oracle, pure};
-use num_bigint::{BigInt, BigUint, Sign};
 use lungo::{ByteArray, FloatArray, Int, LeanClosure, List, Nat};
+use num_bigint::{BigInt, BigUint, Sign};
 use proptest::prelude::*;
 
 fn same<T: std::fmt::Debug, U: std::fmt::Debug>(what: &str, p: T, o: U) -> Result<(), TestCaseError> {

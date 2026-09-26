@@ -161,6 +161,71 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "lungo"
+version = "0.25.1243"
+dependencies = [
+ "lungo-runtime",
+ "num-bigint",
+ "num-traits",
+]
+
+[[package]]
+name = "lungo-bir"
+version = "0.25.1243"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "lungo-build"
+version = "0.25.1243"
+dependencies = [
+ "blake3",
+ "dunce",
+ "libc",
+ "lungo-bir",
+ "lungo-codegen",
+ "lungo-protocol",
+ "lungo-runtime",
+ "serde",
+ "serde_json",
+ "toml",
+ "windows-sys",
+]
+
+[[package]]
+name = "lungo-codegen"
+version = "0.25.1243"
+dependencies = [
+ "lungo-bir",
+ "lungo-protocol",
+ "lungo-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lungo-protocol"
+version = "0.25.1243"
+dependencies = [
+ "ciborium",
+ "lungo-bir",
+ "serde",
+]
+
+[[package]]
+name = "lungo-runtime"
+version = "0.25.1243"
+dependencies = [
+ "getrandom",
+ "libc",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "windows-sys",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,71 +257,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "patina"
-version = "0.1.0"
-dependencies = [
- "num-bigint",
- "num-traits",
- "patina-runtime",
-]
-
-[[package]]
-name = "patina-bir"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "patina-build"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "dunce",
- "libc",
- "patina-bir",
- "patina-codegen",
- "patina-protocol",
- "patina-runtime",
- "serde",
- "serde_json",
- "toml",
- "windows-sys",
-]
-
-[[package]]
-name = "patina-codegen"
-version = "0.1.0"
-dependencies = [
- "patina-bir",
- "patina-protocol",
- "patina-runtime",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "patina-protocol"
-version = "0.1.0"
-dependencies = [
- "ciborium",
- "patina-bir",
- "serde",
-]
-
-[[package]]
-name = "patina-runtime"
-version = "0.1.0"
-dependencies = [
- "getrandom",
- "libc",
- "num-bigint",
- "num-integer",
- "num-traits",
- "windows-sys",
 ]
 
 [[package]]
@@ -345,8 +345,8 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 name = "stdlib-corpus"
 version = "0.1.0"
 dependencies = [
- "patina",
- "patina-build",
+ "lungo",
+ "lungo-build",
 ]
 
 [[package]]

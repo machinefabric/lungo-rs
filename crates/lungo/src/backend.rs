@@ -5,8 +5,8 @@
 //! through the runtime that owns the objects. [`RustBackend`] is the lungo runtime used by
 //! PureRust code; code generated in `LeanOracle` mode provides a backend for Lean's C runtime.
 
-use num_bigint::{BigInt, BigUint};
 use lungo_runtime::{self as rt, Obj};
+use num_bigint::{BigInt, BigUint};
 
 /// Allocation, reference counting, and application of Lean objects.
 ///

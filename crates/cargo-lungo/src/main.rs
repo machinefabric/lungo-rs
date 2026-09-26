@@ -198,11 +198,8 @@ fn setup(project: PathBuf, cfg: Builder, package: &Path, env: &Environment) -> R
     let cfg = cfg.toolchain_policy(lungo_build::ToolchainPolicy::Install);
     let project = if project.is_absolute() { project } else { package.join(project) };
     let pin = lungo_build::read_pin(&project)?;
-    let toolchain = lungo_build::Toolchain::resolve_pin(
-        &pin,
-        cfg.toolchain_dir.as_deref(),
-        lungo_build::ToolchainPolicy::Install,
-    )?;
+    let toolchain =
+        lungo_build::Toolchain::resolve_pin(&pin, cfg.toolchain_dir.as_deref(), lungo_build::ToolchainPolicy::Install)?;
     // Loading the workspace materializes the dependencies locked in the manifest.
     let status = std::process::Command::new(&toolchain.lake)
         .args(["env", "lean", "--version"])
