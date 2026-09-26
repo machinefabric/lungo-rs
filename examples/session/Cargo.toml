@@ -1,12 +1,13 @@
 [package]
 name = "session"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "The patina design example: a Lean state machine with proofs, used from Rust"
 
 [dependencies]
-patina = { path = "../../crates/patina" }
+patina.workspace = true
 
 [build-dependencies]
-patina-build = { path = "../../crates/patina-build" }
+patina-build.workspace = true

@@ -42,6 +42,16 @@ mod worker;
 
 pub use error::{Error, Result};
 pub use patina_codegen::{Attribute, CodegenError, ErrorCode};
+
+// The crates whose types appear in this crate's API (`Analysis`, `Error::Codegen`), for tools
+// built on the pipeline such as `cargo patina`: through these, they use exactly the versions
+// this crate was built with.
+/// The Bridge IR: the compiled Lean program the worker reports, and its verifier.
+pub use patina_bir as bir;
+/// The Rust backend, and the conventions of the files it generates.
+pub use patina_codegen as codegen;
+/// The protocol between this crate and its Lean worker, including the worker's analysis.
+pub use patina_protocol as protocol;
 pub use toolchain::{SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, read_pin};
 pub use worker::{ADAPTER_VERSION, Limits, WorkerCache};
 

@@ -1,16 +1,17 @@
 [package]
 name = "shaping"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Release-gate project: attributes, serde, skip_debug, disable_comments, and types shared between Lean projects"
 
 [dependencies]
-patina = { path = "../../crates/patina", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
+patina = { workspace = true, features = ["serde"] }
+serde.workspace = true
 
 [dev-dependencies]
-serde_json = "1"
+serde_json.workspace = true
 
 [build-dependencies]
-patina-build = { path = "../../crates/patina-build" }
+patina-build.workspace = true

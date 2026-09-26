@@ -10,6 +10,8 @@
 //! With the `serde` feature, the facade types implement `serde::Serialize` and
 //! `serde::Deserialize`, so that generated types can derive them.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod backend;
 mod collections;
 mod convert;

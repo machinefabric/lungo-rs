@@ -1,16 +1,20 @@
 [package]
 name = "patina"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.89"
-description = "Runtime and facade support for Rust code generated from Lean by patina"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime and facade types for Rust code generated from Lean by patina-build"
+keywords = ["lean", "lean4", "codegen", "formal-verification"]
+categories = ["compilers", "development-tools::ffi"]
+readme = "README.md"
 
 [dependencies]
-patina-runtime = { path = "../patina-runtime", version = "0.1.0" }
-num-bigint = "0.4"
-num-traits = "0.2"
-serde = { version = "1.0", optional = true }
+patina-runtime.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+serde = { workspace = true, optional = true }
 
 [features]
 # Serialize and deserialize patina's facade types with serde, so that generated types can derive
@@ -18,4 +22,8 @@ serde = { version = "1.0", optional = true }
 serde = ["dep:serde"]
 
 [dev-dependencies]
-serde_json = "1.0"
+serde_json.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

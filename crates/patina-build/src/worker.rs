@@ -18,18 +18,18 @@ pub const ADAPTER_VERSION: u32 = 1;
 /// The worker's Lean sources, distributed with this crate and compiled against each project's
 /// toolchain.
 pub const WORKER_SOURCES: &[(&str, &str)] = &[
-    ("lean-toolchain", include_str!("../../../worker/lean-toolchain")),
-    ("lakefile.toml", include_str!("../../../worker/lakefile.toml")),
-    ("lake-manifest.json", include_str!("../../../worker/lake-manifest.json")),
-    ("Main.lean", include_str!("../../../worker/Main.lean")),
-    ("Patina/BridgeIR.lean", include_str!("../../../worker/Patina/BridgeIR.lean")),
-    ("Patina/Cbor.lean", include_str!("../../../worker/Patina/Cbor.lean")),
-    ("Patina/Diagnostics.lean", include_str!("../../../worker/Patina/Diagnostics.lean")),
-    ("Patina/Driver.lean", include_str!("../../../worker/Patina/Driver.lean")),
-    ("Patina/Interface.lean", include_str!("../../../worker/Patina/Interface.lean")),
-    ("Patina/Lake.lean", include_str!("../../../worker/Patina/Lake.lean")),
-    ("Patina/LCNFAdapter.lean", include_str!("../../../worker/Patina/LCNFAdapter.lean")),
-    ("Patina/Protocol.lean", include_str!("../../../worker/Patina/Protocol.lean")),
+    ("lean-toolchain", include_str!("../worker/lean-toolchain")),
+    ("lakefile.toml", include_str!("../worker/lakefile.toml")),
+    ("lake-manifest.json", include_str!("../worker/lake-manifest.json")),
+    ("Main.lean", include_str!("../worker/Main.lean")),
+    ("Patina/BridgeIR.lean", include_str!("../worker/Patina/BridgeIR.lean")),
+    ("Patina/Cbor.lean", include_str!("../worker/Patina/Cbor.lean")),
+    ("Patina/Diagnostics.lean", include_str!("../worker/Patina/Diagnostics.lean")),
+    ("Patina/Driver.lean", include_str!("../worker/Patina/Driver.lean")),
+    ("Patina/Interface.lean", include_str!("../worker/Patina/Interface.lean")),
+    ("Patina/Lake.lean", include_str!("../worker/Patina/Lake.lean")),
+    ("Patina/LCNFAdapter.lean", include_str!("../worker/Patina/LCNFAdapter.lean")),
+    ("Patina/Protocol.lean", include_str!("../worker/Patina/Protocol.lean")),
 ];
 
 /// Where compiled workers are kept.
@@ -699,5 +699,37 @@ mod tests {
         let limits = Limits { cpu: None, memory: Some(1 << 30) };
         let err = run_limited(&s, "exit 0", None, limits).unwrap_err();
         assert!(matches!(&err, Error::Environment(m) if m.contains("cannot be enforced")), "{err:?}");
+    }
+}
+
+#[cfg(test)]
+mod sources {
+    use super::WORKER_SOURCES;
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    /// Every file of the worker's Lake project, relative and `/`-separated, skipping Lake's
+    /// build directory.
+    fn files(root: &Path, dir: &Path, out: &mut BTreeSet<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                if entry.file_name() != ".lake" {
+                    files(root, &path, out);
+                }
+            } else if entry.file_name() != ".DS_Store" {
+                out.insert(path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+
+    #[test]
+    fn the_embedded_worker_is_the_whole_worker_project() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("worker");
+        let mut on_disk = BTreeSet::new();
+        files(&root, &root, &mut on_disk);
+        let embedded: BTreeSet<String> = WORKER_SOURCES.iter().map(|(path, _)| path.to_string()).collect();
+        assert_eq!(embedded, on_disk, "WORKER_SOURCES must list every file of worker/");
     }
 }

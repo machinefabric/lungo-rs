@@ -1,15 +1,16 @@
 [package]
 name = "host"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Release-gate project: Rust callbacks, custom Lean syntax and macros, PureRust linking"
 
 [dependencies]
-patina = { path = "../../crates/patina" }
+patina.workspace = true
 
 [dev-dependencies]
 object = "0.36"
 
 [build-dependencies]
-patina-build = { path = "../../crates/patina-build" }
+patina-build.workspace = true

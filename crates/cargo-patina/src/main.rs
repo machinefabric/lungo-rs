@@ -242,7 +242,7 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str) -> Result<()> {
         println!("{name} : {}", e.lean_type);
         println!("module: {}", e.module);
         if let Some(src) = &e.source {
-            println!("source: {}", patina_codegen::display_path(&src.location, local_prefix));
+            println!("source: {}", patina_build::codegen::display_path(&src.location, local_prefix));
         }
         println!("exported: yes");
         println!("axioms: {}", e.trust.axioms.join(", "));
@@ -279,13 +279,13 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str) -> Result<()> {
 
 fn ir(analysis: &Analysis, name: &str) -> Result<()> {
     let s = &analysis.success;
-    let decls: Vec<&patina_bir::Declaration> =
+    let decls: Vec<&patina_build::bir::Declaration> =
         s.bir.declarations.iter().filter(|d| d.name == name || d.origin.as_deref() == Some(name)).collect();
     if decls.is_empty() {
         return Err(format!("{name} has no compiled code in the program").into());
     }
     for d in decls {
-        print!("{}", patina_bir::pretty_declaration(d));
+        print!("{}", patina_build::bir::pretty_declaration(d));
     }
     Ok(())
 }
@@ -293,7 +293,7 @@ fn ir(analysis: &Analysis, name: &str) -> Result<()> {
 fn rust(analysis: &Analysis, generation: &patina_build::Generation, name: &str, aggregate: &str) -> Result<()> {
     let d =
         analysis.success.bir.declaration(name).ok_or_else(|| format!("{name} has no compiled code in the program"))?;
-    let file = format!("modules/{}.rs", patina_codegen::module_file_stem(&d.module));
+    let file = format!("modules/{}.rs", patina_build::codegen::module_file_stem(&d.module));
     let module = generation.files.get(&file).ok_or_else(|| format!("{file} was not generated"))?;
     if !print_items(module, &format!("// Lean: {name}")) {
         return Err(format!("no generated Rust found for {name} in {file}").into());

@@ -1,20 +1,21 @@
 [package]
 name = "patina-runtime"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.89"
-description = "Rust implementation of the Lean runtime semantics targeted by patina-generated code"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Lean runtime, in Rust, that generated code runs on. An internal part of patina: depend on `patina` and `patina-build`."
 
 [dependencies]
 getrandom = "0.3"
-libc = "0.2"
-num-bigint = "0.4"
+libc.workspace = true
+num-bigint.workspace = true
 num-integer = "0.1"
-num-traits = "0.2"
+num-traits.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_NetworkManagement_IpHelper",

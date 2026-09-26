@@ -1,10 +1,13 @@
 [package]
 name = "cargo-patina"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Inspect and build Lean projects integrated with patina"
-license = "Apache-2.0"
+keywords = ["lean", "lean4", "cargo", "subcommand"]
+categories = ["development-tools::cargo-plugins"]
 
 [[bin]]
 name = "cargo-patina"
@@ -12,8 +15,5 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-patina-bir = { path = "../patina-bir", version = "0.1.0" }
-patina-build = { path = "../patina-build", version = "0.1.0" }
-patina-codegen = { path = "../patina-codegen", version = "0.1.0" }
-patina-protocol = { path = "../patina-protocol", version = "0.1.0" }
-serde_json = "1.0"
+patina-build.workspace = true
+serde_json.workspace = true

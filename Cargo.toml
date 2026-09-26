@@ -2,7 +2,46 @@
 members = ["crates/cargo-patina", "crates/patina", "crates/patina-bir", "crates/patina-build", "crates/patina-codegen", "crates/patina-protocol", "crates/patina-runtime", "examples/session", "compiler-tests/runner", "compiler-tests/facade-runner", "compiler-tests/host", "compiler-tests/shaping", "compiler-tests/gates"]
 resolver = "3"
 
+[workspace.dependencies]
+ciborium = "0.2.2"
+libc = "0.2"
+num-bigint = "0.4"
+num-traits = "0.2"
+serde_json = "1.0"
+toml = "0.8"
+windows-sys = "0.59"
+
+[workspace.dependencies.patina]
+path = "crates/patina"
+version = "=0.1.0"
+
+[workspace.dependencies.patina-bir]
+path = "crates/patina-bir"
+version = "=0.1.0"
+
+[workspace.dependencies.patina-build]
+path = "crates/patina-build"
+version = "=0.1.0"
+
+[workspace.dependencies.patina-codegen]
+path = "crates/patina-codegen"
+version = "=0.1.0"
+
+[workspace.dependencies.patina-protocol]
+path = "crates/patina-protocol"
+version = "=0.1.0"
+
+[workspace.dependencies.patina-runtime]
+path = "crates/patina-runtime"
+version = "=0.1.0"
+
+[workspace.dependencies.serde]
+features = ["derive"]
+version = "1.0"
+
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
+repository = "https://github.com/jowharshamshiri/patina"
+rust-version = "1.89"
 version = "0.1.0"

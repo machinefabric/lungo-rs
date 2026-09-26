@@ -1,16 +1,17 @@
 [package]
 name = "facade-runner"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Generates one Lean project in PureRust and LeanOracle modes for differential facade tests"
 
 [dependencies]
-patina = { path = "../../crates/patina" }
+patina.workspace = true
 
 [dev-dependencies]
-num-bigint = "0.4"
+num-bigint.workspace = true
 proptest = "1.7"
 
 [build-dependencies]
-patina-build = { path = "../../crates/patina-build" }
+patina-build.workspace = true

@@ -55,7 +55,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ env.PATINA_CACHE_DIR }}
-          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('worker/**') }}
+          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/patina-build/worker/**') }}
       - name: Build
         run: cargo build --workspace --all-targets --all-features ${{ matrix.exclude }}
       - name: Test
@@ -80,6 +80,6 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ env.PATINA_CACHE_DIR }}
-          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('worker/**') }}
+          key: patina-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/patina-build/worker/**') }}
       # Every executable declaration of Init and Std, generated as Rust and type-checked.
       - run: cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml

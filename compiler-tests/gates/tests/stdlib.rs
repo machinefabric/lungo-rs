@@ -29,7 +29,7 @@ fn the_executable_standard_library_translates() {
     let (init, std) = (count("Init"), count("Std"));
     assert!(init > 8_000 && std > 30_000, "Init: {init} declarations, Std: {std} declarations");
 
-    patina_bir::validate(program).unwrap_or_else(|errors| {
+    patina_build::bir::validate(program).unwrap_or_else(|errors| {
         panic!("{} verifier errors, first: {}", errors.len(), errors[0]);
     });
     let generated = cfg.generate(&project, &env, &analysis).unwrap();

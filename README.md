@@ -40,13 +40,12 @@ types, for example to derive `serde` traits.
 
 | Path | Contents |
 | --- | --- |
-| `worker/` | The Lean worker: reads Lean's compiler output and emits Bridge IR |
 | `crates/patina-bir` | The Bridge IR data model and its verifier |
 | `crates/patina-protocol` | The versioned worker protocol |
 | `crates/patina-runtime` | The Rust port of Lean's runtime |
 | `crates/patina` | Runtime support and facade types used by generated code |
 | `crates/patina-codegen` | The Rust backend |
-| `crates/patina-build` | Build-script integration |
+| `crates/patina-build` | Build-script integration, and in `worker/` the Lean worker, which reads Lean's compiler output and emits Bridge IR |
 | `crates/cargo-patina` | The `cargo patina` command |
 | `examples/session` | A Lean state machine with proofs, used from Rust |
 | `compiler-tests/` | Differential, property, integration and corpus tests |

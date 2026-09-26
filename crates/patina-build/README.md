@@ -1,0 +1,45 @@
+# patina-build
+
+Compiles a Lake project into Rust at Cargo build time. Lean's own frontend elaborates and
+kernel-checks the project and Lean's compiler compiles it; patina-build turns the compiled
+program into Rust on the [`patina`](https://crates.io/crates/patina) runtime, with an idiomatic
+Rust API.
+
+```toml
+[dependencies]
+patina = "0.1"
+
+[build-dependencies]
+patina-build = "0.1"
+```
+
+```rust
+// build.rs
+fn main() -> patina_build::Result<()> {
+    patina_build::compile_lean("lean")
+}
+```
+
+```rust
+// src/lib.rs
+pub mod formal {
+    patina::include_lean!("formal");
+}
+```
+
+`compile_lean` builds what `lake build` builds, the project's default targets, and names the
+generated module after the Lake package. `patina_build::configure()` changes that and shapes
+the generated types:
+
+```rust
+fn main() -> patina_build::Result<()> {
+    patina_build::configure()
+        .type_attribute("Formal", "#[derive(serde::Serialize, serde::Deserialize)]")
+        .rust_extern("host_log", "crate::host::log")
+        .compile_lean("lean")
+}
+```
+
+The Lake project needs the toolchain its `lean-toolchain` pins, installed with
+[elan](https://github.com/leanprover/elan). See the
+[documentation](https://github.com/jowharshamshiri/patina/blob/main/docs/index.md).
