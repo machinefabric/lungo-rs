@@ -1,0 +1,53 @@
+# lungo.spec.in — rpm spec for the prebuilt lungo command.
+#
+# Rendered by the workspace rpm dist step (@VERSION@ substituted), which passes the staged
+# payload root via --define "lungo_payload <dir>". The payload holds the command under
+# opt/lungo/lungo; this spec only packages it and wires the /usr/bin/lungo launcher symlink.
+# There is no compile step here: the command is the published release's, verified against the
+# release manifest before it is repackaged.
+
+# Prebuilt, statically linked binary: no debuginfo extraction, no generated dependencies.
+%global debug_package %{nil}
+%global __brp_check_rpaths %{nil}
+AutoReqProv: no
+
+Name:           lungo
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Generate Rust, C, Go, Python, Swift and TypeScript from proved Lean programs
+License:        Apache-2.0
+URL:            https://lungo.machinefabric.com
+
+%description
+lungo builds a Lake project with Lean, which checks its proofs, and generates the program as a
+Rust crate or as a package in C, Go, Python, Swift or TypeScript, running on the lungo runtime
+behind an idiomatic API in each language. Installs under /opt/lungo with a /usr/bin/lungo
+launcher.
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+# An undefined macro makes rpmbuild fail, which is intended.
+cp -a %{lungo_payload}/. %{buildroot}/
+
+%files
+%dir /opt/lungo
+/opt/lungo/lungo
+
+%post
+if command -v update-alternatives >/dev/null 2>&1; then
+    update-alternatives --install /usr/bin/lungo lungo /opt/lungo/lungo 100 \
+        || ln -sf /opt/lungo/lungo /usr/bin/lungo
+else
+    ln -sf /opt/lungo/lungo /usr/bin/lungo
+fi
+
+%postun
+# $1 == 0 on final uninstall (not on upgrade).
+if [ "$1" = 0 ]; then
+    if command -v update-alternatives >/dev/null 2>&1; then
+        update-alternatives --remove lungo /opt/lungo/lungo || rm -f /usr/bin/lungo
+    else
+        rm -f /usr/bin/lungo
+    fi
+fi

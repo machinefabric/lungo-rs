@@ -26,6 +26,9 @@ pub struct BuildInfo {
     /// The Lean project directory, relative to the Cargo package.
     pub project: String,
     pub link_directives: Vec<String>,
+    /// The generated files, relative to the output directory, with their content digests: an
+    /// output is reused only while it still holds exactly these.
+    pub output_digests: BTreeMap<String, String>,
 }
 
 impl BuildInfo {
@@ -53,6 +56,7 @@ impl BuildInfo {
             input_digests,
             project: ctx.local_prefix.clone(),
             link_directives: link_directives.to_vec(),
+            output_digests: BTreeMap::new(),
         })
     }
 }
@@ -63,6 +67,7 @@ pub struct PreviousBuild {
     pub inputs: Vec<String>,
     pub digests: Vec<(PathBuf, String)>,
     pub link_directives: Vec<String>,
+    pub output_digests: BTreeMap<String, String>,
 }
 
 /// The record of how an output directory was generated.
@@ -79,12 +84,52 @@ pub fn read_build_info(out_dir: &Path, project: &Path) -> Option<PreviousBuild> 
         inputs: digests.iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect(),
         digests,
         link_directives: info.link_directives,
+        output_digests: info.output_digests,
     })
 }
 
-/// Whether every input of a previous build still has the recorded contents.
-pub fn inputs_unchanged(previous: &PreviousBuild) -> bool {
-    previous.digests.iter().all(|(p, d)| fs::read(p).map(|b| hash_bytes(&b) == *d).unwrap_or(false))
+/// Whether the previous build in `out_dir` is still current: every input has the recorded
+/// contents, and the directory holds exactly the files that build generated. A generated file
+/// edited, removed or added by hand makes it stale, so it is generated again.
+pub fn still_current(out_dir: &Path, previous: &PreviousBuild) -> bool {
+    let inputs = previous.digests.iter().all(|(p, d)| fs::read(p).map(|b| hash_bytes(&b) == *d).unwrap_or(false));
+    inputs
+        && match output_files(out_dir) {
+            Ok(files) => {
+                files.len() == previous.output_digests.len()
+                    && files.iter().all(|(rel, bytes)| previous.output_digests.get(rel) == Some(&hash_bytes(bytes)))
+            }
+            Err(_) => false,
+        }
+}
+
+/// The files of the output directory `dir` (none if it does not exist), by `/`-separated path,
+/// without the build record: it records how the output was generated, not what was generated.
+pub fn output_files(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
+        let entries = fs::read_dir(dir).map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+        for entry in entries {
+            let path = entry.map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+                continue;
+            }
+            let rel = path.strip_prefix(root).expect("under the root");
+            let rel: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            let rel = rel.join("/");
+            if rel == BUILD_INFO {
+                continue;
+            }
+            let bytes = fs::read(&path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+            out.insert(rel, bytes);
+        }
+        Ok(())
+    }
+    let mut out = BTreeMap::new();
+    if dir.exists() {
+        walk(dir, dir, &mut out)?;
+    }
+    Ok(out)
 }
 
 /// Publishes `files` into `out_dir` atomically: the complete set is staged and validated in
@@ -104,6 +149,7 @@ pub fn publish(
     }
     let entries =
         files.iter().map(|(k, v)| (k, v.as_bytes())).chain(binary_files.iter().map(|(k, v)| (k, v.as_slice())));
+    let mut info = info.clone();
     for (rel, bytes) in entries {
         if rel.starts_with('/') || rel.split('/').any(|c| c == ".." || c.is_empty()) {
             return Err(Error::Environment(format!(
@@ -117,8 +163,9 @@ pub fn publish(
         fs::create_dir_all(dest.parent().expect("files have a parent"))
             .map_err(|e| Error::io(format!("cannot create {}", staging.display()), e))?;
         fs::write(&dest, bytes).map_err(|e| Error::io(format!("cannot write {}", dest.display()), e))?;
+        info.output_digests.insert(rel.clone(), hash_bytes(bytes));
     }
-    let mut record = serde_json::to_string_pretty(info).expect("build info serializes");
+    let mut record = serde_json::to_string_pretty(&info).expect("build info serializes");
     record.push('\n');
     fs::write(staging.join(BUILD_INFO), record).map_err(|e| Error::io("cannot write build-info.json", e))?;
     let previous = work_dir.join(format!("previous-{}", std::process::id()));

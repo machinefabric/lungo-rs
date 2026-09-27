@@ -172,10 +172,18 @@ mod tests {
         };
         let inductive = |n: &str| FacadeType::Inductive { name: n.into(), args: vec![] };
         vec![
-            decl("Wf", true, vec![
-                field("urn", inductive("Urn"), FieldKind::Object(0)),
-                field("sorted", FacadeType::Opaque { head: None, lean_type: "Sorted urn".into() }, FieldKind::Erased),
-            ]),
+            decl(
+                "Wf",
+                true,
+                vec![
+                    field("urn", inductive("Urn"), FieldKind::Object(0)),
+                    field(
+                        "sorted",
+                        FacadeType::Opaque { head: None, lean_type: "Sorted urn".into() },
+                        FieldKind::Erased,
+                    ),
+                ],
+            ),
             decl("Urn", false, vec![field("tags", FacadeType::List(Box::new(inductive("Tag"))), FieldKind::Object(0))]),
             decl("Tag", false, vec![field("key", tag_key, FieldKind::Object(0))]),
         ]

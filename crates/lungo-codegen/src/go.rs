@@ -126,8 +126,13 @@ impl Generator for GoGenerator {
         for (path, text) in &request.program_files {
             files.insert(flatten(path), text.clone());
         }
-        let emitter =
-            Emitter { request, names: &names, recursive: value_recursive(&b.table), externs: &externs, aliases: &aliases };
+        let emitter = Emitter {
+            request,
+            names: &names,
+            recursive: value_recursive(&b.table),
+            externs: &externs,
+            aliases: &aliases,
+        };
         let source = emitter.package(&package);
         files.insert(format!("{}.go", b.id.to_lowercase()), source);
         Ok(files)

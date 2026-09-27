@@ -6,6 +6,6 @@ target/
 .lungo-cache/
 .scrap/
 .atest/
-atest/
-# Added to the lungo-cli crate by the release workflow only.
+# Written into the lungo-cli crate when the crates are published, from the release's signed
+# runtime manifest; never committed.
 crates/lungo-cli/runtime-manifest.json

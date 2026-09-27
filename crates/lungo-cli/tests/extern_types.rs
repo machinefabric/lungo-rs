@@ -128,9 +128,7 @@ fn go_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("go"));
     let dist = distribution(&["go"]);
     let module = fresh(&work.join("module"));
-    let provider = |project: &Path| {
-        format!("project = {}\n[go]\nout = {}\n", t(project), t(&module.join("provider")))
-    };
+    let provider = |project: &Path| format!("project = {}\n[go]\nout = {}\n", t(project), t(&module.join("provider")));
     generated(generate(&work, "provider", &provider(&fixture().join("provider")), &dist));
     generated(generate(
         &work,
@@ -162,7 +160,11 @@ fn go_programs_share_values_and_refuse_another_layout() {
     generated(generate(&work, "provider", &provider(&changed_provider(&work)), &dist));
     let refused = test();
     assert!(!refused.status.success(), "a provider of another layout was accepted:\n{}", text(&refused));
-    assert!(text(&refused).contains("Provider.Pos of example.com/ext/provider has another layout"), "{}", text(&refused));
+    assert!(
+        text(&refused).contains("Provider.Pos of example.com/ext/provider has another layout"),
+        "{}",
+        text(&refused)
+    );
 }
 
 #[test]
@@ -204,7 +206,9 @@ fn python_programs_share_values_and_refuse_another_layout() {
     let python = std::env::var("PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
     run(Command::new(python).args(["-m", "venv"]).arg(&venv));
     let py = venv.join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
-    let install = |pkg: &Path| run(Command::new(&py).args(["-m", "pip", "install", "--quiet", "--force-reinstall", "--no-deps"]).arg(pkg));
+    let install = |pkg: &Path| {
+        run(Command::new(&py).args(["-m", "pip", "install", "--quiet", "--force-reinstall", "--no-deps"]).arg(pkg))
+    };
     run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(dist.join("python")));
     run(Command::new(&py).args(["-m", "pip", "install", "--quiet", "scikit-build-core>=0.10"]));
     install(&provider_pkg);
@@ -295,7 +299,11 @@ fn swift_programs_share_values_and_refuse_another_layout() {
     let provider_pkg = work.join("provider-swift");
     let host = fresh(&work.join("host"));
     let provider = |project: &Path| {
-        format!("project = {}\n[swift]\nout = {}\noptions = {{ module = \"Provider\" }}\n", t(project), t(&provider_pkg))
+        format!(
+            "project = {}\n[swift]\nout = {}\noptions = {{ module = \"Provider\" }}\n",
+            t(project),
+            t(&provider_pkg)
+        )
     };
     generated(generate(&work, "provider", &provider(&fixture().join("provider")), &dist));
     generated(generate(
@@ -413,9 +421,7 @@ fn rust_modules_share_values_and_refuse_another_layout_when_compiled() {
     let work = fresh(&root().join("rust"));
     let krate = fresh(&work.join("host"));
     let generated_dir = krate.join("gen");
-    let provider = |project: &Path| {
-        format!("project = {}\n[rust]\nout-dir = {}\n", t(project), t(&generated_dir))
-    };
+    let provider = |project: &Path| format!("project = {}\n[rust]\nout-dir = {}\n", t(project), t(&generated_dir));
     let dist = work.join("no-distribution");
     generated(generate(&work, "provider", &provider(&fixture().join("provider")), &dist));
     generated(generate(

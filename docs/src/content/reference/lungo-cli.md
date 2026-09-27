@@ -11,19 +11,48 @@ lungo [OPTIONS] <COMMAND>
 lungo generate --c_out=gen/c --go_out=gen/go --python_out=gen/py --rust_out=gen/rust
 ```
 
-Install a release with its install script, which checks the download against the release's
-`SHA256SUMS`:
+## Install
+
+**Homebrew (macOS and Linux):**
 
 ```sh
-curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
+brew install machinefabric/tap/lungo
 ```
 
-```powershell
-irm https://github.com/machinefabric/lungo/releases/latest/download/install.ps1 | iex
+**apt (Debian, Ubuntu):**
+
+```sh
+curl -fsSL https://release.machinefabric.com/lungo-cli/keys/repo-signing-prod.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/lungo.gpg
+echo "deb [signed-by=/usr/share/keyrings/lungo.gpg] https://release.machinefabric.com/lungo-cli/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/lungo.list
+sudo apt update && sudo apt install lungo
 ```
 
-or with `cargo install lungo-cli`, which builds the same release from crates.io. Built from
-the repository, `lungo` is a development build (see [the runtime](#the-runtime)).
+**dnf (Fedora, RHEL):**
+
+```sh
+sudo tee /etc/yum.repos.d/lungo.repo >/dev/null <<'EOF'
+[lungo]
+name=lungo
+baseurl=https://release.machinefabric.com/lungo-cli/rpm/$basearch
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://release.machinefabric.com/lungo-cli/keys/repo-signing-prod.asc
+EOF
+sudo dnf install lungo
+```
+
+**Windows:** the release's archive `lungo-<version>-windows-x86_64.zip`, listed with its
+SHA-256 digest in the release manifest `https://release.machinefabric.com/lungo-cli/manifest`.
+Unpack it and put the `lungo` directory on `PATH`.
+
+**Cargo:** `cargo install lungo-cli` builds the same release from crates.io.
+
+Every package is made from the release's archive of the command, which the release manifest
+lists with its SHA-256 digest (see [trust and verification](../explanation/trust-and-verification.md)).
+Built from the repository, `lungo` is a development build (see [the runtime](#the-runtime)).
 
 ## Configuration
 
@@ -46,7 +75,7 @@ These options are global: they may precede or follow the command.
 ## `generate`
 
 ```text
-lungo generate [--<language>_out=DIR]... [--<language>_opt=KEY=VALUE[,KEY=VALUE]...]... [--runtime-dir DIR] [--wasi-sdk DIR]
+lungo generate [--<language>_out=DIR]... [--<language>_opt=KEY=VALUE[,KEY=VALUE]...]... [--runtime-dir DIR] [--wasi-sdk DIR] [--verify]
 ```
 
 | Language | Output |
@@ -70,14 +99,22 @@ settings are typed: see [configuration](configuration.md#rust)).
 Each output directory belongs to lungo: it is replaced as a whole, and a directory lungo did
 not create (one without its `build-info.json`) is never replaced
 ([`LNG0107`](errors.md#lng0107)). An output whose inputs (the Lean project, the toolchain,
-lungo, the generator and its options) are unchanged is reused: `generate` prints
+lungo, the generator and its options) are unchanged, and which still holds exactly the files
+it generated (none edited, removed or added since), is reused: `generate` prints
 `up to date: <language> <DIR>` instead of `generated <language> into <DIR>`. The project is
 analyzed once for every output (once more for `ts`, whose target is 32-bit WebAssembly).
+
+Generated code is often committed, so that a package's users need neither Lean nor lungo.
+`--verify` checks that it is current: it generates every output without writing, compares
+each directory with it (every file but `build-info.json`), prints
+`verified: <language> <DIR>` for each that matches, and fails with
+[`LNG0110`](errors.md#lng0110) naming every file that changed, is missing or is extra.
 
 | Option | Meaning |
 | --- | --- |
 | `--runtime-dir <DIR>` | A local lungo distribution to use instead of this release's (see [the runtime](#the-runtime)). |
 | `--wasi-sdk <DIR>` | The wasi-sdk linking the TypeScript binding's WebAssembly. Default: `WASI_SDK_PATH`, else the pinned wasi-sdk release, downloaded into the cache and checked against its SHA-256 digest. |
+| `--verify` | Compare instead of writing (above). |
 
 ## The runtime
 
@@ -102,7 +139,7 @@ lungo runtime verify [--target TRIPLE]
 
 | Command | Meaning |
 | --- | --- |
-| `runtime fetch` | Downloads the runtime archive for the target (default: this machine) into the cache and unpacks it, after checking its SHA-256 digest; prints its directory. A cached archive that was checked is reused. |
+| `runtime fetch` | Downloads the runtime archive for the target into the cache and unpacks it, after checking its SHA-256 digest; prints its directory. A cached archive that was checked is reused. The default target is the one `lungo` itself was built for: on Windows, the released command is built for the GNU ABI, so `x86_64-pc-windows-gnu`; name `--target x86_64-pc-windows-msvc` for the MSVC runtime. |
 | `runtime path` | Prints the directory of the cached runtime for the target, or fails if it was not fetched. |
 | `runtime verify` | Downloads the archive again and checks it. |
 

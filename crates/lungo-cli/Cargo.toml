@@ -9,7 +9,8 @@ repository.workspace = true
 homepage.workspace = true
 description = "The lungo command: generate C, Go, Python, Swift, TypeScript and Rust from Lean programs"
 keywords = ["lean", "lean4", "codegen", "ffi", "protoc"]
-# The release's runtime manifest, which the release workflow adds before publishing.
+# The release's runtime manifest, written here from the signed release manifest before the
+# crates are published.
 include = ["src/**", "build.rs", "Cargo.toml", "LICENSE", "README.md", "runtime-manifest.json"]
 categories = ["development-tools", "development-tools::ffi", "compilers"]
 readme = "README.md"

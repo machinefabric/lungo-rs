@@ -385,7 +385,7 @@ impl Builder {
         let key = lungo_driver::build_key(&ctx, env, &config)?;
         if let Some(previous) = output::read_build_info(&ctx.out_dir, &ctx.project)
             && previous.build_key == key.value
-            && output::inputs_unchanged(&previous)
+            && output::still_current(&ctx.out_dir, &previous)
         {
             return Ok(BuildOutcome {
                 name: ctx.name,

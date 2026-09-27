@@ -22,3 +22,5 @@ lungo-runtime.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tar.workspace = true
+ureq.workspace = true
+zip.workspace = true

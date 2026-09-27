@@ -17,7 +17,7 @@ We need:
 
 ```sh
 elan toolchain install leanprover/lean4:v4.34.1
-curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
+brew install machinefabric/tap/lungo   # apt, dnf, Windows, cargo: see the lungo command's reference
 ```
 
 ## Write the Lean project

@@ -29,9 +29,9 @@ pub use collections::{ByteArray, FloatArray, List};
 pub use convert::LeanType;
 pub use int::Int;
 pub use io::{IoError, IoErrorType};
+pub use layout::LeanLayout;
 #[doc(hidden)]
 pub use layout::assert_layout;
-pub use layout::LeanLayout;
 pub use meta::{DeclarationInfo, ExportTrust, SourcePosition, SourceRange};
 pub use nat::Nat;
 pub use value::{LeanClosure, LeanValue, RustClosure};

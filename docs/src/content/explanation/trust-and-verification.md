@@ -55,6 +55,13 @@ and each language's tests make the same assertions on it. Each support library, 
 runtime itself, is also checked against shared test vectors of the
 [wire format](../reference/wire-format.md), including encodings every codec must reject.
 
+**Types shared between packages.** A program built on another program's model reads that
+program's values at the layout it was compiled for. Every generated type carries a digest of
+its layout (its constructors, their fields and every type they reach, with the Lean version),
+and a package using another package's type checks it before it runs (see
+[extern types](../reference/configuration.md#extern-types)), so two packages generated from
+different definitions of a type cannot be used together.
+
 None of this is a proof of the backend. It is the level of assurance of a compiler that is
 tested against a reference implementation, and the reference is Lean's own.
 

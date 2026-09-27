@@ -59,6 +59,8 @@ simulator universal), which the Swift package uses.
 | TypeScript | Node.js 20, or a browser | anywhere WebAssembly runs; no threads, child processes, sockets, signals or timers ([`LNG0408`](errors.md#lng0408)) |
 
 `lungo` itself runs on Linux (x86_64, aarch64), macOS (x86_64, arm64) and Windows (x86_64).
+The released command is statically linked on Linux (musl) and built for the GNU ABI on
+Windows, which is also the target its `runtime` commands default to.
 
 ## Requirements of the Lake project
 

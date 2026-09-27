@@ -90,35 +90,6 @@ enum Generator {
     },
 }
 
-/// The files of the output directory `dir` (none if it does not exist), by `/`-separated path,
-/// without `build-info.json`: it records how the output was generated, not what was generated.
-fn tree(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
-    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
-        let entries = std::fs::read_dir(dir).map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
-        for entry in entries {
-            let path = entry.map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?.path();
-            if path.is_dir() {
-                walk(root, &path, out)?;
-                continue;
-            }
-            let rel = path.strip_prefix(root).expect("under the root");
-            let rel: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-            let rel = rel.join("/");
-            if rel == output::BUILD_INFO {
-                continue;
-            }
-            let bytes = std::fs::read(&path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
-            out.insert(rel, bytes);
-        }
-        Ok(())
-    }
-    let mut out = BTreeMap::new();
-    if dir.exists() {
-        walk(dir, dir, &mut out)?;
-    }
-    Ok(out)
-}
-
 /// How the output directory `dir` differs from what the project generates now (`expected`).
 fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<String, Vec<u8>>) -> Option<String> {
     let mut lines = Vec::new();
@@ -130,7 +101,8 @@ fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<Str
         }
     }
     lines.extend(actual.keys().filter(|rel| !expected.contains_key(*rel)).map(|rel| format!("  extra:   {rel}")));
-    (!lines.is_empty()).then(|| format!("{} is not what the project generates now:\n{}", dir.display(), lines.join("\n")))
+    (!lines.is_empty())
+        .then(|| format!("{} is not what the project generates now:\n{}", dir.display(), lines.join("\n")))
 }
 
 /// Runs the generation, or with `verify` the comparison; one report line per output.
@@ -152,8 +124,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             let env = Environment { out_dir: scratch.clone(), ..s.env.clone() };
             let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env));
             let compared = outcome.and_then(|o| {
-                let expected = tree(&scratch.join(&o.name))?;
-                let actual = tree(&dir.join(&o.name))?;
+                let expected = output::output_files(&scratch.join(&o.name))?;
+                let actual = output::output_files(&dir.join(&o.name))?;
                 Ok((dir.join(&o.name), expected, actual))
             });
             if scratch.exists() {
@@ -216,7 +188,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         if !s.verify
             && let Some(previous) = output::read_build_info(&o.dir, &ctx.project)
             && previous.build_key == key.value
-            && output::inputs_unchanged(&previous)
+            && output::still_current(&o.dir, &previous)
         {
             report.push(format!("up to date: {} {}", o.language, o.dir.display()));
             continue;
@@ -265,14 +237,15 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         }
         if s.verify {
             if work.exists() {
-                std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
+                std::fs::remove_dir_all(&work)
+                    .map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
             }
             let expected: BTreeMap<String, Vec<u8>> = files
                 .iter()
                 .map(|(k, v)| (k.clone(), v.as_bytes().to_vec()))
                 .chain(binary.iter().map(|(k, v)| (k.clone(), v.clone())))
                 .collect();
-            match drift(&o.dir, &expected, &tree(&dir)?) {
+            match drift(&o.dir, &expected, &output::output_files(&dir)?) {
                 Some(d) => drifts.push(d),
                 None => report.push(format!("verified: {} {}", o.language, o.dir.display())),
             }
@@ -292,10 +265,7 @@ fn finish(report: Vec<String>, drifts: Vec<String>) -> Result<Vec<String>> {
     if drifts.is_empty() {
         Ok(report)
     } else {
-        Err(Error::OutputDrift(format!(
-            "{}\nRun `lungo generate` and commit what it writes.",
-            drifts.join("\n")
-        )))
+        Err(Error::OutputDrift(format!("{}\nRun `lungo generate` and commit what it writes.", drifts.join("\n"))))
     }
 }
 

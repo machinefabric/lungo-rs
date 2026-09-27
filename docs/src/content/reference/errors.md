@@ -92,6 +92,13 @@ requested target. See [the runtime](lungo-cli.md#the-runtime).
 The artifact is not used; the cached copy is removed. A persistent mismatch means the
 download was tampered with or corrupted in transit.
 
+### LNG0110
+
+**Generated output is out of date.** `lungo generate --verify` found an output directory that
+is not what the project generates now; the message names every file that changed, is missing,
+or is extra. The build record (`build-info.json`) is not compared. Run `lungo generate` and
+commit what it writes.
+
 ## Lean
 
 ### LNG0201

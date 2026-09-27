@@ -640,7 +640,10 @@ impl Emitter<'_> {
         let b = self.boundary();
         w.line(format!("    /// The layout fingerprint of Lean's {}.", b.types[i].lean_name));
         // Computed: a generic type cannot have a stored static property.
-        w.line(format!("    public static var lungoFingerprint: String {{ {} }}", swift_string(&b.types[i].fingerprint)));
+        w.line(format!(
+            "    public static var lungoFingerprint: String {{ {} }}",
+            swift_string(&b.types[i].fingerprint)
+        ));
         w.line("");
     }
 

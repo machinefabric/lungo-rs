@@ -29,7 +29,7 @@ types, for example to derive `serde` traits.
 For the other languages:
 
 ```sh
-curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
+brew install machinefabric/tap/lungo    # apt, dnf, Windows, cargo: see the lungo command's reference
 lungo generate --go_out=gen/go --python_out=gen/py --swift_out=gen/swift --ts_out=gen/js --c_out=gen/c
 ```
 
@@ -77,8 +77,8 @@ them (see [Documentation site](#documentation-site)).
 | `crates/lungo-build` | Build-script integration (Rust) |
 | `crates/lungo-cli` | The `lungo` command |
 | `runtimes/` | The support libraries: `go` (lungo-go), `python` (lungo-py), `swift` (lungo-swift), `typescript` (lungo-ts), and `c` (the runtime's CMake and pkg-config files) |
-| `tools/lungo-dist` | Builds the distribution: runtime packages, support libraries, the release manifest |
-| `scripts/` | The install scripts of the `lungo` command |
+| `tools/lungo-dist` | Builds the distribution: a local one for development, and each artifact of a release (runtime archives, the XCFramework, the command, `lungo-py`'s wheels, the Go and Swift distribution trees) |
+| `packaging/` | The templates of the `lungo` command's Homebrew formula, Debian and RPM packages, and MSI |
 | `examples/session` | A Lean state machine with proofs, used from Rust |
 | `compiler-tests/` | Differential, property, integration, corpus, wire-format and polyglot (every language) tests |
 | `runtime-tests/` | Inventories of the toolchain's native interface |

@@ -1,33 +1,29 @@
-//! `lungo-dist`: builds lungo's distribution, for the release workflow and for local use.
+//! `lungo-dist`: builds lungo's distribution: a local one for development, and the artifacts of
+//! a release, which the workspace's publishing runs one by one and records in the release
+//! manifest it signs (see `release`).
 //!
-//! - `runtime`: the runtime package of a target (`include/lungo.h`, the static and shared
-//!   libraries, `lib/cmake/lungo/`, `lib/pkgconfig/lungo.pc`, `LICENSE`, `VERSION`).
 //! - `local`: a local distribution for this machine, laid out as a release is (`runtime/`,
 //!   `wasm/`, and each language's support library), for `lungo generate --runtime-dir`.
-//! - `archive`: a reproducible `.tar.gz` of a directory.
-//! - `manifest`: the release's `runtime-manifest.json` and `SHA256SUMS`.
+//! - `ts`: the npm package `lungo-ts`.
+//! - `targets`: what a release is made of.
+//! - `release-runtime`, `release-xcframework`, `release-cli`, `release-wheel`: one artifact.
+//! - `manifest`: the runtime manifest the `lungo` command embeds, from the published release
+//!   manifest.
+//! - `release-go`, `release-swift`: the distribution repositories' trees, from the published
+//!   runtime.
 
+mod release;
 mod support;
 
 use clap::Parser;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 #[derive(Parser)]
 #[command(name = "lungo-dist", about = "Builds lungo's distribution")]
-enum Cli {
-    /// Build the runtime package of a target.
-    Runtime {
-        /// The target triple (default: this machine's).
-        #[arg(long)]
-        target: Option<String>,
-        #[arg(long)]
-        out: PathBuf,
-    },
+enum Task {
     /// Build a local distribution for this machine.
     Local {
         #[arg(long)]
@@ -37,63 +33,67 @@ enum Cli {
         #[arg(long = "component")]
         components: Vec<String>,
     },
-    /// Write a reproducible `.tar.gz` of a directory, whose entries are under its name.
-    Archive { dir: PathBuf, out: PathBuf },
-    /// Assemble the Go module `lungo-go` with runtime packages (`--runtime TARGET=DIR`).
-    Go {
-        #[arg(long = "runtime", value_parser = target_dir_pair)]
-        runtimes: Vec<(String, PathBuf)>,
-        #[arg(long)]
-        out: PathBuf,
-    },
     /// Assemble the npm package `lungo-ts`.
     Ts {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Assemble the Python package `lungo-py` (a source tree) with a runtime package.
-    Python {
+    /// Print what a release is made of, as JSON: the runtime targets, the `lungo` command's
+    /// platforms, `lungo-py`'s wheels, the Go module's targets.
+    Targets,
+    /// Build the runtime archive of a release target into `--out-dir`.
+    ReleaseRuntime {
         #[arg(long)]
-        runtime: PathBuf,
+        target: String,
         #[arg(long)]
-        out: PathBuf,
+        out_dir: PathBuf,
     },
-    /// Write the release's `runtime-manifest.json`.
+    /// Build the XCFramework of the Apple runtimes into `--out-dir` (on a Mac).
+    ReleaseXcframework {
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+    /// Write the runtime manifest of this version from the published release manifest.
     Manifest {
-        /// The directory holding the artifacts (`lungo-runtime-<version>-<target>.tar.gz`,
-        /// `LungoRuntime.xcframework.zip`).
+        /// The release manifest of the runtime (`lungo-runtime/manifest`), as published.
         #[arg(long)]
-        artifacts: PathBuf,
-        /// The URL the artifacts are downloaded from.
+        release_manifest: PathBuf,
+        /// The channel the version was published on.
         #[arg(long)]
-        base_url: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Write `SHA256SUMS` of every file of a directory.
-    Sums {
-        dir: PathBuf,
+        channel: String,
         #[arg(long)]
         out: PathBuf,
     },
-    /// Build `LungoRuntime.xcframework` from static runtime libraries (one per Apple platform
-    /// variant; each may be universal).
-    Xcframework {
-        #[arg(long = "library", required = true)]
-        libraries: Vec<PathBuf>,
+    /// Build the `lungo` command of a platform, embedding the runtime manifest, into `--out-dir`.
+    ReleaseCli {
+        #[arg(long)]
+        platform: String,
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+    /// Build `lungo-py`'s wheel of a target into `--out-dir`.
+    ReleaseWheel {
+        #[arg(long)]
+        target: String,
+        /// The Python that builds it.
+        #[arg(long)]
+        python: PathBuf,
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+    /// Assemble the Go module `lungo-go` in `--out` from the runtimes the manifest lists.
+    ReleaseGo {
+        #[arg(long)]
+        manifest: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
-    /// Assemble the Swift package `lungo-swift` of a release, whose runtime is the XCFramework
-    /// at `url` with SwiftPM checksum `checksum`.
-    Swift {
+    /// Assemble the Swift package `lungo-swift` in `--out` for the XCFramework the manifest lists.
+    ReleaseSwift {
         #[arg(long)]
-        url: String,
-        #[arg(long)]
-        checksum: String,
-        /// A macOS runtime package (for the native libraries to link).
-        #[arg(long)]
-        runtime: PathBuf,
+        manifest: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
@@ -101,26 +101,20 @@ enum Cli {
 
 type Result<T> = std::result::Result<T, String>;
 
-/// `TARGET=DIR`.
-fn target_dir_pair(s: &str) -> Result<(String, PathBuf)> {
-    let (t, d) = s.split_once('=').ok_or_else(|| format!("`{s}` is not TARGET=DIR"))?;
-    Ok((t.to_owned(), PathBuf::from(d)))
-}
-
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> ExitCode {
-    let result = match Cli::parse() {
-        Cli::Runtime { target, out } => runtime(&target.unwrap_or_else(host), &out),
-        Cli::Local { out, components } => local(&out, &components),
-        Cli::Archive { dir, out } => archive(&dir, &out),
-        Cli::Go { runtimes, out } => support::go(&runtimes, &out),
-        Cli::Python { runtime, out } => support::python(&runtime, &out),
-        Cli::Ts { out } => support::typescript(&out),
-        Cli::Manifest { artifacts, base_url, out } => manifest(&artifacts, &base_url, &out),
-        Cli::Sums { dir, out } => sums(&dir, &out),
-        Cli::Xcframework { libraries, out } => support::xcframework(&libraries, &out),
-        Cli::Swift { url, checksum, runtime, out } => swift_release(&url, &checksum, &runtime, &out),
+    let result = match Task::parse() {
+        Task::Local { out, components } => local(&out, &components),
+        Task::Ts { out } => support::typescript(&out),
+        Task::Targets => release::targets(),
+        Task::ReleaseRuntime { target, out_dir } => release::runtime_archive(&target, &out_dir),
+        Task::ReleaseXcframework { out_dir } => release::xcframework(&out_dir),
+        Task::Manifest { release_manifest, channel, out } => release::manifest(&release_manifest, &channel, &out),
+        Task::ReleaseCli { platform, manifest, out_dir } => release::cli(&platform, &manifest, &out_dir),
+        Task::ReleaseWheel { target, python, out_dir } => release::wheel(&target, &python, &out_dir),
+        Task::ReleaseGo { manifest, out } => release::go(&manifest, &out),
+        Task::ReleaseSwift { manifest, out } => release::swift(&manifest, &out),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -142,7 +136,7 @@ pub fn target_dir() -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|| repo().join("target"))
 }
 
-fn host() -> String {
+pub fn host() -> String {
     let out = Command::new("rustc").arg("-vV").output().expect("rustc runs");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.lines().find_map(|l| l.strip_prefix("host: ")).expect("rustc reports its host").to_owned()
@@ -296,10 +290,28 @@ fn placeholder(s: &str) -> Option<&str> {
     None
 }
 
+/// How a runtime is linked: by the host's toolchain, or by `cargo zigbuild` (zig's linker and
+/// C library headers), which links Linux and Windows GNU targets from any host — against
+/// glibc [`release::GLIBC`] for the Linux GNU targets, so the shared runtime loads on every
+/// manylinux system its Python wheel claims.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Linker {
+    Host,
+    Zig,
+}
+
 /// Builds the runtime package of `target` into `out` (replaced).
-fn runtime(target: &str, out: &Path) -> Result<()> {
+pub fn runtime(target: &str, out: &Path, linker: Linker) -> Result<()> {
     let repo = repo();
-    run(cargo(target).args(["build", "-p", "lungo-capi", "--release", "--target", target]))?;
+    match linker {
+        Linker::Host => run(cargo(target).args(["build", "-p", "lungo-capi", "--release", "--target", target]))?,
+        Linker::Zig => {
+            release::check_zig()?;
+            let zig_target =
+                if target.ends_with("-linux-gnu") { format!("{target}.{}", release::GLIBC) } else { target.to_owned() };
+            run(cargo(target).args(["zigbuild", "-p", "lungo-capi", "--release", "--target", &zig_target]))?
+        }
+    };
     let natives = native_libraries(target)?;
     let built = runtime_target_dir().join(target).join("release");
     let libs = libraries(target);
@@ -367,11 +379,11 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
     let out = io("cannot resolve the output", dunce::canonicalize(out))?;
     if wanted("runtime") || wanted("go") || wanted("python") || wanted("swift") {
-        runtime(&host, &out.join("runtime"))?;
+        runtime(&host, &out.join("runtime"), Linker::Host)?;
     }
     // The TypeScript binding links the WebAssembly runtime into its packages.
     if wanted("wasm") || wanted("ts") {
-        runtime("wasm32-wasip1", &out.join("wasm"))?;
+        runtime("wasm32-wasip1", &out.join("wasm"), Linker::Host)?;
     }
     if wanted("ts") {
         support::typescript(&out.join("ts"))?;
@@ -382,7 +394,7 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
         let go_runtime = if go_target == host {
             out.join("runtime")
         } else {
-            runtime(&go_target, &out.join("go-runtime"))?;
+            runtime(&go_target, &out.join("go-runtime"), Linker::Host)?;
             out.join("go-runtime")
         };
         support::go(&[(go_target, go_runtime)], &out.join("go"))?;
@@ -465,72 +477,4 @@ fn collect(dir: &Path, rel: &Path, out: &mut Vec<(PathBuf, PathBuf)>) -> Result<
 pub fn sha256_file(path: &Path) -> Result<String> {
     let bytes = io(format!("cannot read {}", path.display()), fs::read(path))?;
     Ok(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
-}
-
-/// `runtime-manifest.json` of the release artifacts in `dir`: the runtime archives and the
-/// XCFramework, with their SHA-256 digests.
-fn manifest(dir: &Path, base_url: &str, out: &Path) -> Result<()> {
-    let prefix = format!("lungo-runtime-{VERSION}-");
-    let mut artifacts = BTreeMap::new();
-    for name in file_names(dir)? {
-        let key = if let Some(target) = name.strip_prefix(&prefix).and_then(|n| n.strip_suffix(".tar.gz")) {
-            target.to_owned()
-        } else if name == "LungoRuntime.xcframework.zip" {
-            "xcframework".to_owned()
-        } else {
-            continue;
-        };
-        let sha = sha256_file(&dir.join(&name))?;
-        artifacts.insert(
-            key,
-            serde_json::json!({ "url": format!("{}/{name}", base_url.trim_end_matches('/')), "sha256": sha }),
-        );
-    }
-    if artifacts.is_empty() {
-        return Err(format!("{} holds no release artifacts", dir.display()));
-    }
-    let manifest = serde_json::json!({
-        "version": VERSION,
-        "abi_version": lungo_runtime::ABI_VERSION,
-        "artifacts": artifacts,
-    });
-    let mut f = io("cannot write the manifest", fs::File::create(out))?;
-    io("cannot write the manifest", writeln!(f, "{}", serde_json::to_string_pretty(&manifest).expect("JSON")))?;
-    Ok(())
-}
-
-/// The Swift package of a release, whose runtime is the XCFramework at `url`.
-fn swift_release(url: &str, checksum: &str, runtime: &Path, out: &Path) -> Result<()> {
-    let target = format!(
-        ".binaryTarget(name: \"LungoRuntime\", url: {}, checksum: {})",
-        serde_json::to_string(url).expect("JSON"),
-        serde_json::to_string(checksum).expect("JSON")
-    );
-    if out.exists() {
-        return Err(format!("{} exists: the Swift package is assembled in a new directory", out.display()));
-    }
-    io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
-    support::swift(&target, runtime, out)
-}
-
-/// `SHA256SUMS` of every file in `dir`, in `sha256sum` format.
-fn sums(dir: &Path, out: &Path) -> Result<()> {
-    let mut text = String::new();
-    for name in file_names(dir)? {
-        text.push_str(&format!("{}  {name}\n", sha256_file(&dir.join(&name))?));
-    }
-    io("cannot write SHA256SUMS", fs::write(out, text))
-}
-
-/// The names of the files in `dir`, sorted.
-fn file_names(dir: &Path) -> Result<Vec<String>> {
-    let mut names = Vec::new();
-    for e in io(format!("cannot read {}", dir.display()), fs::read_dir(dir))? {
-        let e = io("cannot read a directory entry", e)?;
-        if e.path().is_file() {
-            names.push(e.file_name().to_string_lossy().into_owned());
-        }
-    }
-    names.sort();
-    Ok(names)
 }

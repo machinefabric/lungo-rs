@@ -99,4 +99,7 @@ These parts are used by generated code and the support libraries; they are docum
   `lungo_set_host`, handles (`lungo_handle_clone`, `lungo_handle_release`) and buffers
   (`lungo_buffer_alloc`, `lungo_buffer_free`);
 - `lungo_invoke` and `lungo_host_function_new`, through which generated C packages implement
-  their API on the value API.
+  their API on the value API;
+- `lungo_check_layout(lean_type, provider, expected, actual)`, with which a package using
+  another package's type ([extern types](configuration.md#extern-types)) refuses, before its
+  first call, a provider generated for another layout of the type.

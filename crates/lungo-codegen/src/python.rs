@@ -20,44 +20,9 @@ use std::collections::BTreeMap;
 pub struct PythonGenerator;
 
 const PYTHON_KEYWORDS: &[&str] = &[
-    "False",
-    "None",
-    "True",
-    "and",
-    "as",
-    "assert",
-    "async",
-    "await",
-    "break",
-    "class",
-    "continue",
-    "def",
-    "del",
-    "elif",
-    "else",
-    "except",
-    "finally",
-    "for",
-    "from",
-    "global",
-    "if",
-    "import",
-    "in",
-    "is",
-    "lambda",
-    "nonlocal",
-    "not",
-    "or",
-    "pass",
-    "raise",
-    "return",
-    "try",
-    "while",
-    "with",
-    "yield",
-    "match",
-    "case",
-    "type",
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+    "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+    "not", "or", "pass", "raise", "return", "try", "while", "with", "yield", "match", "case", "type",
 ];
 
 /// Names the generated module itself uses, which its locals avoid (a package may be named so).
@@ -210,8 +175,7 @@ impl Generator for PythonGenerator {
     }
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
-        let opts =
-            options(request, "python", &["package", "distribution", "version", "embed"]).map_err(|e| vec![e])?;
+        let opts = options(request, "python", &["package", "distribution", "version", "embed"]).map_err(|e| vec![e])?;
         let b = &request.boundary;
         let externs = extern_types(request).map_err(|e| vec![e])?;
         let aliases = module_aliases(&externs);

@@ -65,17 +65,22 @@ of a polymorphic function passes its type arguments first (see [calls](#calls)).
 | `Except ε α` | 0 and a value of ε (`error`), or 1 and a value of α (`ok`). |
 | function | a kind byte and a `u64`: 0 and a [handle](#handles) (a Lean closure), or 1 and a [host function](#host-functions)'s identifier. |
 | opaque value | a `u64` [handle](#handles). |
-| inductive type | a `u32` constructor index (in declaration order) and the constructor's fields in order, each at its type with the type's arguments substituted; a structure the table marks *trivial* (one constructor whose runtime representation is one field) is encoded as that field alone. |
+| inductive type | a `u32` constructor index (in declaration order) and the constructor's fields in order, each at its type with the type's arguments substituted; a structure the table marks *trivial* (one constructor whose runtime representation is one field) is encoded as that field alone; a type the table marks *opaque* is a `u64` [handle](#handles), as an opaque value is. |
 
 ## Type tables
 
 A program describes its inductive types in a *type table*, which the generated code embeds
 and every generator receives (as JSON in a [plugin request](plugins.md)). In its binary
-form it is the magic `LNGT`, a `u32` version (1), a count, and per type: its name (a length
-and UTF-8), its number of parameters, its runtime representation, whether it is trivial
-(and which constructor and field), and its constructors: name, runtime tag, object, `usize`
-and scalar sizes, and fields (name, where the field is stored, and its type expression).
-The runtime validates a table before using it; generated tables are valid by construction.
+form it is the magic `LNGT`, a `u32` version (2), a count, and per type: its name (a length
+and UTF-8), whether it is opaque (a byte, 0 or 1), its number of parameters, its runtime
+representation, whether it is trivial (and which constructor and field), and its
+constructors: name, runtime tag, object, `usize` and scalar sizes, and fields (name, where
+the field is stored, and its type expression). The runtime validates a table before using
+it; generated tables are valid by construction.
+
+An *opaque* type is a named type whose values cross only as handles, like an opaque value
+(`u64` handle): it has no parameters, no constructors, and an object representation. Naming
+it gives bindings a type of their own for it.
 
 ## Signatures
 

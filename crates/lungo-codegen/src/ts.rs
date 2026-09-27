@@ -166,7 +166,8 @@ impl Names {
         aliases: &BTreeMap<String, String>,
     ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("TypeScript");
-        for reserved in [class.to_owned(), format!("{class}Host"), "load".into(), "LoadOptions".into(), "leanTypes".into()]
+        for reserved in
+            [class.to_owned(), format!("{class}Host"), "load".into(), "LoadOptions".into(), "leanTypes".into()]
         {
             scope.claim(reserved, "a generated declaration")?;
         }
@@ -183,10 +184,8 @@ impl Names {
                         named.lean_name
                     )));
                 }
-                let descriptor = scope.claim(
-                    format!("ext{}Type", pascal(&short)),
-                    format!("the descriptor of {}", named.lean_name),
-                )?;
+                let descriptor = scope
+                    .claim(format!("ext{}Type", pascal(&short)), format!("the descriptor of {}", named.lean_name))?;
                 types.push(TypeNames {
                     name: format!("{}.{}", aliases[&ext.package], ext.name),
                     descriptor,

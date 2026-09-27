@@ -30,9 +30,10 @@ Each lungo release publishes, with the same version:
 
 - the runtime for every [platform](../reference/platforms.md), as archives with the header,
   static and shared libraries, a CMake package and a pkg-config file, and for Apple
-  platforms as an XCFramework;
-- the `lungo` command, which embeds the release's runtime manifest (every archive's URL and
-  SHA-256 digest);
+  platforms as an XCFramework, served from `release.machinefabric.com` (`lungo-runtime`);
+- the `lungo` command for macOS, Linux and Windows (`lungo-cli`), which embeds the runtime
+  manifest of its release (every runtime archive's URL and SHA-256 digest), and its packages
+  for Homebrew, apt and dnf;
 - the support libraries: `lungo-py` on PyPI (with the runtime for each platform in its
   wheels), `lungo-ts` on npm, the Go module `github.com/machinefabric/lungo-go` (with the
   runtime for each platform), and the Swift package `machinefabric/lungo-swift` (whose
@@ -49,20 +50,24 @@ version is required exactly.
 
 Everything a user downloads is checked against digests that come from the release itself:
 
-- The runtime archives are listed with SHA-256 digests in the manifest embedded in the
-  `lungo` command, and a generated C package's CMake checks its archive (`URL_HASH`);
+- Each product's release manifest (`https://release.machinefabric.com/<product>/manifest`)
+  lists every artifact with its SHA-256 digest, and is signed: a `.sig` beside it carries a
+  signature by MachineFabric's release key over the manifest's exact bytes, with the key's
+  certificate from its root keys.
+- The `lungo` command embeds the digests of its release's runtime archives, taken from that
+  manifest; a generated C package's CMake checks its archive (`URL_HASH`), and
   `lungo runtime fetch` refuses a mismatch ([`LNG0109`](../reference/errors.md#lng0109)).
-- The install scripts check the `lungo` command against the release's `SHA256SUMS`.
-- The release's artifacts carry build provenance attestations (GitHub artifact
-  attestations), verifiable with `gh attestation verify`.
-- PyPI and npm packages are published with trusted publishing, from the release workflow of
-  the repository; the Go and Swift distribution repositories are written only by it.
+- The command's packages are made from the archives the manifest lists, checked against their
+  digests first; the apt and dnf repositories are signed with a repository key.
+- The Go module and the Swift package are assembled from the published runtime archives,
+  checked against the manifest's digests; the PyPI, npm and crates.io packages are uploaded by
+  the same release.
 
 The wasi-sdk that links WebAssembly programs is pinned the same way: `lungo` downloads a
 fixed release and checks its SHA-256 digest before using it.
 
-What remains to be trusted is the lungo repository and its release workflow, as for any
-compiler toolchain, and Lean itself, whose compiler produced the program.
+What remains to be trusted is the lungo repository and the release process that builds from
+it, as for any compiler toolchain, and Lean itself, whose compiler produced the program.
 
 ## Developing lungo
 

@@ -277,7 +277,14 @@ mod tests {
     fn table() -> TypeTable {
         TypeTable {
             types: vec![
-                TypeDecl { name: "W".into(), opaque: true, params: 0, repr: Repr::Object, trivial: None, ctors: vec![] },
+                TypeDecl {
+                    name: "W".into(),
+                    opaque: true,
+                    params: 0,
+                    repr: Repr::Object,
+                    trivial: None,
+                    ctors: vec![],
+                },
                 TypeDecl {
                     name: "E".into(),
                     opaque: false,

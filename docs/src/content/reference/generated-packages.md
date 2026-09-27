@@ -47,6 +47,7 @@ in Lean.
 | a structure | `lungo_value` | struct | frozen dataclass | struct | object |
 | an inductive type | `lungo_value` | sealed interface, a struct per constructor | base class, a frozen dataclass per constructor | `indirect enum` | objects tagged with `kind` |
 | a polymorphic type | `lungo_type` argument | generic type | `Generic` class | generic type | generic type |
+| an [opaque type](#opaque-types) | `lungo_value` | struct around `lungo.Opaque` | subclass of `lungo_py.Opaque` | struct around `LungoOpaque` | subclass of `Opaque` |
 | any other type | `lungo_value` | `lungo.Opaque` | `lungo_py.Opaque` | `LungoOpaque` | `Opaque` |
 
 Numbers are checked when they cross into Lean: a negative `Nat`, a Go `int32` out of a
@@ -58,6 +59,24 @@ pairs or other structures) is a pointer in Go and a final class in Swift. Values
 give a language type (IO actions stored as data, a `Type`, a value of a type the program does
 not describe) are opaque: handles that keep the Lean value alive until they are closed or
 collected.
+
+### Opaque types
+
+An inductive type whose values Lean code alone can make — one with a proof among its fields,
+say, like a structure of a value and the proof that it is well formed — is *opaque*: its values
+cross as handles, which the program's functions make and read. It is still a type of its own:
+`Wf` in Go is `struct{ lungo.Opaque }`, a subclass of `lungo_py.Opaque` in Python, a struct in
+Swift, a subclass of `Opaque` in TypeScript, so one opaque type's value cannot be passed where
+another's is expected. Type parameters of an opaque type are not part of its binding type.
+Types that are not inductive, or have indices, are plain opaque values.
+
+### Layout fingerprints
+
+Every named type records its layout fingerprint: `<Name>Fingerprint` (Go),
+`<Class>.__lungo_fingerprint__` (Python), `<Type>.lungoFingerprint` (Swift),
+`leanTypes["<Lean name>"].fingerprint` (TypeScript), `<ID>_<TYPE>_FINGERPRINT` (C), and
+`lungo::LeanLayout::FINGERPRINT` in Rust. A package using another's type as an
+[extern type](configuration.md#extern-types) checks it before it runs.
 
 A polymorphic function takes a type descriptor for each type parameter, first:
 `Size(lungo.NatType, tree)` (Go), `size(lungo_py.NAT, tree)` (Python), `size(Lungo.nat,
@@ -185,3 +204,18 @@ instantiates it (on Node.js 20 and later with `node:wasi`; in browsers with lung
 `BrowserWasi`, or any WASI given as `options.wasi`) and returns an object whose methods are
 the program's functions; `options.host` implements the host externs. Programs using
 primitives WebAssembly lacks cannot be generated ([`LNG0408`](errors.md#lng0408)).
+
+## Embedded packages
+
+A library that already is a package in its language — a Python distribution, an npm package,
+a Swift package, a CMake project — embeds the program in it with the generator option `embed`
+instead of depending on a package of the program's own. lungo owns the output directory and
+replaces it as a whole, so it is a directory of the host's, never its root. The host's
+manifest provides what the generated one would have:
+
+| Language | The output directory | The host provides |
+| --- | --- | --- |
+| C (`embed=true`) | `include/`, `src/`, `program/`, and a `CMakeLists.txt` defining the library `<id>` | the target `lungo::runtime` (`find_package(lungo <version> EXACT CONFIG)`) before `add_subdirectory`; linking the packages providing extern types to `<id>` |
+| Python (`embed=<module>`) | the module: `__init__.py`, `program/`, and a `CMakeLists.txt` building the program and installing it into the module | a scikit-build-core build whose `CMakeLists.txt` adds the directory with `add_subdirectory`; `lungo-py==<version>` in `build-system.requires` and `dependencies` |
+| Swift (`embed=true`) | `<Module>Program/` and `<Module>/`, the two targets | the targets, by `path`: `<Module>Program` depending on `LungoKit` with `cSettings: [.headerSearchPath("program")]`, and `<Module>` depending on it and `LungoKit`; `lungo-swift` at exactly the release's version |
+| TypeScript (`embed=true`) | `index.js`, `index.d.ts`, `program.wasm` | `lungo-ts` at exactly the release's version, and `program.wasm` in the published files |

@@ -211,7 +211,11 @@ fn verify_names_every_file_that_is_not_what_the_project_generates() {
     for line in ["changed: formal.rs", "missing: names.json", "extra:   stray.rs"] {
         assert!(stderr.contains(line), "`{line}` not reported:\n{stderr}");
     }
-    assert_eq!(std::fs::read_to_string(&rs).unwrap(), format!("{original}// edited by hand\n"), "--verify changes nothing");
+    assert_eq!(
+        std::fs::read_to_string(&rs).unwrap(),
+        format!("{original}// edited by hand\n"),
+        "--verify changes nothing"
+    );
     // build-info.json records how the output was generated: it is not compared.
     ok(&["generate", &flag]);
     std::fs::write(module.join("build-info.json"), "{}\n").unwrap();

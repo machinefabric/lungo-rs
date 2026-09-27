@@ -143,11 +143,11 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
         Layer::PureRust => None,
         Layer::Oracle => Some("__oracle".to_owned()),
     };
-    let mut facade = match Facade::new(&types, &mut naming, &interface.exports, backend_module, &selector, &fingerprints)
-    {
-        Ok(f) => f,
-        Err(e) => return Err(vec![e]),
-    };
+    let mut facade =
+        match Facade::new(&types, &mut naming, &interface.exports, backend_module, &selector, &fingerprints) {
+            Ok(f) => f,
+            Err(e) => return Err(vec![e]),
+        };
     let mut tree = ModuleTree::default();
     if let Err(e) = facade.emit_types(&mut tree, &types) {
         errors.push(e);

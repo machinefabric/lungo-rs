@@ -1,9 +1,10 @@
 //! Embeds the runtime manifest of a release build.
 //!
 //! A release's `runtime-manifest.json` lists its runtime archives with their SHA-256 digests;
-//! the command downloads and verifies exactly those. The release workflow builds the command
-//! with `LUNGO_RUNTIME_MANIFEST` naming the manifest, and publishes the crate with the manifest
-//! as `runtime-manifest.json` beside `Cargo.toml`, so that `cargo install lungo-cli` builds a
+//! the command downloads and verifies exactly those. A release builds the command with
+//! `LUNGO_RUNTIME_MANIFEST` naming the manifest (`lungo-dist release-cli`), and publishes the
+//! crate with the manifest as `runtime-manifest.json` beside `Cargo.toml`, so that
+//! `cargo install lungo-cli` builds a
 //! release too. Any other build is a development build, which knows no release and uses a
 //! local distribution (`--runtime-dir`).
 
