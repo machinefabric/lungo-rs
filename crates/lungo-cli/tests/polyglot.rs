@@ -247,6 +247,7 @@ fn webassembly_rejects_primitives_it_lacks() {
     let dist = distribution(&["ts"]);
     let out = root().join("ts-process");
     let result = Command::new(env!("CARGO_BIN_EXE_lungo"))
+        .current_dir(root())
         .arg("--project")
         .arg(repo().join("compiler-tests/conformance"))
         .args(["--root", "Conformance.Process", "--name", "process", "generate"])

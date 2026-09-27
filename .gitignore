@@ -1,5 +1,6 @@
 .DS_Store
 .lake/
+.lungo/
 target/
 *.partial
 .lungo-cache/

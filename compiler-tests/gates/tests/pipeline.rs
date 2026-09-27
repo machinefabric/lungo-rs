@@ -205,9 +205,14 @@ fn builds_are_deterministic_and_location_independent() {
         }
         assert!(v == &sb[k], "{k} differs between identical builds");
     }
-    // A forced regeneration in place reproduces the same bytes.
-    std::fs::remove_file(a.module("out", "imports").join("build-info.json")).unwrap();
-    a.build(&imports_config(), "out").unwrap();
+    // A forced regeneration in place (the recorded build key no longer matches) reproduces the
+    // same bytes.
+    let info_path = a.module("out", "imports").join("build-info.json");
+    let mut info: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&info_path).unwrap()).unwrap();
+    info["build_key"] = "stale".into();
+    std::fs::write(&info_path, serde_json::to_string(&info).unwrap()).unwrap();
+    let outcome = a.build(&imports_config(), "out").unwrap();
+    assert!(!outcome.reused, "a stale build key forces regeneration");
     assert_eq!(snapshot(&a.module("out", "imports"), &["build-info.json"]), {
         let mut s = sa.clone();
         s.remove("build-info.json");
@@ -286,7 +291,7 @@ fn two_projects_cannot_generate_the_same_module() {
     configure().run(&a.project(), &env).unwrap();
     let err = configure().run(&b.project(), &env).unwrap_err();
     assert_eq!(err.code(), ErrorCode::InvalidConfiguration, "{err}");
-    assert!(err.to_string().contains("would both generate the module `imports`"), "{err}");
+    assert!(err.to_string().contains("would both generate the program `imports`"), "{err}");
     let renamed = configure().name("imports_b").run(&b.project(), &env).unwrap();
     assert_eq!(renamed.name, "imports_b");
     assert!(a.module("out", "imports_b").join("imports_b.rs").is_file());

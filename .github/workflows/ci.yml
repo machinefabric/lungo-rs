@@ -22,6 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-wasip1
       - uses: ./.github/actions/setup-lean
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
@@ -29,6 +30,8 @@ jobs:
       - run: cargo doc --workspace --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+      # The runtime of the TypeScript binding.
+      - run: cargo clippy -p lungo-runtime -p lungo-capi --features lungo-runtime/capi --target wasm32-wasip1 -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
@@ -46,16 +49,34 @@ jobs:
           - os: windows-latest
             exclude: --exclude facade-runner
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The TypeScript binding's WebAssembly runtime; on Windows, the runtime cgo links.
+          targets: ${{ runner.os == 'Windows' && 'wasm32-wasip1,x86_64-pc-windows-gnu' || 'wasm32-wasip1' }}
       - uses: ./.github/actions/setup-lean
+      # The toolchains of the language bindings' end-to-end tests (crates/lungo-cli/tests).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: MinGW-w64 for cgo
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'C:\mingw64\bin' >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v4
         with:
           path: ${{ env.LUNGO_CACHE_DIR }}
-          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-build/worker/**') }}
+          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-driver/worker/**') }}
       - name: Build
         run: cargo build --workspace --all-targets --all-features ${{ matrix.exclude }}
       - name: Test
@@ -80,6 +101,6 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ env.LUNGO_CACHE_DIR }}
-          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-build/worker/**') }}
+          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-driver/worker/**') }}
       # Every executable declaration of Init and Std, generated as Rust and type-checked.
       - run: cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
