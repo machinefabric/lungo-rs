@@ -128,7 +128,8 @@ A development build of `lungo` (built from source) knows no release. Generating 
 other than Rust then needs a *local distribution*: a directory laid out as a release
 (`runtime/`, `wasm/`, `go/`, `python/`, `lungo-swift/`, `ts/`), built from the lungo
 repository with `cargo run -p lungo-dist -- local --out DIR`, and given with `--runtime-dir
-DIR`. Without one the command fails with [`LNG0108`](errors.md#lng0108). The generated
+DIR`. With `--python PATH` it also holds lungo-py's wheel for this machine in `wheels/`, for pip
+to find (`--find-links DIR/wheels`) when it builds a generated Python package. Without one the command fails with [`LNG0108`](errors.md#lng0108). The generated
 packages then refer to that directory, so they build only on that machine.
 
 ```text

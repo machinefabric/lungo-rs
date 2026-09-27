@@ -3,7 +3,8 @@
 //! manifest it signs (see `release`).
 //!
 //! - `local`: a local distribution for this machine, laid out as a release is (`runtime/`,
-//!   `wasm/`, and each language's support library), for `lungo generate --runtime-dir`.
+//!   `wasm/`, and each language's support library), for `lungo generate --runtime-dir`, with
+//!   lungo-py's wheel for this machine in `wheels/` for pip to find.
 //! - `ts`: the npm package `lungo-ts`.
 //! - `targets`: what a release is made of.
 //! - `release-runtime`, `release-xcframework`, `release-cli`, `release-wheel`: one artifact.
@@ -28,10 +29,15 @@ enum Task {
     Local {
         #[arg(long)]
         out: PathBuf,
-        /// Components to include (default: all but swift off macOS): runtime, wasm, go, python,
-        /// swift, ts.
+        /// Components to include (default: all but swift off macOS, and wheel without
+        /// --python): runtime, wasm, go, python, wheel, swift, ts.
         #[arg(long = "component")]
         components: Vec<String>,
+        /// The Python that builds lungo-py's wheel for this machine (the `wheel` component), into
+        /// `wheels/`: a place for pip to find the unreleased lungo-py when it builds a package
+        /// generated with this distribution.
+        #[arg(long)]
+        python: Option<PathBuf>,
     },
     /// Assemble the npm package `lungo-ts`.
     Ts {
@@ -105,7 +111,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> ExitCode {
     let result = match Task::parse() {
-        Task::Local { out, components } => local(&out, &components),
+        Task::Local { out, components, python } => local(&out, &components, python.as_deref()),
         Task::Ts { out } => support::typescript(&out),
         Task::Targets => release::targets(),
         Task::ReleaseRuntime { target, out_dir } => release::runtime_archive(&target, &out_dir),
@@ -387,9 +393,9 @@ pub fn runtime(target: &str, out: &Path, linker: Linker) -> Result<()> {
     Ok(())
 }
 
-/// A local distribution for this machine.
-fn local(out: &Path, components: &[String]) -> Result<()> {
-    const ALL: &[&str] = &["runtime", "wasm", "go", "python", "swift", "ts"];
+/// A local distribution for this machine. Each component it builds replaces the one there.
+fn local(out: &Path, components: &[String], python: Option<&Path>) -> Result<()> {
+    const ALL: &[&str] = &["runtime", "wasm", "go", "python", "wheel", "swift", "ts"];
     for c in components {
         if !ALL.contains(&c.as_str()) {
             return Err(format!("unknown component {c} (components: {})", ALL.join(", ")));
@@ -397,9 +403,15 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     }
     let host = host();
     let apple = host.contains("-apple-darwin");
-    // By default every component this machine can build: the Swift package only on a Mac.
-    let wanted =
-        |c: &str| if components.is_empty() { c != "swift" || apple } else { components.iter().any(|x| x == c) };
+    // By default every component this machine can build: the Swift package only on a Mac, the
+    // wheel only with a Python to build it.
+    let wanted = |c: &str| {
+        if components.is_empty() {
+            (c != "swift" || apple) && (c != "wheel" || python.is_some())
+        } else {
+            components.iter().any(|x| x == c)
+        }
+    };
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
     let out = io("cannot resolve the output", dunce::canonicalize(out))?;
     if wanted("runtime") || wanted("go") || wanted("python") || wanted("swift") {
@@ -425,6 +437,14 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     }
     if wanted("python") {
         support::python(&out.join("runtime"), &out.join("python"))?;
+    }
+    if wanted("wheel") {
+        let python = python.ok_or("the wheel component is built with --python")?;
+        let wheels = out.join("wheels");
+        if wheels.exists() {
+            io(format!("cannot replace {}", wheels.display()), fs::remove_dir_all(&wheels))?;
+        }
+        release::wheel(&host, python, &wheels)?;
     }
     if wanted("swift") {
         if !apple {
