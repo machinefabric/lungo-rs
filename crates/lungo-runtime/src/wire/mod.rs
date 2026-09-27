@@ -117,15 +117,21 @@ pub enum Type {
     Nat,
     Int,
     Bool,
+    #[cfg_attr(feature = "serde", serde(rename = "uint8"))]
     UInt8,
+    #[cfg_attr(feature = "serde", serde(rename = "uint16"))]
     UInt16,
+    #[cfg_attr(feature = "serde", serde(rename = "uint32"))]
     UInt32,
+    #[cfg_attr(feature = "serde", serde(rename = "uint64"))]
     UInt64,
+    #[cfg_attr(feature = "serde", serde(rename = "usize"))]
     USize,
     Int8,
     Int16,
     Int32,
     Int64,
+    #[cfg_attr(feature = "serde", serde(rename = "isize"))]
     ISize,
     Float,
     Float32,
@@ -366,10 +372,15 @@ impl Signature {
 pub enum Repr {
     Float,
     Float32,
+    #[cfg_attr(feature = "serde", serde(rename = "uint8"))]
     UInt8,
+    #[cfg_attr(feature = "serde", serde(rename = "uint16"))]
     UInt16,
+    #[cfg_attr(feature = "serde", serde(rename = "uint32"))]
     UInt32,
+    #[cfg_attr(feature = "serde", serde(rename = "uint64"))]
     UInt64,
+    #[cfg_attr(feature = "serde", serde(rename = "usize"))]
     USize,
     Object,
 }
@@ -411,6 +422,7 @@ pub enum FieldKind {
     /// The object field at this index.
     Object(u32),
     /// The `usize` field at this index (counted in words, after the object fields).
+    #[cfg_attr(feature = "serde", serde(rename = "usize"))]
     USize(u32),
     /// A scalar at `offset` bytes after the object and `usize` fields.
     Scalar { offset: u32, repr: Repr },

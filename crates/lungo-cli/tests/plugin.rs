@@ -129,6 +129,11 @@ fn a_plugin_receives_the_request_and_its_files_are_published() {
     assert!(request["program_files"]["program/lungo.h"].is_string(), "the program's C is in the request");
     assert!(request["runtime"]["distribution"]["local"]["dir"].is_string());
     assert_eq!(request["boundary"]["host_externs"].as_array().unwrap().len(), 2);
+    // Type expressions as the protocol reference documents them.
+    let mix = request["boundary"]["functions"].as_array().unwrap().iter().find(|f| f["lean_name"] == "Polyglot.mix").unwrap();
+    let types: Vec<&serde_json::Value> = mix["params"].as_array().unwrap().iter().map(|p| &p["ty"]).collect();
+    assert_eq!(types, ["uint64", "int32", "char", "bool"]);
+    assert_eq!(mix["returns"], serde_json::json!({ "value": "string" }));
     // Unchanged inputs: the output is up to date.
     let again = generate(&out, &[]);
     assert!(String::from_utf8_lossy(&again.stdout).starts_with("up to date: echo "));
