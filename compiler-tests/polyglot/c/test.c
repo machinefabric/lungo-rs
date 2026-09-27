@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 static int failures = 0;
 
@@ -91,6 +95,11 @@ static lungo_value *point(double x, double y, const char *label, uint8_t tag) {
 }
 
 int main(void) {
+#ifdef _WIN32
+    /* The program's output is compared byte for byte: the Lean program's lines are written as
+       bytes, so this program's are too (a text-mode stream would end them with "\r\n"). */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     static uint64_t factor = 10;
     polyglot_implement_host_scale(scale, &factor, NULL);
     polyglot_implement_host_record(record, NULL, NULL);
