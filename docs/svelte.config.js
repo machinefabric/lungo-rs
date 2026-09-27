@@ -80,7 +80,7 @@ function requireFrontMatter() {
  */
 const shiki = await createHighlighter({
 	themes: ['github-light', 'github-dark'],
-	langs: ['json', 'lean', 'rust', 'sh', 'toml']
+	langs: ['c', 'cmake', 'go', 'js', 'json', 'lean', 'powershell', 'python', 'rust', 'sh', 'swift', 'toml', 'ts']
 });
 
 function highlight(code, lang) {

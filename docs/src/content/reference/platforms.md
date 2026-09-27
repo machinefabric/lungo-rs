@@ -1,6 +1,6 @@
 ---
 title: "Supported platforms"
-description: "The supported Lean toolchains, host and target platforms, and what each mode needs."
+description: "The supported Lean toolchains, host and target platforms, the runtime's platforms, and what each language binding needs."
 ---
 
 ## Lean toolchains
@@ -30,6 +30,35 @@ Rust 1.89 or later, edition 2024.
   generated code links no Lean runtime and no C code.
 - **LeanOracle** links Lean's native runtime from the host toolchain and cannot
   cross-compile. On Windows it requires the GNU ABI, which Lean's runtime is built for.
+
+## The prebuilt runtime
+
+Each release publishes the runtime (`lungo runtime fetch --target <triple>`) for:
+
+| Target | Static | Shared | Used by |
+| --- | --- | --- | --- |
+| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` (glibc 2.28 or later) | yes | yes | C, Go, Python |
+| `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` | yes | yes | C |
+| `x86_64-apple-darwin`, `aarch64-apple-darwin` (macOS 12 or later) | yes | yes | C, Go, Python, Swift |
+| `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios` (iOS 15 or later) | yes | | C, Swift |
+| `x86_64-pc-windows-msvc` | yes | yes | C, Python |
+| `x86_64-pc-windows-gnu` | yes | yes | C, Go (cgo builds with MinGW-w64) |
+| `wasm32-wasip1` | yes | | TypeScript |
+
+The Apple targets are also combined into one XCFramework (macOS universal, iOS, iOS
+simulator universal), which the Swift package uses.
+
+## Language bindings
+
+| Language | Needs | Platforms |
+| --- | --- | --- |
+| C | CMake 3.20, a C11 compiler | every target above |
+| Go | Go 1.22, cgo with a C compiler (MinGW-w64 GCC on Windows) | Linux (amd64, arm64), macOS (amd64, arm64), Windows (amd64) |
+| Python | Python 3.9, CMake, a C compiler to install from source | Linux (x86_64, aarch64, glibc), macOS (x86_64, arm64), Windows (x86_64) |
+| Swift, Objective-C | Swift 5.9 | macOS, iOS, iOS simulator |
+| TypeScript | Node.js 20, or a browser | anywhere WebAssembly runs; no threads, child processes, sockets, signals or timers ([`LNG0408`](errors.md#lng0408)) |
+
+`lungo` itself runs on Linux (x86_64, aarch64), macOS (x86_64, arm64) and Windows (x86_64).
 
 ## Requirements of the Lake project
 

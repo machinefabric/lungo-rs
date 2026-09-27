@@ -68,7 +68,7 @@ command's output.
 **Invalid configuration.** The build configuration is malformed or cannot take effect: an
 unknown key or wrong value in `lungo.toml`, a generated-module name that is not letters,
 digits, `_` and `-` (including a Lake package name that cannot be used without
-[`name`](configuration.md#output)), two Lean projects in one build script that would generate
+[`name`](configuration.md#program)), two Lean projects in one build script that would generate
 the same module, no `OUT_DIR` and no `out_dir` outside a build script, or a
 [shaping](configuration.md#shaping-the-generated-code) setting (`type_attribute`,
 `struct_attribute`, `enum_attribute`, `field_attribute`, `skip_debug`, `disable_comments`,
@@ -83,7 +83,7 @@ error[LNG0107]: field_attribute path `Geometry.Point.z` selects no field of a ge
 **lungo runtime unavailable.** A language binding needs the prebuilt lungo runtime, and none
 is available: this `lungo` is a development build, which knows no release, and no local
 runtime distribution was given with `--runtime-dir`; or the release has no runtime for the
-requested target. See [the runtime](lungo-cli.md#runtime).
+requested target. See [the runtime](lungo-cli.md#the-runtime).
 
 ### LNG0109
 

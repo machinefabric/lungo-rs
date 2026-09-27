@@ -39,8 +39,10 @@ in Rust can use directly. See [how to write a generator plugin](../how-to/write-
 | `types_symbol` | `const lungo_types *types(void)`: the loaded type table. |
 | `initialize` | `void initialize(void)`: every entry point initializes the program on first use; it requires every host extern to be registered. |
 
-Types (`ty`, `returns`) are type expressions as JSON: `"nat"`, `"string"`, … for the types
-without parts, `{"option": t}`, `{"list": t}`, `{"array": t}`, `{"prod": [a, b]}`,
+Types (`ty`, `returns`) are type expressions as JSON: `"nat"`, `"int"`, `"bool"`,
+`"uint8"`, `"uint16"`, `"uint32"`, `"uint64"`, `"usize"`, `"int8"`, `"int16"`, `"int32"`,
+`"int64"`, `"isize"`, `"float"`, `"float32"`, `"char"`, `"string"`, `"unit"`,
+`"byte_array"`, `"float_array"` for the types without parts, `{"option": t}`, `{"list": t}`, `{"array": t}`, `{"prod": [a, b]}`,
 `{"except": {"error": e, "value": v}}`, `{"function": {"params": […], "result": r}}`,
 `{"param": i}`, `{"inductive": {"index": i, "args": […]}}`, `"opaque"`; `returns` is
 `{"value": t}`, `{"io": t}` or `{"eio": {"error": e, "value": v}}`. Their meaning, and the
