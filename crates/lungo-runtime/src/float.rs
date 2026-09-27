@@ -10,6 +10,9 @@ use num_bigint::Sign;
 
 /// The platform C math library.
 mod c {
+    #[cfg(all(windows, target_env = "msvc"))]
+    pub use self::msvc::{fabsf, frexpf};
+
     unsafe extern "C" {
         pub fn acos(x: f64) -> f64;
         pub fn acosf(x: f32) -> f32;
@@ -36,6 +39,7 @@ mod c {
         pub fn exp2(x: f64) -> f64;
         pub fn exp2f(x: f32) -> f32;
         pub fn fabs(x: f64) -> f64;
+        #[cfg(not(all(windows, target_env = "msvc")))]
         pub fn fabsf(x: f32) -> f32;
         pub fn floor(x: f64) -> f64;
         pub fn floorf(x: f32) -> f32;
@@ -62,9 +66,24 @@ mod c {
         pub fn pow(x: f64, y: f64) -> f64;
         pub fn powf(x: f32, y: f32) -> f32;
         pub fn frexp(x: f64, e: *mut core::ffi::c_int) -> f64;
+        #[cfg(not(all(windows, target_env = "msvc")))]
         pub fn frexpf(x: f32, e: *mut core::ffi::c_int) -> f32;
         pub fn scalbn(x: f64, n: core::ffi::c_int) -> f64;
         pub fn scalbnf(x: f32, n: core::ffi::c_int) -> f32;
+    }
+
+    /// The Universal CRT exports no `fabsf` or `frexpf` on x64: its `<math.h>` defines them
+    /// inline, through the `double` functions, and so do these. Both are exact, since every
+    /// `float`, its magnitude and its `frexp` mantissa are exactly representable as `double`.
+    #[cfg(all(windows, target_env = "msvc"))]
+    mod msvc {
+        pub unsafe fn fabsf(x: f32) -> f32 {
+            unsafe { super::fabs(f64::from(x)) as f32 }
+        }
+
+        pub unsafe fn frexpf(x: f32, e: *mut core::ffi::c_int) -> f32 {
+            unsafe { super::frexp(f64::from(x), e) as f32 }
+        }
     }
 }
 

@@ -7,10 +7,10 @@ Rust API.
 
 ```toml
 [dependencies]
-lungo = "0.53.2444"
+lungo = "0.54.2456"
 
 [build-dependencies]
-lungo-build = "0.53.2444"
+lungo-build = "0.54.2456"
 ```
 
 Use the same version of both: generated code runs on exactly the runtime it was generated for.
