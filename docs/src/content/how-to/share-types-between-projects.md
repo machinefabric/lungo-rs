@@ -51,7 +51,7 @@ let b = Point { x: Int::from(8), y: Int::from(6) };
 let mid: Point = drawing::midpoint(a, b);
 ```
 
-`cargo lungo mappings` for `drawing` lists `Geometry.Point` with kind `extern type`.
+`lungo mappings` for `drawing` lists `Geometry.Point` with kind `extern type`.
 
 ## What an extern type must be
 

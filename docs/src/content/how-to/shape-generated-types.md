@@ -47,7 +47,7 @@ lungo_build::configure()
     .compile_lean("lean")
 ```
 
-`cargo lungo mappings` lists the Lean name of every generated type and field. A path that
+`lungo mappings` lists the Lean name of every generated type and field. A path that
 selects nothing fails the build with [`LNG0107`](../reference/errors.md#lng0107), so a
 misspelled or stale path does not go unnoticed.
 
@@ -85,12 +85,13 @@ lungo_build::configure().disable_comments(["Geometry.Internal"]).compile_lean("l
 
 ## In `lungo.toml`
 
-The same settings in `lungo.toml`, for `cargo lungo`:
+The same settings in the `[rust]` table of `lungo.toml`, for the
+[`lungo` command](../reference/lungo-cli.md):
 
 ```toml
 project = "lean"
 
-[build]
+[rust]
 type-attributes = [
   { path = "Geometry", attribute = "#[derive(serde::Serialize, serde::Deserialize)]" },
 ]

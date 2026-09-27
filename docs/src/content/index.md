@@ -27,7 +27,7 @@ Start here if you are new to lungo.
 ## Reference
 
 - [Configuration](reference/configuration.md)
-- [`cargo lungo`](reference/cli.md)
+- [The `lungo` command](reference/lungo-cli.md)
 - [Generated code](reference/generated-code.md)
 - [Lean types in Rust](reference/type-mapping.md)
 - [Errors](reference/errors.md)

@@ -37,11 +37,11 @@ cd lean && lake build
   supported toolchain in `lean-toolchain` (see [platforms](../reference/platforms.md)).
 - **The manifest is missing** or a dependency is not materialized
   ([`LNG0101`](../reference/errors.md#lng0101)): run `lake update` in the Lean project once,
-  and commit `lake-manifest.json`. For an existing manifest, `cargo lungo setup`
+  and commit `lake-manifest.json`. For an existing manifest, `lungo setup`
   materializes its dependencies without changing it.
 - **The configuration cannot take effect** ([`LNG0107`](../reference/errors.md#lng0107)): the
   message names the setting. A shaping path that selects nothing is usually misspelled;
-  `cargo lungo mappings` lists the Lean names of every generated type, function and field.
+  `lungo mappings` lists the Lean names of every generated type, function and field.
 
 ## Extern errors (`LNG04xx`)
 
@@ -51,7 +51,7 @@ Lean type and source. If the declaration is yours, implement and map it
 dependency, the dependency relies on native code that lungo does not provide; implement the
 symbol in Rust with `rust_extern`, or avoid the declaration.
 
-`cargo lungo externs` lists how every extern of the program is implemented.
+`lungo externs` lists how every extern of the program is implemented.
 
 ## Worker errors (`LNG03xx`)
 
@@ -59,7 +59,7 @@ symbol in Rust with `rust_extern`, or avoid the declaration.
   [`LNG0305`](../reference/errors.md#lng0305)): raise the limit, or find the Lean code that
   runs long during elaboration (`lake build` shows it too).
 - **Crashes** ([`LNG0303`](../reference/errors.md#lng0303)): the message contains the
-  worker's output. Run `cargo lungo prepare`, which verifies the cached worker and
+  worker's output. Run `lungo prepare`, which verifies the cached worker and
   rebuilds it if it is damaged; if the crash persists, report it with that output.
 - **Unsatisfiable requests** ([`LNG0301`](../reference/errors.md#lng0301)): check the names
   in `root_module`, `export` and `export_module` against the Lean project. A package without
@@ -70,4 +70,4 @@ symbol in Rust with `rust_extern`, or avoid the declaration.
 [`LNG0302`](../reference/errors.md#lng0302), [`LNG0404`](../reference/errors.md#lng0404) and
 [`LNG05xx`](../reference/errors.md#code-generation) mean lungo could not handle valid
 compiler output. Report them with the message, the Lean toolchain, and if possible
-`cargo lungo ir <declaration>` for the declaration named.
+`lungo ir <declaration>` for the declaration named.

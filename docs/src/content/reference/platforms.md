@@ -35,5 +35,5 @@ Rust 1.89 or later, edition 2024.
 
 - `lean-toolchain`, `lakefile.toml` or `lakefile.lean`, and `lake-manifest.json`.
 - Dependencies locked in the manifest must be materialized (`lake update`, or
-  `cargo lungo setup`). Builds never resolve, download or update dependencies.
+  `lungo setup`). Builds never resolve, download or update dependencies.
 - Root modules belong to the project's root package.

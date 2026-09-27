@@ -1,10 +1,11 @@
 ---
 title: "Architecture"
-description: "How lungo's pieces fit together, and why Lean compiles the program before lungo translates it."
+description: "How lungo's pieces fit together: why Lean compiles the program before lungo translates it, and how one program reaches every language on one runtime."
 ---
 
-lungo makes Lean code available to Rust programs without asking Lean to be anything but
-Lean. This page explains how the pieces fit together and why they are arranged this way.
+lungo makes Lean code available to programs in Rust, C, Go, Python, Swift, Objective-C and
+TypeScript without asking Lean to be anything but Lean. This page explains how the pieces fit
+together and why they are arranged this way.
 
 ## Lean compiles Lean
 
@@ -29,8 +30,8 @@ invalid Lean or a false proof fails the Rust build: they fail the Lean build fir
 ## The pipeline
 
 ```text
-build.rs ──► lake build ──► worker ──► Bridge IR ──► verifier ──► code generator ──► OUT_DIR
-             (Lean)         (Lean)                   (Rust)       (Rust)
+build.rs / lungo ──► lake build ──► worker ──► Bridge IR + interface ──► verifier ──► generators
+                     (Lean)         (Lean)                                (Rust)       (Rust)
 ```
 
 1. **Lake** elaborates, checks and compiles the root modules. lungo only reads what Lake
@@ -41,14 +42,45 @@ build.rs ──► lake build ──► worker ──► Bridge IR ──► ver
    declarations and their types, extern symbols, source locations and trust information. It
    runs as a separate process, so the build survives it crashing or hanging.
 3. **The verifier** checks the Bridge IR independently of the worker that produced it.
-4. **The code generator** writes Rust: a compiler layer that reproduces the compiled program
-   instruction by instruction on lungo's runtime, and a facade of ordinary Rust types and
-   functions for the exported declarations.
-5. **Publication** replaces the output directory atomically and tells Cargo which files to
-   watch.
+4. **The generators** write the program and its interface in each requested language (see
+   [below](#one-program-many-languages)).
+5. **Publication** replaces each output directory atomically, and in `build.rs` tells Cargo
+   which files to watch.
 
-The same library runs from `build.rs` and from `cargo lungo`, so the command line always
-sees what the build sees.
+The same library runs from `build.rs` and from the [`lungo` command](../reference/lungo-cli.md),
+so the command line always sees what the build sees.
+
+## One program, many languages
+
+Generating code for a language has two parts, which lungo keeps apart:
+
+- **Execution**: the compiled program, instruction by instruction, with Lean's reference
+  counting and object layout. There are two: Rust (the compiler layer of a Rust crate) and
+  C (compiled by the host language's C toolchain: cgo, Xcode, a Python build, clang for
+  WebAssembly). Both run on the same runtime, lungo's Rust port of Lean's runtime; C calls
+  it through its C ABI (`lungo.h`), as Lean's own C backend calls `libleanrt`.
+- **Projection**: the API of the exported declarations in the language's own terms: Rust
+  structs and enums, Go structs and sealed interfaces, Python dataclasses, Swift structs and
+  `indirect enum`s, TypeScript objects and tagged unions, C values with typed accessors.
+
+The description every projection starts from is the program's *interface*: the exported
+functions with their types, the types they use, the externs the host implements, and the
+entry point. It is to lungo what the `FileDescriptorSet` is to `protoc`: a generator is a
+function from it to files, whether it is built in or a [plugin](../reference/plugins.md)
+(`lungo-gen-<language>`) receiving it as JSON.
+
+Rust keeps its own projection, which converts Lean objects directly. Every other language
+crosses a single boundary: the program's C entry points take their arguments and return
+their results in one binary encoding, the [wire format](../reference/wire-format.md), and
+each language's support library encodes and decodes it. One call is one crossing, however
+deep the value; recursive types, arbitrary-precision numbers and polymorphic functions are
+handled by the one codec in the runtime, driven by a table of the program's types. Values a
+language cannot hold as data (Lean closures, opaque values, `IO.Error`s) cross as handles,
+and functions of the host language cross into Lean as callbacks.
+
+A process has one runtime: the generated packages of any number of programs share it, and
+it is prebuilt for every platform and distributed with each release, so that no one using
+Go, Python, Swift or TypeScript compiles Rust. See [the runtime distribution](distribution.md).
 
 ## Two layers of generated code
 

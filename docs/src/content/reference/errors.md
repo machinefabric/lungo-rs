@@ -42,7 +42,7 @@ toolchains; see [platforms](platforms.md).
 
 **Lean toolchain not installed.** The pinned toolchain is not installed, and the
 configuration does not permit installing it. Install it with
-`elan toolchain install <toolchain>` or `cargo lungo setup`.
+`elan toolchain install <toolchain>` or `lungo setup`.
 
 ### LNG0104
 

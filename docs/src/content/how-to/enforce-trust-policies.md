@@ -41,7 +41,7 @@ Remove the dependency in Lean, or stop exporting the declaration.
 
 To see the dependencies of every export without enforcing a policy, read `manifest.json` in
 the build output (the `trust` of each export), inspect one declaration with
-`cargo lungo inspect <name>`, or read the metadata at run time:
+`lungo inspect <name>`, or read the metadata at run time:
 
 ```rust
 for d in formal::__meta::declarations() {
