@@ -16,7 +16,7 @@ export const siteConfig: SiteConfig = {
     title: 'lungo',
     description:
         'Generate Rust, C, Go, Python, Swift and TypeScript from ordinary Lake projects. Lean checks and compiles the program; lungo runs it on one runtime behind an idiomatic API in each language.',
-    github: 'https://github.com/jowharshamshiri/lungo',
+    github: 'https://github.com/machinefabric/lungo',
     crate: __LUNGO_CRATE__,
     install: 'cargo add lungo && cargo add --build lungo-build',
 
@@ -49,7 +49,7 @@ export let navItems: NavItem[] = [
 export let socialLinks: SocialLink[] = [
     {
         title: 'GitHub',
-        href: 'https://github.com/jowharshamshiri/lungo',
+        href: 'https://github.com/machinefabric/lungo',
         icon: 'github'
     },
 ];

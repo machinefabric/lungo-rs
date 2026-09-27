@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jowharshamshiri/lungo"
+Homepage = "https://github.com/machinefabric/lungo"
 
 [tool.hatch.version]
 path = "src/lungo_py/_version.py"

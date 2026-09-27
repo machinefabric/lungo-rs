@@ -27,8 +27,8 @@ edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
 authors = ["Bahram Joharshamshiri <jowharshamshiri@gmail.com>"]
-repository = "https://github.com/jowharshamshiri/lungo"
-homepage = "https://github.com/jowharshamshiri/lungo"
+repository = "https://github.com/machinefabric/lungo"
+homepage = "https://github.com/machinefabric/lungo"
 
 [workspace.dependencies]
 # The lungo crates are released together and depend on each other's unstable internals (the

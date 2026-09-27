@@ -13,7 +13,7 @@ async function latestRelease(): Promise<string> {
 	const url = `https://crates.io/api/v1/crates/${crate}`;
 	// crates.io requires a User-Agent that identifies the client.
 	const response = await fetch(url, {
-		headers: { 'User-Agent': 'lungo-docs (https://github.com/jowharshamshiri/lungo)' }
+		headers: { 'User-Agent': 'lungo-docs (https://github.com/machinefabric/lungo)' }
 	});
 	if (!response.ok) {
 		throw new Error(`${url}: ${response.status} ${response.statusText}`);

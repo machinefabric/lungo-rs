@@ -29,7 +29,7 @@ types, for example to derive `serde` traits.
 For the other languages:
 
 ```sh
-curl -sSfL https://github.com/jowharshamshiri/lungo/releases/latest/download/install.sh | sh
+curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
 lungo generate --go_out=gen/go --python_out=gen/py --swift_out=gen/swift --ts_out=gen/js --c_out=gen/c
 ```
 
@@ -41,14 +41,14 @@ CMake.
 
 ## Documentation
 
-The documentation is published at <https://jowharshamshiri.github.io/lungo/docs>.
+The documentation is published at <https://lungo.machinefabric.com/docs>.
 
-- New to lungo: your first [Rust crate](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-crate),
-  [Go package](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-go-package),
-  [Python package](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-python-package),
-  [Swift package](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-swift-package),
-  [TypeScript package](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-typescript-package) or
-  [C library](https://jowharshamshiri.github.io/lungo/docs/tutorials/first-c-library) built from Lean
+- New to lungo: your first [Rust crate](https://lungo.machinefabric.com/docs/tutorials/first-crate),
+  [Go package](https://lungo.machinefabric.com/docs/tutorials/first-go-package),
+  [Python package](https://lungo.machinefabric.com/docs/tutorials/first-python-package),
+  [Swift package](https://lungo.machinefabric.com/docs/tutorials/first-swift-package),
+  [TypeScript package](https://lungo.machinefabric.com/docs/tutorials/first-typescript-package) or
+  [C library](https://lungo.machinefabric.com/docs/tutorials/first-c-library) built from Lean
 - Everything else: how-to guides, reference (configuration, the `lungo` command, generated
   code and packages, the wire format, the C API, plugins, errors) and explanation
   (architecture, the runtime distribution, trust)
@@ -61,7 +61,7 @@ them (see [Documentation site](#documentation-site)).
 - [elan](https://github.com/leanprover/elan) with the toolchain the Lake project pins;
   `leanprover/lean4:v4.34.1` is supported
 - for Rust: Rust 1.89 or later; for the other languages: the `lungo` command and the
-  language's own toolchain (see [platforms](https://jowharshamshiri.github.io/lungo/docs/reference/platforms))
+  language's own toolchain (see [platforms](https://lungo.machinefabric.com/docs/reference/platforms))
 
 ## Repository
 
@@ -99,8 +99,8 @@ MinGW-w64 GCC and the `x86_64-pc-windows-gnu` Rust target.
 
 ## Documentation site
 
-`docs/` is a SvelteKit site (mdsvex, Tailwind CSS), deployed to GitHub Pages by
-`.github/workflows/docs.yml`. Pages are the Markdown files in `docs/src/content`, each with a
+`docs/` is a SvelteKit site (mdsvex, Tailwind CSS), deployed to GitHub Pages at
+<https://lungo.machinefabric.com> by `.github/workflows/docs.yml`. Pages are the Markdown files in `docs/src/content`, each with a
 `title` and `description` in its front matter; links between them are relative links to the
 Markdown files, which work on GitHub and on the site alike.
 

@@ -119,7 +119,7 @@ fn go_binding() {
     std::fs::write(
         module.join("go.mod"),
         format!(
-            "module example.com/polyglottest\n\ngo 1.22\n\nrequire github.com/jowharshamshiri/lungo-go v{v}\n\nreplace github.com/jowharshamshiri/lungo-go => {}\n",
+            "module example.com/polyglottest\n\ngo 1.22\n\nrequire github.com/machinefabric/lungo-go v{v}\n\nreplace github.com/machinefabric/lungo-go => {}\n",
             dist.join("go").display(),
             v = env!("CARGO_PKG_VERSION")
         ),
@@ -148,11 +148,13 @@ fn python_binding() {
     run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(dist.join("python")));
     run(Command::new(&py).args(["-m", "unittest", "test_wire"]).current_dir(dist.join("python/tests")));
     run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(&package));
-    let out = Command::new(&py)
-        .args(["-m", "unittest", "-v", "test_polyglot"])
-        .current_dir(fixture("python"))
-        .output()
-        .unwrap();
+    let tests = root().join("python-tests");
+    if tests.exists() {
+        std::fs::remove_dir_all(&tests).unwrap();
+    }
+    std::fs::create_dir_all(&tests).unwrap();
+    std::fs::copy(fixture("python").join("test_polyglot.py"), tests.join("test_polyglot.py")).unwrap();
+    let out = Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{text}");
     assert!(text.contains("Ran 10 tests") && text.trim_end().ends_with("OK"), "{text}");

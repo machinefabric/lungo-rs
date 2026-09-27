@@ -29,7 +29,7 @@ lungo is used from its repository. Make a working directory and clone it there:
 ```sh
 mkdir lungo-tutorial
 cd lungo-tutorial
-git clone https://github.com/jowharshamshiri/lungo.git
+git clone https://github.com/machinefabric/lungo.git
 ```
 
 Everything else in this tutorial happens inside `lungo-tutorial`.

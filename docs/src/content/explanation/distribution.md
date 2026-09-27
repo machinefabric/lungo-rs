@@ -34,8 +34,8 @@ Each lungo release publishes, with the same version:
 - the `lungo` command, which embeds the release's runtime manifest (every archive's URL and
   SHA-256 digest);
 - the support libraries: `lungo-py` on PyPI (with the runtime for each platform in its
-  wheels), `lungo-ts` on npm, the Go module `github.com/jowharshamshiri/lungo-go` (with the
-  runtime for each platform), and the Swift package `jowharshamshiri/lungo-swift` (whose
+  wheels), `lungo-ts` on npm, the Go module `github.com/machinefabric/lungo-go` (with the
+  runtime for each platform), and the Swift package `machinefabric/lungo-swift` (whose
   `LungoRuntime` target is the XCFramework, by URL and checksum);
 - the Rust crates.
 

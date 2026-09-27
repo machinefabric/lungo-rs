@@ -17,7 +17,7 @@ We need:
 
 ```sh
 elan toolchain install leanprover/lean4:v4.34.1
-curl -sSfL https://github.com/jowharshamshiri/lungo/releases/latest/download/install.sh | sh
+curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
 ```
 
 ## Write the Lean project

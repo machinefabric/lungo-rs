@@ -132,7 +132,7 @@ index (`<ID>_<TYPE>_<CTOR>`) and an accessor per field (`<id>_<type>_<field>(v)`
 *.c, *.h                the program; module files are module_<stem>_lean.c
 ```
 
-The package imports `github.com/jowharshamshiri/lungo-go` and requires exactly the module
+The package imports `github.com/machinefabric/lungo-go` and requires exactly the module
 version of the lungo release that generated it (`const _ = lungo.EnforceVersion<version>`
 does not compile with another). The module carries the runtime for linux/amd64,
 linux/arm64, darwin/amd64, darwin/arm64 and windows/amd64 and links it once per binary. Build

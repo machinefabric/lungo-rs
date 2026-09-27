@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 pub struct SwiftGenerator;
 
 /// The repository of the support package.
-pub const SUPPORT_REPOSITORY: &str = "https://github.com/jowharshamshiri/lungo-swift";
+pub const SUPPORT_REPOSITORY: &str = "https://github.com/machinefabric/lungo-swift";
 
 const SWIFT_KEYWORDS: &[&str] = &[
     "associatedtype",

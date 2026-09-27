@@ -3,7 +3,7 @@ name: Release
 # A tag `v<version>` releases lungo: the runtime for every platform (with its SHA-256 digests in
 # the runtime manifest the `lungo` command embeds), the `lungo` command, the crates, and the
 # language support libraries (PyPI `lungo-py`, npm `lungo-ts`, the Go module in
-# jowharshamshiri/lungo-go, the Swift package in jowharshamshiri/lungo-swift).
+# machinefabric/lungo-go, the Swift package in machinefabric/lungo-swift).
 #
 # `workflow_dispatch` is a dry run: everything is built and checked, nothing is published.
 #
@@ -361,7 +361,7 @@ jobs:
             chmod 600 "$key"
             export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
             rm -rf "clone-$1"
-            git clone "git@github.com:jowharshamshiri/$1.git" "clone-$1"
+            git clone "git@github.com:machinefabric/$1.git" "clone-$1"
             rsync -a --delete --exclude .git "$3/" "clone-$1/"
             git -C "clone-$1" -c user.name="lungo release" -c user.email="jowharshamshiri@gmail.com" add -A
             git -C "clone-$1" -c user.name="lungo release" -c user.email="jowharshamshiri@gmail.com" commit -m "lungo $VERSION"

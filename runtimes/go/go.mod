@@ -1,3 +1,3 @@
-module github.com/jowharshamshiri/lungo-go
+module github.com/machinefabric/lungo-go
 
 go 1.22

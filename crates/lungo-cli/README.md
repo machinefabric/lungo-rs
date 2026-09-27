@@ -10,5 +10,5 @@ lungo generate --go_out=gen/go --python_out=gen/py --ts_out=gen/js
 
 Every language runs the program on the lungo runtime, prebuilt for each platform and
 published with each release; the generated packages download it and check its SHA-256
-digest. See the [documentation](https://jowharshamshiri.github.io/lungo/docs) and the
-[command reference](https://jowharshamshiri.github.io/lungo/docs/reference/lungo-cli).
+digest. See the [documentation](https://lungo.machinefabric.com/docs) and the
+[command reference](https://lungo.machinefabric.com/docs/reference/lungo-cli).

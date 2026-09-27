@@ -15,7 +15,9 @@ fn main() {
     let packaged = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"))
         .join("runtime-manifest.json");
     println!("cargo::rerun-if-changed={}", packaged.display());
-    let source = std::env::var_os("LUNGO_RUNTIME_MANIFEST").map(PathBuf::from).or_else(|| packaged.is_file().then_some(packaged));
+    let source = std::env::var_os("LUNGO_RUNTIME_MANIFEST")
+        .map(PathBuf::from)
+        .or_else(|| packaged.is_file().then_some(packaged));
     let text = match source {
         Some(path) => {
             println!("cargo::rerun-if-changed={}", path.display());

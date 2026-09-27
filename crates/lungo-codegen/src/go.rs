@@ -1,5 +1,5 @@
 //! The Go binding: a Go package that compiles the program with cgo and calls it through the
-//! support module `github.com/jowharshamshiri/lungo-go`.
+//! support module `github.com/machinefabric/lungo-go`.
 //!
 //! Lean's types become Go types: structures are structs, inductive types of several
 //! constructors sealed interfaces with a struct per constructor, `Nat` and `Int` `*big.Int`,
@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 pub struct GoGenerator;
 
 /// The Go module of the support library.
-pub const SUPPORT_MODULE: &str = "github.com/jowharshamshiri/lungo-go";
+pub const SUPPORT_MODULE: &str = "github.com/machinefabric/lungo-go";
 
 const GO_KEYWORDS: &[&str] = &[
     "break",

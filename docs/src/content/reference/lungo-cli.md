@@ -15,11 +15,11 @@ Install a release with its install script, which checks the download against the
 `SHA256SUMS`:
 
 ```sh
-curl -sSfL https://github.com/jowharshamshiri/lungo/releases/latest/download/install.sh | sh
+curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
-irm https://github.com/jowharshamshiri/lungo/releases/latest/download/install.ps1 | iex
+irm https://github.com/machinefabric/lungo/releases/latest/download/install.ps1 | iex
 ```
 
 or with `cargo install lungo-cli`, which builds the same release from crates.io. Built from

@@ -16,7 +16,7 @@ Generate into a directory of your module and commit it:
 
 ```sh
 lungo generate --go_out=internal/geometry --go_opt=package=geometry
-go mod tidy   # adds github.com/jowharshamshiri/lungo-go at the release's version
+go mod tidy   # adds github.com/machinefabric/lungo-go at the release's version
 ```
 
 Users of your module need cgo and a C compiler; nothing else. Keep `lungo-go` at the version

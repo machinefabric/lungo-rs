@@ -2,13 +2,13 @@
 # Installs the `lungo` command from a lungo release, verifying its SHA-256 digest against the
 # release's SHA256SUMS.
 #
-#   curl -sSfL https://github.com/jowharshamshiri/lungo/releases/latest/download/install.sh | sh
+#   curl -sSfL https://github.com/machinefabric/lungo/releases/latest/download/install.sh | sh
 #
 # LUNGO_VERSION selects a release (default: the latest); LUNGO_INSTALL_DIR the directory the
 # command is installed in (default: ~/.local/bin).
 set -eu
 
-repo="jowharshamshiri/lungo"
+repo="machinefabric/lungo"
 dir="${LUNGO_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$(uname -s)-$(uname -m)" in

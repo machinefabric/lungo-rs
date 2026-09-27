@@ -1,14 +1,14 @@
 # Installs the `lungo` command from a lungo release, verifying its SHA-256 digest against the
 # release's SHA256SUMS.
 #
-#   irm https://github.com/jowharshamshiri/lungo/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/machinefabric/lungo/releases/latest/download/install.ps1 | iex
 #
 # $env:LUNGO_VERSION selects a release (default: the latest); $env:LUNGO_INSTALL_DIR the directory
 # the command is installed in (default: %LOCALAPPDATA%\lungo\bin).
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$repo = 'jowharshamshiri/lungo'
+$repo = 'machinefabric/lungo'
 $dir = if ($env:LUNGO_INSTALL_DIR) { $env:LUNGO_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'lungo\bin' }
 if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64') {
     throw 'lungo has no Windows release for this processor'

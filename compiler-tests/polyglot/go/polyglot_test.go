@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	lungo "github.com/jowharshamshiri/lungo-go"
+	lungo "github.com/machinefabric/lungo-go"
 
 	"example.com/polyglottest/polyglot"
 )
