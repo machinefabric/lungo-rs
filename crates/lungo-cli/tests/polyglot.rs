@@ -116,11 +116,12 @@ fn go_binding() {
     let module = root().join("go-module");
     let package = generate_into("go", &["go"], &module, "polyglot");
     let dist = distribution(&["go"]);
+    // A quoted go.mod path is a Go string literal, which a JSON string is too.
+    let support = serde_json::to_string(&dist.join("go")).unwrap();
     std::fs::write(
         module.join("go.mod"),
         format!(
-            "module example.com/polyglottest\n\ngo 1.22\n\nrequire github.com/machinefabric/lungo-go v{v}\n\nreplace github.com/machinefabric/lungo-go => {}\n",
-            dist.join("go").display(),
+            "module example.com/polyglottest\n\ngo 1.22\n\nrequire github.com/machinefabric/lungo-go v{v}\n\nreplace github.com/machinefabric/lungo-go => {support}\n",
             v = env!("CARGO_PKG_VERSION")
         ),
     )
@@ -222,15 +223,17 @@ fn ts_binding() {
     for f in ["polyglot.test.js", "typecheck.ts"] {
         std::fs::copy(fixture("ts").join(f), project.join(f)).unwrap();
     }
-    std::fs::write(
-        project.join("package.json"),
-        format!(
-            r#"{{"name": "polyglot-e2e", "private": true, "type": "module", "dependencies": {{"polyglot": "file:{}", "lungo-ts": "file:{}"}}, "devDependencies": {{"typescript": "5.9.3"}}}}"#,
-            package.display(),
-            dist.join("ts").display()
-        ),
-    )
-    .unwrap();
+    let manifest = serde_json::json!({
+        "name": "polyglot-e2e",
+        "private": true,
+        "type": "module",
+        "dependencies": {
+            "polyglot": format!("file:{}", package.display()),
+            "lungo-ts": format!("file:{}", dist.join("ts").display()),
+        },
+        "devDependencies": { "typescript": "5.9.3" },
+    });
+    std::fs::write(project.join("package.json"), manifest.to_string()).unwrap();
     std::fs::write(
         project.join("tsconfig.json"),
         r#"{"compilerOptions": {"target": "es2022", "module": "nodenext", "moduleResolution": "nodenext", "strict": true, "noEmit": true, "skipLibCheck": false}, "files": ["typecheck.ts"]}"#,

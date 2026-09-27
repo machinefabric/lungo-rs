@@ -206,7 +206,9 @@ impl Generator for PythonGenerator {
 fn support_requirement(request: &GenerateRequest) -> String {
     match &request.runtime.distribution {
         Distribution::Release { .. } => format!("lungo-py=={}", request.runtime.version),
-        Distribution::Local { dir } => format!("lungo-py @ {}", file_url(&format!("{}/python", dir.trim_end_matches('/')))),
+        Distribution::Local { dir } => {
+            format!("lungo-py @ {}", file_url(&format!("{}/python", dir.trim_end_matches('/'))))
+        }
     }
 }
 
