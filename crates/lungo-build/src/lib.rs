@@ -358,10 +358,26 @@ impl Builder {
     /// Runs the complete pipeline for the Lake project in `project` (relative to
     /// `env.manifest_dir`), publishing the generated module into `env.out_dir/<name>`.
     pub fn run(&self, project: &Path, env: &Environment) -> Result<BuildOutcome> {
-        on_large_stack(|| self.run_here(project, env))
+        on_large_stack(|| {
+            let analysis = std::cell::OnceCell::new();
+            self.run_with(project, env, &|ctx| {
+                if let Some(a) = analysis.get() {
+                    return Ok(a);
+                }
+                let a = self.lean.analyze_in(ctx, env)?;
+                Ok(analysis.get_or_init(|| a))
+            })
+        })
     }
 
-    fn run_here(&self, project: &Path, env: &Environment) -> Result<BuildOutcome> {
+    /// [`Builder::run`] with the analysis `analysis` provides, called only when the output is
+    /// not up to date: a tool generating several outputs from one project analyzes it once.
+    pub fn run_with<'a>(
+        &self,
+        project: &Path,
+        env: &Environment,
+        analysis: &dyn Fn(&Context) -> Result<&'a Analysis>,
+    ) -> Result<BuildOutcome> {
         self.check_externs()?;
         let ctx = self.context(project, env)?;
         claim_output(&ctx)?;
@@ -378,10 +394,10 @@ impl Builder {
                 reused: true,
             });
         }
-        let analysis = self.lean.analyze_in(&ctx, env)?;
-        let generated = self.generate_with(&ctx, env, &analysis)?;
+        let analysis = analysis(&ctx)?;
+        let generated = self.generate_with(&ctx, env, analysis)?;
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
-        let info = output::BuildInfo::new(&key, &ctx, &analysis, &inputs, &generated.link_directives)?;
+        let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &generated.link_directives)?;
         output::publish(&ctx.out_dir, &ctx.work_dir, &generated.files, &generated.binary_files, &info)?;
         Ok(BuildOutcome { name: ctx.name, inputs, link_directives: generated.link_directives, reused: false })
     }

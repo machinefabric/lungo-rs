@@ -25,6 +25,9 @@ use program::{Emitter, c_params};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use syntax::{c_type, comment, string};
 
+/// The runtime functions a program's WebAssembly module exports for the TypeScript binding.
+pub use lungo_runtime::header::WASM_EXPORTS as WASM_RUNTIME_EXPORTS;
+
 /// The directory of the generated program within a generated package.
 pub const PROGRAM_DIR: &str = "program";
 

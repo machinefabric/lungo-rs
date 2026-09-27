@@ -392,6 +392,7 @@ void lungo_set_host(lungo_host_dispatch dispatch, lungo_host_ref retain, lungo_h
 
 LUNGO_NORETURN void lungo_panic_host_extern_missing(const char *declaration);
 void lungo_handle_release(uint64_t handle);
+uint64_t lungo_handle_clone(uint64_t handle);
 uint8_t *lungo_buffer_alloc(lungo_buffer *out, size_t len);
 void lungo_buffer_free(lungo_buffer *buffer);
 

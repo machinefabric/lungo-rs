@@ -393,6 +393,14 @@ pub extern "C" fn lungo_handle_release(handle: u64) {
     }
 }
 
+/// A new handle to the object of handle `handle`: a host that returns a value it received passes
+/// a clone, since a result transfers its handles. Cloning a handle that is not live is an error
+/// of the binding.
+#[unsafe(no_mangle)]
+pub extern "C" fn lungo_handle_clone(handle: u64) -> u64 {
+    wire::handle_clone(handle).unwrap_or_else(|e| lean_internal_panic(&format!("lungo_handle_clone: {e}")))
+}
+
 /// Allocates `len` bytes in `out` (which must be empty) for a host to fill, and returns them.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lungo_buffer_alloc(out: *mut Buffer, len: usize) -> *mut u8 {

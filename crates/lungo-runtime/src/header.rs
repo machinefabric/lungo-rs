@@ -11,6 +11,22 @@ use crate::registry::{self, Ty};
 pub const HEADER: &str = include_str!("../include/lungo.h");
 
 /// The markers delimiting the generated section of [`HEADER`].
+/// The runtime functions a WebAssembly module of a program exports besides the program's
+/// boundary: the interface the TypeScript support library (`lungo-ts`) uses to pass bytes,
+/// install itself as the host, and manage handles.
+pub const WASM_EXPORTS: &[&str] = &[
+    "lungo_wasm_alloc",
+    "lungo_wasm_free",
+    "lungo_wasm_buffer_new",
+    "lungo_wasm_buffer_delete",
+    "lungo_wasm_use_host",
+    "lungo_buffer_alloc",
+    "lungo_buffer_free",
+    "lungo_handle_clone",
+    "lungo_handle_release",
+    "lungo_closure_call",
+];
+
 pub const BEGIN_PRIMITIVES: &str = "/* BEGIN GENERATED: runtime primitives (do not edit; see lungo-runtime/tests/header.rs) */";
 pub const END_PRIMITIVES: &str = "/* END GENERATED: runtime primitives */";
 
