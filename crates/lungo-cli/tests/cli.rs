@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn package() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/session").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().join("examples/session")
 }
 
 /// Runs `lungo <args>` in the example package; returns (success, stdout, stderr).

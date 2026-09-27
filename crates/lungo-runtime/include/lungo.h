@@ -7,7 +7,7 @@
  * bit set. The inline functions below are the fast paths of object access and reference
  * counting over that layout; everything else is implemented by the runtime library.
  *
- * The header and the library must be of the same lungo version: generated programs reference
+ * The header and the library must be of the same lungo version: generated programs call
  * `lungo_abi_v1`, which only a runtime with this ABI defines.
  *
  * Copyright the lungo authors. Licensed under the Apache License, Version 2.0.
@@ -31,8 +31,8 @@ extern "C" {
 
 #define LUNGO_ABI_VERSION 1
 
-/* Defined only by a runtime library with ABI version 1. */
-extern const uint32_t lungo_abi_v1;
+/* Defined only by a runtime library with ABI version 1; returns LUNGO_ABI_VERSION. */
+uint32_t lungo_abi_v1(void);
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>

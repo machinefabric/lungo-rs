@@ -66,7 +66,10 @@ lib.lungo_closure_call.argtypes = [
 ]
 lib.lungo_closure_call.restype = ctypes.c_int32
 
-ABI_VERSION = ctypes.c_uint32.in_dll(lib, "lungo_abi_v1").value
+lib.lungo_abi_v1.argtypes = []
+lib.lungo_abi_v1.restype = ctypes.c_uint32
+
+ABI_VERSION = lib.lungo_abi_v1()
 
 
 def take(buf):

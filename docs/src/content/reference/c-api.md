@@ -5,8 +5,8 @@ description: "The lungo runtime's C interface: the value API C and Objective-C p
 
 `lungo.h` is the interface of the prebuilt runtime library (`liblungo`). It is included in
 every runtime package (`include/lungo.h`) and every generated package. Its C ABI has a
-version, `LUNGO_ABI_VERSION`; generated code references the symbol `lungo_abi_v<N>`, so it
-cannot link with a runtime of another ABI.
+version, `LUNGO_ABI_VERSION`; generated code calls the function `lungo_abi_v<N>`, which only
+a runtime of that ABI defines, so it cannot link with a runtime of another ABI.
 
 The header has three parts: the **value API**, for C and Objective-C programs using a
 generated C package; the **program API** and the **boundary**, for generated code and the

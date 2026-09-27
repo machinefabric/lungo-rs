@@ -45,6 +45,7 @@ lungo-runtime = { path = "crates/lungo-runtime", version = "={{ project.version 
 cc = "1.2"
 ciborium = "0.2.2"
 clap = { version = "4.5", features = ["derive"] }
+dunce = "1.0"
 flate2 = "1.1"
 libc = "0.2"
 num-bigint = "0.4"

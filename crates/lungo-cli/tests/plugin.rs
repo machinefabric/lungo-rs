@@ -76,7 +76,7 @@ fn plugin() {
 }
 
 fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().to_path_buf()
 }
 
 /// A `PATH` directory with this program as the plugin `lungo-gen-echo`.

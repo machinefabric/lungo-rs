@@ -277,7 +277,7 @@ fn emit_initialize(w: &mut Writer, input: &ProgramInput, emitter: &Emitter) {
     let program = &input.success.bir;
     w.open(format!("static uint64_t {prefix}initialize_once(void) {{"));
     w.line(comment("A runtime of another C ABI version does not define lungo_abi_v1: linking fails."));
-    w.line("if (lungo_abi_v1 != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
+    w.line("if (lungo_abi_v1() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
     w.line(comment("Initializers may call host externs: every one must be registered."));
     w.line(format!("{prefix}check_host_externs();"));
     if let Ok(exports) = runtime_exports(input.success) {

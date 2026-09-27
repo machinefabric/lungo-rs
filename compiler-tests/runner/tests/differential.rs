@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
 
 fn conformance_project() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../conformance")
@@ -22,10 +23,15 @@ fn programs() -> Vec<String> {
     config["lean_exe"].as_array().unwrap().iter().map(|exe| exe["name"].as_str().unwrap().to_owned()).collect()
 }
 
-/// Builds every executable of the conformance project with Lean's native backend.
+/// Builds every executable of the conformance project with Lean's native backend, once per
+/// test process: both tests need it, and two Lake builds of one project must not run at once
+/// (they write the same files).
 fn build_native(programs: &[String]) {
-    let status = Command::new(lake()).arg("build").args(programs).current_dir(conformance_project()).status().unwrap();
-    assert!(status.success(), "the native conformance build failed");
+    static BUILT: OnceLock<bool> = OnceLock::new();
+    let built = BUILT.get_or_init(|| {
+        Command::new(lake()).arg("build").args(programs).current_dir(conformance_project()).status().unwrap().success()
+    });
+    assert!(*built, "the native conformance build failed");
 }
 
 fn native_exe(name: &str) -> PathBuf {

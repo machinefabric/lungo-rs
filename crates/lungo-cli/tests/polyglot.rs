@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().to_path_buf()
 }
 
 /// Where the tests work: the fixture's distribution, generated packages and builds.

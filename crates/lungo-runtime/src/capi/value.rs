@@ -1504,9 +1504,12 @@ mod tests {
             let closure = wire::decode(empty_table(), &(*ty).ty, &mut rd, wire::Handles::Borrow).unwrap();
             lungo_value_free(f);
             assert_eq!(DROPPED.load(Ordering::SeqCst), before, "Lean's closure keeps the function alive");
+            // Applying consumes a reference to the closure: keep one past the call.
+            lean_inc(closure);
             let out = crate::apply::lean_apply_n(closure, &[crate::nat::nat_from_biguint(BigUint::from(5u32))]);
             assert_eq!(crate::nat::nat_to_bigint(out), BigInt::from(15));
             lean_dec(out);
+            assert_eq!(DROPPED.load(Ordering::SeqCst), before, "the closure still references the function");
             lean_dec(closure);
             assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1, "freeing the last reference frees the context");
             lungo_value_free(three);

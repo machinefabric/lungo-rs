@@ -131,9 +131,10 @@ fn main() -> ExitCode {
     }
 }
 
-/// The repository root.
+/// The repository root. Paths are resolved with `dunce`: the tools lungo-dist runs (CMake,
+/// MSBuild, dlltool) reject the verbatim `\\?\` paths `std` returns on Windows.
 pub fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("the repository exists")
+    dunce::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).expect("the repository exists")
 }
 
 /// Cargo's target directory: `CARGO_TARGET_DIR`, else the repository's `target/`.
@@ -352,7 +353,7 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     let wanted =
         |c: &str| if components.is_empty() { c != "swift" || apple } else { components.iter().any(|x| x == c) };
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
-    let out = io("cannot resolve the output", out.canonicalize())?;
+    let out = io("cannot resolve the output", dunce::canonicalize(out))?;
     if wanted("runtime") || wanted("go") || wanted("python") || wanted("swift") {
         runtime(&host, &out.join("runtime"))?;
     }

@@ -11,7 +11,7 @@ description = "The language-neutral lungo pipeline: builds a Lake project and an
 
 [dependencies]
 blake3 = "1.8"
-dunce = "1.0"
+dunce.workspace = true
 lungo-bir.workspace = true
 lungo-codegen.workspace = true
 lungo-protocol.workspace = true
