@@ -5,7 +5,7 @@ description: "The files a build publishes, the generated module, its metadata, a
 
 A build publishes the module `<name>` into `<out_dir>/<name>`, by default
 `$OUT_DIR/lungo/<name>`, where `<name>` is the Lake package's name unless configured (see
-[configuration](configuration.md#output)). The directory is replaced atomically: it holds
+[configuration](configuration.md#rust)). The directory is replaced atomically: it holds
 either the previous complete output or the new one.
 
 ## Files
