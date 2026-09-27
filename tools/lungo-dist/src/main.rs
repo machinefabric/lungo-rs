@@ -120,15 +120,7 @@ fn main() -> ExitCode {
         Cli::Manifest { artifacts, base_url, out } => manifest(&artifacts, &base_url, &out),
         Cli::Sums { dir, out } => sums(&dir, &out),
         Cli::Xcframework { libraries, out } => support::xcframework(&libraries, &out),
-        Cli::Swift { url, checksum, runtime, out } => {
-            let target = format!(
-                ".binaryTarget(name: \"LungoRuntime\", url: {}, checksum: {})",
-                serde_json::to_string(&url).expect("JSON"),
-                serde_json::to_string(&checksum).expect("JSON")
-            );
-            io(format!("cannot create {}", out.display()), fs::create_dir_all(&out))?;
-            support::swift(&target, &runtime, &out)
-        }
+        Cli::Swift { url, checksum, runtime, out } => swift_release(&url, &checksum, &runtime, &out),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -492,6 +484,20 @@ fn manifest(dir: &Path, base_url: &str, out: &Path) -> Result<()> {
     let mut f = io("cannot write the manifest", fs::File::create(out))?;
     io("cannot write the manifest", writeln!(f, "{}", serde_json::to_string_pretty(&manifest).expect("JSON")))?;
     Ok(())
+}
+
+/// The Swift package of a release, whose runtime is the XCFramework at `url`.
+fn swift_release(url: &str, checksum: &str, runtime: &Path, out: &Path) -> Result<()> {
+    let target = format!(
+        ".binaryTarget(name: \"LungoRuntime\", url: {}, checksum: {})",
+        serde_json::to_string(url).expect("JSON"),
+        serde_json::to_string(checksum).expect("JSON")
+    );
+    if out.exists() {
+        return Err(format!("{} exists: the Swift package is assembled in a new directory", out.display()));
+    }
+    io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
+    support::swift(&target, runtime, out)
 }
 
 /// `SHA256SUMS` of every file in `dir`, in `sha256sum` format.

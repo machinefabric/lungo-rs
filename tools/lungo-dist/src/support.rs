@@ -177,19 +177,12 @@ fn swift_linker_settings(runtime: &Path) -> Result<String> {
     Ok(settings.join(", "))
 }
 
-/// The Swift package `lungo-swift` in `out` (replaced), whose runtime target is `runtime_target`
+/// The Swift package `lungo-swift` in `out` (a new directory, or one holding only its local
+/// XCFramework), whose runtime target is `runtime_target`
 /// (a `.binaryTarget` with a path or a URL and checksum), linking the native libraries of
 /// `runtime`.
 pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
-    let keep = out.join("LungoRuntime.xcframework");
     let repo = repo();
-    for entry in fs::read_dir(out).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path != keep {
-            let removed = if path.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) };
-            io(format!("cannot clear {}", path.display()), removed)?;
-        }
-    }
     copy_tree(&repo.join("runtimes/swift"), out, &|rel| {
         rel == Path::new("Package.swift.in") || rel.starts_with(".build") || rel.starts_with(".swiftpm")
     })?;
@@ -218,6 +211,9 @@ pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
 
 /// The Swift package of a local distribution: an XCFramework of this Mac's runtime.
 pub fn swift_local(runtime: &Path, out: &Path) -> Result<()> {
+    if out.exists() {
+        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+    }
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
     xcframework(&[runtime.join("lib/liblungo.a")], &out.join("LungoRuntime.xcframework"))?;
     swift(".binaryTarget(name: \"LungoRuntime\", path: \"LungoRuntime.xcframework\")", runtime, out)
