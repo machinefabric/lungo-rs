@@ -55,8 +55,8 @@ pub enum Distribution {
     /// (`xcframework`); the support libraries from their registries (PyPI `lungo-py`, npm
     /// `lungo-ts`, the Go module and Swift package in their distribution repositories).
     Release { artifacts: BTreeMap<String, Artifact> },
-    /// A local distribution (for an unreleased lungo): an absolute directory laid out as the
-    /// release is (`runtime/` for the host, `wasm/`, `go/`, `python/`, `swift/`,
+    /// A local distribution (for an unreleased lungo): an absolute directory (with `/`
+    /// separators, also on Windows) laid out as the release is (`runtime/` for the host, `wasm/`, `go/`, `python/`, `swift/`,
     /// `typescript/`), so packages are machine-specific.
     Local { dir: String },
 }

@@ -206,8 +206,21 @@ impl Generator for PythonGenerator {
 fn support_requirement(request: &GenerateRequest) -> String {
     match &request.runtime.distribution {
         Distribution::Release { .. } => format!("lungo-py=={}", request.runtime.version),
-        Distribution::Local { dir } => format!("lungo-py @ file://{}/python", dir.trim_end_matches('/')),
+        Distribution::Local { dir } => format!("lungo-py @ {}", file_url(&format!("{}/python", dir.trim_end_matches('/')))),
     }
+}
+
+/// The `file:` URL (RFC 8089) of the absolute path `path` (`/` separators): `file:///srv/x`, or
+/// `file:///C:/x` for a Windows path, whose drive would otherwise read as the URL's host.
+fn file_url(path: &str) -> String {
+    let mut url = String::from(if path.starts_with('/') { "file://" } else { "file:///" });
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => url.push(b as char),
+            _ => url.push_str(&format!("%{b:02X}")),
+        }
+    }
+    url
 }
 
 fn toml_string(s: &str) -> String {
@@ -681,5 +694,17 @@ impl Emitter<'_> {
                 self.returns(&h.returns)
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_url;
+
+    #[test]
+    fn file_urls_have_an_empty_host_and_escape_what_urls_cannot_hold() {
+        assert_eq!(file_url("/srv/lungo dist/python"), "file:///srv/lungo%20dist/python");
+        assert_eq!(file_url("C:/Users/Ünï/dist/python"), "file:///C:/Users/%C3%9Cn%C3%AF/dist/python");
+        assert_eq!(file_url("/a#b?c%d"), "file:///a%23b%3Fc%25d");
     }
 }
