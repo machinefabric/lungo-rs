@@ -55,6 +55,8 @@ structure State where
   /-- Inductive types referenced by facades that must be described, in discovery order. -/
   pending : Array Name := #[]
   seen : NameSet := {}
+  /-- The described types exposed as opaque values: nominal, but not first-order data. -/
+  opaqueTypes : NameSet := {}
 
 abbrev FacadeM := StateRefT State MetaM
 
@@ -89,6 +91,15 @@ def pretty (e : Expr) : MetaM String := do
 def isErasedType (t : Expr) : MetaM Bool := do
   return (← isProp t) || (← isTypeFormerType t)
 
+/-- Whether inductive `info` has no indices and only type parameters. -/
+def hasOnlyTypeParams (info : InductiveVal) : MetaM Bool := do
+  if info.numIndices != 0 then return false
+  forallBoundedTelescope info.type info.numParams fun xs _ => do
+    for x in xs do
+      let t ← whnfD (← inferType x)
+      unless t.isSort && !t.isProp do return false
+    return true
+
 /--
 Whether inductive `n` can be exposed as generated Rust data: no indices, only type
 parameters, and constructors whose fields all have runtime representations (a field erased by
@@ -96,13 +107,8 @@ the compiler is a proof or a type, which Rust code could not supply soundly).
 -/
 def isFirstOrderInductive (n : Name) : MetaM Bool := do
   let .inductInfo info ← getConstInfo n | return false
-  if info.numIndices != 0 || info.isUnsafe then return false
-  let paramsOk ← forallBoundedTelescope info.type info.numParams fun xs _ => do
-    for x in xs do
-      let t ← whnfD (← inferType x)
-      unless t.isSort && !t.isProp do return false
-    return true
-  unless paramsOk do return false
+  if info.isUnsafe then return false
+  unless ← hasOnlyTypeParams info do return false
   for ctor in info.ctors do
     let layout ← Compiler.LCNF.getCtorLayout ctor
     for field in layout.fieldInfo do
@@ -141,6 +147,13 @@ partial def facade (tparams : Array FVarId) (ty : Expr) (fuel : Nat := 64) : Fac
           unless s.seen.contains n do
             set { s with seen := s.seen.insert n, pending := s.pending.push n }
           return .inductive n fargs
+        -- Exposed as an opaque value, but still a nominal type: it is described (with its
+        -- layout, marked opaque) so that bindings give it a type of its own and packages that
+        -- share it can check they agree on its layout.
+        if args.size == info.numParams && (← hasOnlyTypeParams info) then
+          let s ← get
+          unless s.seen.contains n do
+            set { s with seen := s.seen.insert n, pending := s.pending.push n, opaqueTypes := s.opaqueTypes.insert n }
         return .opaque n (← pretty ty)
       if fuel > 0 then
         if let some ty' ← unfoldDefinition? ty then
@@ -194,7 +207,11 @@ def describeInductive (n : Name) : FacadeM Value := do
         for h : i in [0:xs.size] do
           let x := xs[i]
           let some kind := layout.fieldInfo[i]? | throwError "layout of '{ctor}' has no field {i}"
-          let fty ← facade tparams (← inferType x)
+          -- A field without a runtime representation (a proof or a type, in an opaque type) is
+          -- recorded by its statement; exploring it would describe propositions as data.
+          let fty ← match kind with
+            | .erased | .void => pure (FType.opaque none (← pretty (← inferType x)))
+            | _ => facade tparams (← inferType x)
           fields := fields.push (obj [
             ("name", str (← x.fvarId!.getUserName).eraseMacroScopes.toString),
             ("ty", fty.toCbor),
@@ -211,6 +228,7 @@ def describeInductive (n : Name) : FacadeM Value := do
       ])
     return obj [
       ("name", BridgeIR.name n),
+      ("opaque", .bool ((← get).opaqueTypes.contains n)),
       ("params", arr paramNames),
       ("repr", repr),
       ("trivial", opt (trivial.map fun t => obj [("ctor", BridgeIR.name t.ctorName), ("field", nat t.fieldIdx)])),

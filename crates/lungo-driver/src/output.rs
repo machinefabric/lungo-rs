@@ -65,7 +65,8 @@ pub struct PreviousBuild {
     pub link_directives: Vec<String>,
 }
 
-const BUILD_INFO: &str = "build-info.json";
+/// The record of how an output directory was generated.
+pub const BUILD_INFO: &str = "build-info.json";
 
 /// Reads the build record of the output in `out_dir`, if it exists and is intact, resolving its
 /// input paths against the Lean project directory `project`.

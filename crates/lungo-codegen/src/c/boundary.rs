@@ -105,6 +105,12 @@ pub struct NamedType {
     pub lean_name: String,
     pub params: Vec<String>,
     pub structure: bool,
+    /// Values cross as handles; the table entry has no constructors (see
+    /// `lungo_runtime::wire::TypeDecl::opaque`).
+    pub opaque: bool,
+    /// The type's layout fingerprint (`crate::core::fingerprint`): what a package using this
+    /// type from another package checks it agrees on.
+    pub fingerprint: String,
 }
 
 /// The program's boundary, the input of every binding generator.
@@ -188,6 +194,10 @@ impl Types<'_> {
                     .ok_or_else(|| CodegenError::internal(format!("type {name} is not described")))?,
                 args: args.iter().map(|a| self.wire(a)).collect::<Result<_, _>>()?,
             },
+            // A named opaque type is an entry of the table; other opaque values have no name.
+            FacadeType::Opaque { head: Some(h), .. } if self.index.contains_key(h.as_str()) => {
+                Type::Inductive { index: self.index[h.as_str()], args: Vec::new() }
+            }
             FacadeType::Opaque { .. } => Type::Opaque,
         })
     }
@@ -224,6 +234,17 @@ fn repr_of(ir: IrType) -> Result<wire::Repr, CodegenError> {
 fn type_table(types: &[&TypeDecl], t: &Types) -> Result<wire::TypeTable, CodegenError> {
     let mut out = Vec::new();
     for decl in types {
+        if decl.opaque {
+            out.push(wire::TypeDecl {
+                name: decl.name.clone(),
+                opaque: true,
+                params: 0,
+                repr: wire::Repr::Object,
+                trivial: None,
+                ctors: Vec::new(),
+            });
+            continue;
+        }
         let mut ctors = Vec::new();
         for c in &decl.ctors {
             let mut fields = Vec::new();
@@ -261,6 +282,7 @@ fn type_table(types: &[&TypeDecl], t: &Types) -> Result<wire::TypeTable, Codegen
         };
         out.push(wire::TypeDecl {
             name: decl.name.clone(),
+            opaque: false,
             params: decl.params.len() as u32,
             repr: repr_of(decl.repr)?,
             trivial,
@@ -334,6 +356,8 @@ fn unboxed(ir: IrType, o: &str) -> String {
 pub struct BoundaryInput<'a> {
     /// The program's C identifier.
     pub id: &'a str,
+    /// The Lean version the program was compiled with (part of every layout fingerprint).
+    pub lean_version: &'a str,
     pub success: &'a Success,
     pub program: &'a Program,
     pub externs: &'a ExternPlan,
@@ -370,6 +394,7 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     let types: Vec<&TypeDecl> = interface.types.iter().filter(|t| reachable.contains(t.name.as_str())).collect();
     let t = Types { index: types.iter().enumerate().map(|(i, d)| (d.name.as_str(), i as u32)).collect() };
     let table = type_table(&types, &t).map_err(|e| vec![e])?;
+    let fingerprints = crate::core::fingerprint::fingerprints(&interface.types, input.lean_version);
     let mut errors = Vec::new();
     let mut w = Writer::new();
     let mut consts = TypeConsts { lines: Vec::new(), count: 0 };
@@ -444,7 +469,13 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
         table,
         types: types
             .iter()
-            .map(|d| NamedType { lean_name: d.name.clone(), params: d.params.clone(), structure: d.structure })
+            .map(|d| NamedType {
+                lean_name: d.name.clone(),
+                params: if d.opaque { Vec::new() } else { d.params.clone() },
+                structure: d.structure && !d.opaque,
+                opaque: d.opaque,
+                fingerprint: fingerprints[&d.name].clone(),
+            })
             .collect(),
         functions,
         host_externs,

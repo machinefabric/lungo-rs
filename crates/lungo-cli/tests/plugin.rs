@@ -124,8 +124,15 @@ fn a_plugin_receives_the_request_and_its_files_are_published() {
     assert!(functions.contains("Polyglot.factorial polyglot__call_l_Polyglot_dfactorial Nat → Nat"), "{functions}");
     let request: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("request.json")).unwrap()).unwrap();
-    assert_eq!(request["protocol_version"], 1);
+    assert_eq!(request["protocol_version"], 2);
     assert_eq!(request["program"]["name"], "polyglot");
+    assert_eq!(request["extern_types"], serde_json::json!({}), "no language table names extern types");
+    // Every type carries whether it is opaque and its layout fingerprint.
+    for t in request["boundary"]["types"].as_array().unwrap() {
+        assert!(t["opaque"].is_boolean(), "{t}");
+        let fp = t["fingerprint"].as_str().unwrap();
+        assert!(fp.len() == 64 && fp.bytes().all(|b| b.is_ascii_hexdigit()), "{t}");
+    }
     assert!(request["program_files"]["program/lungo.h"].is_string(), "the program's C is in the request");
     assert!(request["runtime"]["distribution"]["local"]["dir"].is_string());
     assert_eq!(request["boundary"]["host_externs"].as_array().unwrap().len(), 2);

@@ -117,6 +117,7 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
             externs: &externs,
             run_main: run_main.clone(),
             id: &id,
+            lean_version: &input.toolchain.lean_version,
         },
         &emitter,
     )?;

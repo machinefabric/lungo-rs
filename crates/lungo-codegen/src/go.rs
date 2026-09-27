@@ -13,7 +13,7 @@ use crate::core::model::value_recursive;
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
-use crate::plugin::{GenerateRequest, Generator, options};
+use crate::plugin::{ExternType, GenerateRequest, Generator, extern_types, options};
 use lungo_runtime::wire::{Returns, Type};
 use std::collections::BTreeMap;
 
@@ -119,12 +119,16 @@ impl Generator for GoGenerator {
                 "`{package}` cannot name a Go package: use lowercase letters, digits and `_`, starting with a letter (option `package`)"
             ))]);
         }
-        let names = Names::new(b).map_err(|e| vec![e])?;
+        let externs = extern_types(request).map_err(|e| vec![e])?;
+        let aliases = import_aliases(&externs).map_err(|e| vec![e])?;
+        let names = Names::new(b, &externs, &aliases).map_err(|e| vec![e])?;
         let mut files = BTreeMap::new();
         for (path, text) in &request.program_files {
             files.insert(flatten(path), text.clone());
         }
-        let source = Emitter { request, names: &names, recursive: value_recursive(&b.table) }.package(&package);
+        let emitter =
+            Emitter { request, names: &names, recursive: value_recursive(&b.table), externs: &externs, aliases: &aliases };
+        let source = emitter.package(&package);
         files.insert(format!("{}.go", b.id.to_lowercase()), source);
         Ok(files)
     }
@@ -140,9 +144,51 @@ fn flatten(path: &str) -> String {
     }
 }
 
+/// The import alias of every package providing an extern type: the package's last path element,
+/// made a Go identifier, and distinct from the generated file's own names and imports.
+fn import_aliases(externs: &BTreeMap<usize, &ExternType>) -> Result<BTreeMap<String, String>, CodegenError> {
+    let mut packages: Vec<&str> = externs.values().map(|e| e.package.as_str()).collect();
+    packages.sort();
+    packages.dedup();
+    let mut taken: Vec<String> =
+        ["lungo", "big", "sync", "unsafe", "utf8", "C", "program", "call", "programOnce", "theProgram"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+    let mut out = BTreeMap::new();
+    for p in packages {
+        let last = p.rsplit('/').next().unwrap_or(p);
+        let mut base: String = last
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+            .collect::<String>()
+            .trim_matches('_')
+            .to_owned();
+        if base.is_empty() || base.starts_with(|c: char| c.is_ascii_digit()) {
+            base = format!("pkg{base}");
+        }
+        if GO_KEYWORDS.contains(&base.as_str()) {
+            base.push('_');
+        }
+        let mut alias = base.clone();
+        let mut k = 2;
+        while taken.contains(&alias) {
+            alias = format!("{base}{k}");
+            k += 1;
+        }
+        taken.push(alias.clone());
+        out.insert(p.to_owned(), alias);
+    }
+    Ok(out)
+}
+
 struct TypeNames {
-    /// The Go type (interface for several constructors).
+    /// The Go type (interface for several constructors); for an extern type, the providing
+    /// package's (`alias.Name`).
     name: String,
+    /// The exported constant holding the type's layout fingerprint (none for an extern type,
+    /// whose package defines its own).
+    fingerprint: Option<String>,
     /// The descriptor function.
     descriptor: String,
     /// The descriptor's implementation type.
@@ -165,17 +211,40 @@ fn go_exported(s: &str) -> String {
 }
 
 impl Names {
-    fn new(b: &Boundary) -> Result<Names, CodegenError> {
+    fn new(
+        b: &Boundary,
+        externs: &BTreeMap<usize, &ExternType>,
+        aliases: &BTreeMap<String, String>,
+    ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Go");
         for reserved in ["Host", "SetHost", "RunMain"] {
             scope.claim(reserved.to_owned(), "a generated function")?;
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
         let mut types = Vec::new();
-        for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
-            let name =
-                scope.claim(short.iter().map(|c| go_exported(c)).collect(), format!("type {}", named.lean_name))?;
+        for (index, ((named, decl), short)) in
+            b.types.iter().zip(&b.table.types).zip(short_names(&type_names)).enumerate()
+        {
+            let own: String = short.iter().map(|c| go_exported(c)).collect();
+            if let Some(ext) = externs.get(&index) {
+                // The providing package's type, with a descriptor of this program's own (its
+                // type expressions index this program's table).
+                let descriptor =
+                    scope.claim(format!("ext{own}Type"), format!("the descriptor of {}", named.lean_name))?;
+                types.push(TypeNames {
+                    name: format!("{}.{}", aliases[&ext.package], ext.name),
+                    fingerprint: None,
+                    impl_type: format!("ext{own}Descriptor"),
+                    marker: String::new(),
+                    descriptor,
+                    ctors: Vec::new(),
+                });
+                continue;
+            }
+            let name = scope.claim(own, format!("type {}", named.lean_name))?;
             let descriptor = scope.claim(format!("{name}Type"), format!("the descriptor of {}", named.lean_name))?;
+            let fingerprint =
+                scope.claim(format!("{name}Fingerprint"), format!("the layout fingerprint of {}", named.lean_name))?;
             let mut ctors = Vec::new();
             for c in &decl.ctors {
                 let cname = if decl.ctors.len() == 1 {
@@ -197,6 +266,7 @@ impl Names {
                 impl_type: format!("{lower}Descriptor"),
                 marker: format!("is{name}"),
                 name,
+                fingerprint: Some(fingerprint),
                 descriptor,
                 ctors,
             });
@@ -265,6 +335,9 @@ struct Emitter<'a> {
     request: &'a GenerateRequest,
     names: &'a Names,
     recursive: Vec<bool>,
+    /// The extern types, by type index, and the import alias of each package providing one.
+    externs: &'a BTreeMap<usize, &'a ExternType>,
+    aliases: &'a BTreeMap<String, String>,
 }
 
 fn is_unit(t: &Type) -> bool {
@@ -429,8 +502,15 @@ impl Emitter<'_> {
         w.line("\treturn int32(status), out");
         w.line("}");
         w.line("");
+        self.extern_checks(&mut w);
         for i in 0..b.types.len() {
-            self.named_type(&mut w, i);
+            if self.externs.contains_key(&i) {
+                self.extern_type(&mut w, i);
+            } else if b.types[i].opaque {
+                self.opaque_type(&mut w, i);
+            } else {
+                self.named_type(&mut w, i);
+            }
         }
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
@@ -449,8 +529,115 @@ impl Emitter<'_> {
         imports.push("\t\"unsafe\"".to_owned());
         imports.push(String::new());
         imports.push(format!("\tlungo \"{SUPPORT_MODULE}\""));
+        for (package, alias) in self.aliases {
+            imports.push(format!("\t{alias} \"{package}\""));
+        }
         let text = text.replacen("@IMPORTS@", &format!("import (\n{}\n)", imports.join("\n")), 1);
         format!("{}\n", text.trim_end())
+    }
+
+    /// Refuses to run against a providing package generated for another layout of its type.
+    fn extern_checks(&self, w: &mut Writer) {
+        if self.externs.is_empty() {
+            return;
+        }
+        let b = self.boundary();
+        w.line("// The packages providing this program's extern types were generated for the layouts it was.");
+        w.line("func init() {");
+        for (&i, ext) in self.externs {
+            let alias = &self.aliases[&ext.package];
+            w.line(format!("\tif {alias}.{}Fingerprint != \"{}\" {{", ext.name, b.types[i].fingerprint));
+            w.line(format!(
+                "\t\tpanic(\"{} of {} has another layout than the one this program was generated for: regenerate both from the same Lean definition\")",
+                b.types[i].lean_name, ext.package
+            ));
+            w.line("\t}");
+        }
+        w.line("}");
+        w.line("");
+    }
+
+    /// The fingerprint constant of type `i`.
+    fn fingerprint_const(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let tn = &self.names.types[i];
+        let constant = tn.fingerprint.as_ref().expect("a type of this package has a fingerprint constant");
+        w.line(format!(
+            "// {constant} is the layout fingerprint of Lean's {}: a package using {} from this one checks it.",
+            b.types[i].lean_name, tn.name
+        ));
+        w.line(format!("const {constant} = \"{}\"", b.types[i].fingerprint));
+        w.line("");
+    }
+
+    /// A type another package provides: its values are that package's, described here by this
+    /// program's own table index.
+    fn extern_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let named = &b.types[i];
+        let n = b.table.types[i].params;
+        let tn = &self.names.types[i];
+        let ext = self.externs[&i];
+        let alias = &self.aliases[&ext.package];
+        let tp = Self::type_params(n);
+        let ta = Self::type_args(n);
+        let value_type = format!("{}{}{ta}", if self.recursive[i] { "*" } else { "" }, tn.name);
+        let fields: Vec<(String, String)> =
+            (0..n).map(|k| (format!("type{}", param_name(k)), format!("lungo.Type[{}]", param_name(k)))).collect();
+        Self::struct_type(w, &format!("type {}{tp}", tn.impl_type), &fields);
+        w.line("");
+        let params: Vec<String> =
+            (0..n).map(|k| format!("type{} lungo.Type[{}]", param_name(k), param_name(k))).collect();
+        let args: Vec<String> = (0..n).map(|k| format!("type{}", param_name(k))).collect();
+        let field_args: Vec<String> = (0..n).map(|k| format!("t.type{}", param_name(k))).collect();
+        w.line(format!("// {} describes Lean's {}, provided by {}.", tn.descriptor, named.lean_name, ext.package));
+        w.line(format!("func {}{tp}({}) lungo.Type[{value_type}] {{", tn.descriptor, params.join(", ")));
+        w.line(format!("\treturn {}{ta}{{{}}}", tn.impl_type, args.join(", ")));
+        w.line("}");
+        w.line("");
+        let exprs: Vec<String> = (0..n).map(|k| format!("t.type{}.Expr()", param_name(k))).collect();
+        let sep = if exprs.is_empty() { "" } else { ", " };
+        w.line(format!(
+            "func (t {}{ta}) Expr() []byte {{ return lungo.InductiveExpr({i}{sep}{}) }}",
+            tn.impl_type,
+            exprs.join(", ")
+        ));
+        let provided = format!("{alias}.{}Type({})", ext.name, field_args.join(", "));
+        w.line(format!("func (t {}{ta}) Encode(w *lungo.Writer, v {value_type}) error {{", tn.impl_type));
+        w.line(format!("\treturn {provided}.Encode(w, v)"));
+        w.line("}");
+        w.line(format!("func (t {}{ta}) Decode(r *lungo.Reader) ({value_type}, error) {{", tn.impl_type));
+        w.line(format!("\treturn {provided}.Decode(r)"));
+        w.line("}");
+        w.line("");
+    }
+
+    /// A type whose values cross as handles: a type of its own around `lungo.Opaque`.
+    fn opaque_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let named = &b.types[i];
+        let tn = &self.names.types[i];
+        w.line(format!(
+            "// {} is Lean's {}, held by handle: only the program's functions make and read its values.",
+            tn.name, named.lean_name
+        ));
+        w.line(format!("type {} struct{{ lungo.Opaque }}", tn.name));
+        w.line("");
+        self.fingerprint_const(w, i);
+        w.line(format!("type {} struct{{}}", tn.impl_type));
+        w.line("");
+        w.line(format!("// {} describes {} for polymorphic functions.", tn.descriptor, named.lean_name));
+        w.line(format!("func {}() lungo.Type[{}] {{ return {}{{}} }}", tn.descriptor, tn.name, tn.impl_type));
+        w.line("");
+        w.line(format!("func ({}) Expr() []byte {{ return lungo.InductiveExpr({i}) }}", tn.impl_type));
+        w.line(format!("func ({}) Encode(w *lungo.Writer, v {}) error {{", tn.impl_type, tn.name));
+        w.line("\treturn lungo.OpaqueType.Encode(w, v.Opaque)");
+        w.line("}");
+        w.line(format!("func ({}) Decode(r *lungo.Reader) ({}, error) {{", tn.impl_type, tn.name));
+        w.line("\to, err := lungo.OpaqueType.Decode(r)");
+        w.line(format!("\treturn {}{{o}}, err", tn.name));
+        w.line("}");
+        w.line("");
     }
 
     fn named_type(&self, w: &mut Writer, i: usize) {
@@ -490,6 +677,7 @@ impl Emitter<'_> {
             }
         }
         w.line("");
+        self.fingerprint_const(w, i);
         // The descriptor.
         let fields: Vec<(String, String)> =
             (0..n).map(|k| (format!("type{}", param_name(k)), format!("lungo.Type[{}]", param_name(k)))).collect();

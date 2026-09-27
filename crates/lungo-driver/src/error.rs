@@ -76,6 +76,8 @@ pub enum Error {
     RuntimeUnavailable(String),
     /// A runtime artifact does not have its recorded digest.
     RuntimeChecksum(String),
+    /// An output directory is not what the project generates now.
+    OutputDrift(String),
     /// A generator plugin failed.
     Plugin(String),
 }
@@ -106,6 +108,7 @@ impl Error {
             Error::Configuration(_) => ErrorCode::InvalidConfiguration,
             Error::RuntimeUnavailable(_) => ErrorCode::RuntimeUnavailable,
             Error::RuntimeChecksum(_) => ErrorCode::RuntimeChecksum,
+            Error::OutputDrift(_) => ErrorCode::OutputDrift,
             Error::Plugin(_) => ErrorCode::PluginFailed,
         }
     }
@@ -210,6 +213,7 @@ impl fmt::Display for Error {
             | Error::Configuration(msg)
             | Error::RuntimeUnavailable(msg)
             | Error::RuntimeChecksum(msg)
+            | Error::OutputDrift(msg)
             | Error::Plugin(msg) => f.write_str(msg),
         }
     }

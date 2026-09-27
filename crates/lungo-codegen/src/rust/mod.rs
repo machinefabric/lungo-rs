@@ -134,14 +134,17 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     let is_extern = |n: &str| input.shaping.extern_types.contains_key(n);
     let reachable =
         crate::core::interface::reachable_types(&interface.types, &interface.exports, &user_externs, &is_extern);
+    // Opaque types are reached (their heads are nominal) but never generated as data.
     let types: Vec<lungo_protocol::TypeDecl> =
-        interface.types.iter().filter(|t| reachable.contains(t.name.as_str())).cloned().collect();
+        interface.types.iter().filter(|t| reachable.contains(t.name.as_str()) && !t.opaque).cloned().collect();
+    let fingerprints = crate::core::fingerprint::fingerprints(&interface.types, &input.toolchain.lean_version);
     let mut naming = Naming::new(input.facade_namespace);
     let backend_module = match input.layer {
         Layer::PureRust => None,
         Layer::Oracle => Some("__oracle".to_owned()),
     };
-    let mut facade = match Facade::new(&types, &mut naming, &interface.exports, backend_module, &selector) {
+    let mut facade = match Facade::new(&types, &mut naming, &interface.exports, backend_module, &selector, &fingerprints)
+    {
         Ok(f) => f,
         Err(e) => return Err(vec![e]),
     };
@@ -201,6 +204,18 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     if errors.is_empty() {
         errors.extend(selector.unused());
     }
+    // Every provided type is checked to have the layout this program was generated for.
+    let mut layout_checks = Vec::new();
+    for (lean, rust_path) in &input.shaping.extern_types {
+        match fingerprints.get(lean) {
+            Some(fingerprint) => layout_checks.push(format!(
+                "const _: () = ::lungo::assert_layout::<{rust_path}>(\"{fingerprint}\"); // Lean: {lean}"
+            )),
+            None => errors.push(CodegenError::Configuration(format!(
+                "extern_type maps the Lean type `{lean}`, whose layout lungo cannot check: only an inductive type with type parameters alone (and no indices) can be provided from another crate"
+            ))),
+        }
+    }
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -219,6 +234,9 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     w.line("use ::lungo::__runtime as rt;");
     w.line("use rt::Obj;");
     w.line(format!("const _: () = rt::assert_abi::<{}>();", lungo_runtime::ABI_VERSION));
+    for check in &layout_checks {
+        w.line(check);
+    }
     w.line("");
     match input.layer {
         Layer::PureRust => {

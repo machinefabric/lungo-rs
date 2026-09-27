@@ -13,7 +13,7 @@ use crate::core::model::value_recursive;
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
-use crate::plugin::{Distribution, GenerateRequest, Generator, options};
+use crate::plugin::{Distribution, ExternType, GenerateRequest, Generator, embedded, extern_types, options};
 use lungo_runtime::wire::{Returns, Type, TypeTable};
 use std::collections::BTreeMap;
 
@@ -126,7 +126,11 @@ fn param_name(i: u32) -> String {
 }
 
 struct TypeNames {
+    /// The Swift type (for an extern type, the providing module's: `Module.Name`).
     name: String,
+    /// What holds the type's `lungoType`: the type itself, or, for an extern type, an enum of this
+    /// file whose descriptor uses this program's table index.
+    descriptor_owner: String,
     /// Per constructor: its enum case (unused for one constructor) and its fields.
     ctors: Vec<(String, Vec<String>)>,
 }
@@ -138,7 +142,7 @@ struct Names {
 }
 
 impl Names {
-    fn new(b: &Boundary, module: &str) -> Result<Names, CodegenError> {
+    fn new(b: &Boundary, module: &str, externs: &BTreeMap<usize, &ExternType>) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Swift");
         for reserved in [
             format!("{module}Host"),
@@ -152,7 +156,21 @@ impl Names {
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
         let mut types = Vec::new();
-        for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
+        for (index, ((named, decl), short)) in
+            b.types.iter().zip(&b.table.types).zip(short_names(&type_names)).enumerate()
+        {
+            if let Some(ext) = externs.get(&index) {
+                let owner = scope.claim(
+                    format!("LungoExtern{}", swift_type_name(&short)),
+                    format!("the descriptor of {}", named.lean_name),
+                )?;
+                types.push(TypeNames {
+                    name: format!("{}.{}", ext.package, ext.name),
+                    descriptor_owner: owner,
+                    ctors: Vec::new(),
+                });
+                continue;
+            }
             let name = scope.claim(swift_type_name(&short), format!("type {}", named.lean_name))?;
             let mut cases = Scope::new("Swift");
             let mut ctors = Vec::new();
@@ -166,7 +184,7 @@ impl Names {
                 }
                 ctors.push((case, fnames));
             }
-            types.push(TypeNames { name, ctors });
+            types.push(TypeNames { descriptor_owner: name.clone(), name, ctors });
         }
         let fn_names: Vec<&str> = b.functions.iter().map(|f| f.lean_name.as_str()).collect();
         let functions = short_names(&fn_names)
@@ -199,8 +217,12 @@ fn equatable(table: &TypeTable) -> Vec<bool> {
     }
     let mut out = vec![true; table.types.len()];
     loop {
-        let next: Vec<bool> =
-            table.types.iter().map(|d| d.ctors.iter().all(|c| c.fields.iter().all(|f| eq(&f.ty, &out)))).collect();
+        // An opaque type's values are handles, compared by nothing.
+        let next: Vec<bool> = table
+            .types
+            .iter()
+            .map(|d| !d.opaque && d.ctors.iter().all(|c| c.fields.iter().all(|f| eq(&f.ty, &out))))
+            .collect();
         if next == out {
             return out;
         }
@@ -214,7 +236,8 @@ impl Generator for SwiftGenerator {
     }
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
-        let opts = options(request, "swift", &["module"]).map_err(|e| vec![e])?;
+        let opts = options(request, "swift", &["module", "embed"]).map_err(|e| vec![e])?;
+        let embed = embedded(&opts, "Swift", &[]).map_err(|e| vec![e])?;
         let b = &request.boundary;
         let module = match opts.get("module") {
             Some(m) => (*m).to_owned(),
@@ -228,26 +251,36 @@ impl Generator for SwiftGenerator {
                 "`{module}` cannot name a Swift module: use ASCII letters and digits, starting with an uppercase letter (option `module`)"
             ))]);
         }
-        let names = Names::new(b, &module).map_err(|e| vec![e])?;
+        let externs = extern_types(request).map_err(|e| vec![e])?;
+        let names = Names::new(b, &module, &externs).map_err(|e| vec![e])?;
         let program_target = format!("{module}Program");
+        // A package's targets are under `Sources/`; embedded, the output directory (which lungo
+        // owns and replaces as a whole) holds the two targets the host declares, by path.
+        let root = if embed { String::new() } else { "Sources/".to_owned() };
         let mut files = BTreeMap::new();
         for (path, text) in &request.program_files {
-            files.insert(format!("Sources/{program_target}/{path}"), text.clone());
+            files.insert(format!("{root}{program_target}/{path}"), text.clone());
         }
-        let (api_header, api_source) = crate::c::api::c_api(request).map_err(|e| vec![e])?;
-        files.insert(format!("Sources/{program_target}/include/{}.h", b.id), api_header);
-        files.insert(format!("Sources/{program_target}/include/lungo.h"), lungo_runtime::header::HEADER.to_owned());
-        files.insert(format!("Sources/{program_target}/include/{}_entries.h", b.id), entries_header(request));
-        files.insert(format!("Sources/{program_target}/api/{}.c", b.id), api_source);
+        // The C API's values are dynamic; the Swift module checks the extern types' layouts itself.
+        let (api_header, api_source) = crate::c::api::c_api(request, &BTreeMap::new()).map_err(|e| vec![e])?;
+        files.insert(format!("{root}{program_target}/include/{}.h", b.id), api_header);
+        files.insert(format!("{root}{program_target}/include/lungo.h"), lungo_runtime::header::HEADER.to_owned());
+        files.insert(format!("{root}{program_target}/include/{}_entries.h", b.id), entries_header(request));
+        files.insert(format!("{root}{program_target}/api/{}.c", b.id), api_source);
         let e = Emitter {
             request,
             names: &names,
             module: &module,
             recursive: value_recursive(&b.table),
             equatable: equatable(&b.table),
+            externs: &externs,
         };
-        files.insert(format!("Sources/{module}/{module}.swift"), e.module(&program_target));
-        files.insert("Package.swift".to_owned(), package_manifest(request, &module, &program_target));
+        files.insert(format!("{root}{module}/{module}.swift"), e.module(&program_target));
+        // Embedded, the two targets are the host package's, which declares them (see
+        // `package_manifest` for their shape) and depends on lungo-swift.
+        if !embed {
+            files.insert("Package.swift".to_owned(), package_manifest(request, &module, &program_target));
+        }
         Ok(files)
     }
 }
@@ -340,6 +373,8 @@ struct Emitter<'a> {
     module: &'a str,
     recursive: Vec<bool>,
     equatable: Vec<bool>,
+    /// The extern types, by type index.
+    externs: &'a BTreeMap<usize, &'a ExternType>,
 }
 
 #[derive(Clone, Copy)]
@@ -456,10 +491,10 @@ impl Emitter<'_> {
             Type::Inductive { index, args } => {
                 let t = &self.names.types[*index as usize];
                 if args.is_empty() {
-                    format!("{}.lungoType", t.name)
+                    format!("{}.lungoType", t.descriptor_owner)
                 } else {
                     let ds: Vec<String> = args.iter().map(|a| self.descriptor(a, scoped)).collect();
-                    format!("{}.lungoType({})", t.name, ds.join(", "))
+                    format!("{}.lungoType({})", t.descriptor_owner, ds.join(", "))
                 }
             }
         }
@@ -476,9 +511,35 @@ impl Emitter<'_> {
         w.line("");
         w.line("import LungoKit");
         w.line(format!("import {program_target}"));
+        let mut modules: Vec<&str> = self.externs.values().map(|e| e.package.as_str()).collect();
+        modules.sort();
+        modules.dedup();
+        for m in modules {
+            w.line(format!("import {m}"));
+        }
         w.line("");
         w.line(format!("/// The Lean program {}.", r.program.name));
-        w.line(format!("let program = LungoProgram(types: {}())", b.types_symbol));
+        if self.externs.is_empty() {
+            w.line(format!("let program = LungoProgram(types: {}())", b.types_symbol));
+        } else {
+            // The modules providing extern types were generated for the layouts this program was;
+            // the check runs before the program's first call.
+            w.line("let program: LungoProgram = {");
+            for (&i, ext) in self.externs {
+                w.line(format!(
+                    "    precondition({}.{}.lungoFingerprint == {}, {})",
+                    ext.package,
+                    ext.name,
+                    swift_string(&b.types[i].fingerprint),
+                    swift_string(&format!(
+                        "{} of {} has another layout than the one this program was generated for: regenerate both from the same Lean definition",
+                        b.types[i].lean_name, ext.package
+                    ))
+                ));
+            }
+            w.line(format!("    return LungoProgram(types: {}())", b.types_symbol));
+            w.line("}()");
+        }
         w.line("");
         w.line("/// Calls an entry point of the program with `input`; its status and output.");
         w.line("func entry(_ f: @escaping (UnsafePointer<UInt8>?, Int, UnsafeMutablePointer<lungo_buffer>?) -> Int32) -> LungoCall {");
@@ -491,7 +552,13 @@ impl Emitter<'_> {
         w.line("    }");
         w.line("}");
         for i in 0..b.types.len() {
-            self.named_type(&mut w, i);
+            if self.externs.contains_key(&i) {
+                self.extern_type(&mut w, i);
+            } else if b.types[i].opaque {
+                self.opaque_type(&mut w, i);
+            } else {
+                self.named_type(&mut w, i);
+            }
         }
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
@@ -505,6 +572,76 @@ impl Emitter<'_> {
             w.line("}");
         }
         w.finish()
+    }
+
+    /// A type another module provides: its values are that module's, described here by this
+    /// program's own table index.
+    fn extern_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let n = b.table.types[i].params;
+        let tn = &self.names.types[i];
+        let ext = self.externs[&i];
+        let generics =
+            if n == 0 { String::new() } else { format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", ")) };
+        let applied = format!("{}{generics}", tn.name);
+        let params: Vec<String> =
+            (0..n).map(|k| format!("_ {}: LungoType<{}>", param_name(k).to_lowercase(), param_name(k))).collect();
+        let args: Vec<String> = (0..n).map(|k| param_name(k).to_lowercase()).collect();
+        let exprs: Vec<String> = args.iter().map(|a| format!(", {a}.expr")).collect();
+        w.line("");
+        w.line(format!("/// Describes {}, provided by {}.", b.types[i].lean_name, ext.package));
+        w.line(format!("fileprivate enum {} {{", tn.descriptor_owner));
+        if n == 0 {
+            w.line(format!("    static var lungoType: LungoType<{applied}> {{"));
+            w.line(format!("        let provided = {}.lungoType", tn.name));
+        } else {
+            w.line(format!("    static func lungoType{generics}({}) -> LungoType<{applied}> {{", params.join(", ")));
+            w.line(format!("        let provided = {}.lungoType({})", tn.name, args.join(", ")));
+        }
+        w.line(format!("        return LungoType<{applied}>("));
+        w.line(format!("            expr: Lungo.inductiveExpr({i}{}),", exprs.join("")));
+        w.line("            encode: { w, v in try provided.encode(&w, v) },");
+        w.line("            decode: { r in try provided.decode(&r) })");
+        w.line("    }");
+        w.line("}");
+    }
+
+    /// A type whose values cross as handles: a type of its own around `LungoOpaque`.
+    fn opaque_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let named = &b.types[i];
+        let tn = &self.names.types[i];
+        w.line("");
+        w.line(format!(
+            "/// Lean's {}, held by handle: only the program's functions make and read its values.",
+            named.lean_name
+        ));
+        w.line(format!("public struct {}: @unchecked Sendable {{", tn.name));
+        w.line("    let value: LungoOpaque");
+        w.line("");
+        w.line("    /// Releases the value; using it afterwards fails with `LungoMalformed`.");
+        w.line("    public func close() { value.close() }");
+        w.line("}");
+        w.line("");
+        w.line(format!("extension {} {{", tn.name));
+        self.fingerprint_member(w, i);
+        w.line(format!("    /// Describes {} for polymorphic functions.", named.lean_name));
+        w.line(format!("    public static var lungoType: LungoType<{}> {{", tn.name));
+        w.line(format!("        LungoType<{}>(", tn.name));
+        w.line(format!("            expr: Lungo.inductiveExpr({i}),"));
+        w.line("            encode: { w, v in try Lungo.opaque.encode(&w, v.value) },");
+        w.line(format!("            decode: {{ r in {}(value: try Lungo.opaque.decode(&r)) }})", tn.name));
+        w.line("    }");
+        w.line("}");
+    }
+
+    /// `lungoFingerprint`: the layout fingerprint a module using the type from this one checks.
+    fn fingerprint_member(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        w.line(format!("    /// The layout fingerprint of Lean's {}.", b.types[i].lean_name));
+        // Computed: a generic type cannot have a stored static property.
+        w.line(format!("    public static var lungoFingerprint: String {{ {} }}", swift_string(&b.types[i].fingerprint)));
+        w.line("");
     }
 
     fn named_type(&self, w: &mut Writer, i: usize) {
@@ -589,6 +726,7 @@ impl Emitter<'_> {
         // The descriptor.
         w.line("");
         w.line(format!("extension {} {{", tn.name));
+        self.fingerprint_member(w, i);
         let params: Vec<String> =
             (0..n).map(|k| format!("_ {}: LungoType<{}>", param_name(k).to_lowercase(), param_name(k))).collect();
         let exprs: Vec<String> = (0..n).map(|k| format!(", {}.expr", param_name(k).to_lowercase())).collect();

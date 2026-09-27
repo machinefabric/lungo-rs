@@ -64,6 +64,7 @@ mod tests {
 
     fn decl(name: &str, ctors: Vec<Vec<Type>>) -> TypeDecl {
         TypeDecl {
+            opaque: false,
             name: name.into(),
             params: 0,
             repr: Repr::Object,

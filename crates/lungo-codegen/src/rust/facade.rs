@@ -179,6 +179,8 @@ pub struct Facade<'a> {
     pub members: Vec<NameRecord>,
     /// The application's shaping of the generated code.
     shaping: &'a Selector<'a>,
+    /// The layout fingerprint of every described type, by Lean name.
+    fingerprints: &'a BTreeMap<String, String>,
 }
 
 impl<'a> Facade<'a> {
@@ -188,6 +190,7 @@ impl<'a> Facade<'a> {
         exports: &[Export],
         backend_module: Option<String>,
         shaping: &'a Selector<'a>,
+        fingerprints: &'a BTreeMap<String, String>,
     ) -> Result<Self, CodegenError> {
         let mut placements = HashMap::new();
         let mut names: Vec<&str> = types.iter().map(|t| t.name.as_str()).collect();
@@ -210,6 +213,7 @@ impl<'a> Facade<'a> {
             backend_module,
             members: Vec::new(),
             shaping,
+            fingerprints,
         })
     }
 
@@ -518,6 +522,15 @@ impl<'a> Facade<'a> {
             }
             w.close("}");
         }
+        w.line("");
+        let fingerprint = self
+            .fingerprints
+            .get(&t.name)
+            .ok_or_else(|| CodegenError::internal(format!("type {} has no layout fingerprint", t.name)))?;
+        let unbounded = if params.is_empty() { String::new() } else { format!("<{}>", params.join(", ")) };
+        w.open(format!("impl{unbounded} ::lungo::LeanLayout for {ident}{generics} {{"));
+        w.line(format!("const FINGERPRINT: &'static str = \"{fingerprint}\";"));
+        w.close("}");
         w.line("");
         // Conversions.
         w.line("#[allow(unused_imports, unused_unsafe)]");
@@ -1256,6 +1269,12 @@ impl<'a> Facade<'a> {
                 None => w.line("/// Values of Lean types without a named head constant."),
             }
             w.line(format!("pub enum {ident} {{}}"));
+            // A nominal opaque type has a layout other crates can check they agree on.
+            if let Some(fingerprint) = head.as_ref().and_then(|h| self.fingerprints.get(h)) {
+                w.open(format!("impl ::lungo::LeanLayout for {ident} {{"));
+                w.line(format!("const FINGERPRINT: &'static str = \"{fingerprint}\";"));
+                w.close("}");
+            }
         }
         w.close("}");
     }

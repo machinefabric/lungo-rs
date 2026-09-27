@@ -97,6 +97,10 @@ struct GenerateArgs {
     /// else the pinned release, downloaded and verified).
     #[arg(long)]
     wasi_sdk: Option<PathBuf>,
+    /// Write nothing: check that every output directory holds exactly what the project
+    /// generates now, and fail with LNG0110 naming each file that differs, is missing or is extra.
+    #[arg(long)]
+    verify: bool,
 }
 
 #[derive(Subcommand)]
@@ -321,11 +325,17 @@ fn generate_settings<'a>(
         o.extend(cli_options.get(language).cloned().unwrap_or_default());
         o
     };
+    let extern_types = |language: &str| file.language(language).map(|l| l.extern_types.clone()).unwrap_or_default();
     if flags.outs.is_empty() {
         rust_out = file.rust.out_dir.as_deref().map(resolve);
         for (language, settings) in file.languages() {
             if let Some(out) = &settings.out {
-                outputs.push(Output { dir: resolve(out), options: options(&language), language });
+                outputs.push(Output {
+                    dir: resolve(out),
+                    options: options(&language),
+                    extern_types: extern_types(&language),
+                    language,
+                });
             }
         }
         if rust_out.is_none() && outputs.is_empty() {
@@ -344,7 +354,12 @@ fn generate_settings<'a>(
             if outputs.iter().any(|o| o.language == language) {
                 return Err(Error::Configuration(format!("--{language}_out is given twice")));
             }
-            outputs.push(Output { dir: resolve_arg(&dir), options: options(&language), language });
+            outputs.push(Output {
+                dir: resolve_arg(&dir),
+                options: options(&language),
+                extern_types: extern_types(&language),
+                language,
+            });
         }
     }
     for language in cli_options.keys() {
@@ -370,6 +385,7 @@ fn generate_settings<'a>(
         outputs,
         runtime_dir: args.runtime_dir,
         wasi_sdk: args.wasi_sdk,
+        verify: args.verify,
     })
 }
 

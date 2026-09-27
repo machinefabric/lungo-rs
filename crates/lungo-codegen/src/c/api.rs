@@ -15,7 +15,7 @@ use crate::CodegenError;
 use crate::core::names::{components, snake_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
-use crate::plugin::{Distribution, GenerateRequest, Generator, options};
+use crate::plugin::{Distribution, ExternType, GenerateRequest, Generator, embedded, extern_types, options};
 use lungo_runtime::wire::Returns;
 use std::collections::BTreeMap;
 
@@ -28,21 +28,35 @@ impl Generator for CGenerator {
     }
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
-        options(request, "c", &[]).map_err(|e| vec![e])?;
+        let opts = options(request, "c", &["embed"]).map_err(|e| vec![e])?;
+        let embed = embedded(&opts, "C", &[]).map_err(|e| vec![e])?;
         let b = &request.boundary;
-        let (h, c) = c_api(request).map_err(|e| vec![e])?;
+        let externs = extern_types(request).map_err(|e| vec![e])?;
+        let (h, c) = c_api(request, &externs).map_err(|e| vec![e])?;
         let mut files = request.program_files.clone();
         files.insert(format!("include/{}.h", b.id), h);
         files.insert(format!("src/{}.c", b.id), c);
-        files.insert("CMakeLists.txt".to_owned(), cmake(request).map_err(|e| vec![e])?);
+        files.insert("CMakeLists.txt".to_owned(), cmake(request, embed).map_err(|e| vec![e])?);
         Ok(files)
     }
 }
 
 /// The C API of the program (`include/<id>.h`, `src/<id>.c`): the header and its source.
-pub(crate) fn c_api(request: &GenerateRequest) -> Result<(String, String), CodegenError> {
+///
+/// C values are dynamic (`lungo_value`), so a type another C package provides (`externs`, by
+/// type index: its header, and its items' prefix `<id>_<type>`) needs nothing of this package but
+/// the check that the two were generated for the same layout.
+pub(crate) fn c_api(
+    request: &GenerateRequest,
+    externs: &BTreeMap<usize, &ExternType>,
+) -> Result<(String, String), CodegenError> {
     let names = Names::new(&request.boundary)?;
-    Ok((header(request, &names), source(request, &names)))
+    Ok((header(request, &names), source(request, &names, externs)))
+}
+
+/// The name of the macro holding the layout fingerprint of the type whose items are `<prefix>_…`.
+fn fingerprint_macro(prefix: &str) -> String {
+    format!("{}_FINGERPRINT", prefix.to_uppercase())
 }
 
 /// The C names of one constructor.
@@ -60,6 +74,8 @@ struct CtorNames {
 struct TypeNames {
     /// The type expression function.
     type_fn: String,
+    /// The macro of the type's layout fingerprint.
+    fingerprint: String,
     ctors: Vec<CtorNames>,
 }
 
@@ -216,6 +232,10 @@ impl Names {
         for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(&short_types) {
             let base = snake(short);
             let type_fn = scope.claim(format!("{id}_{base}_type"), format!("type {}", named.lean_name))?;
+            let fingerprint = scope.claim(
+                fingerprint_macro(&format!("{id}_{base}")),
+                format!("the layout fingerprint of {}", named.lean_name),
+            )?;
             let single = decl.ctors.len() == 1;
             let mut ctors = Vec::new();
             for c in &decl.ctors {
@@ -233,7 +253,7 @@ impl Names {
                 let params = distinct_locals(c.fields.iter().enumerate().map(|(k, f)| local(&f.name, k)).collect());
                 ctors.push(CtorNames { function, index, fields, params });
             }
-            types.push(TypeNames { type_fn, ctors });
+            types.push(TypeNames { type_fn, fingerprint, ctors });
         }
         let fn_names: Vec<&str> = b.functions.iter().map(|f| f.lean_name.as_str()).collect();
         let functions = short_names(&fn_names)
@@ -326,6 +346,7 @@ fn header(request: &GenerateRequest, names: &Names) -> String {
     for ((named, decl), tn) in b.types.iter().zip(&b.table.types).zip(&names.types) {
         let params = if named.params.is_empty() { String::new() } else { format!(" ({})", named.params.join(" ")) };
         w.line(comment(&format!("{}{params}", named.lean_name)));
+        w.line(format!("#define {} \"{}\"", tn.fingerprint, named.fingerprint));
         w.line(format!("{};", type_fn_prototype(&tn.type_fn, named.params.len())));
         for ((ctor, cn), idx) in decl.ctors.iter().zip(&tn.ctors).zip(0u32..) {
             w.line(format!("#define {} {idx}", cn.index));
@@ -365,13 +386,19 @@ fn header(request: &GenerateRequest, names: &Names) -> String {
     w.finish()
 }
 
-fn source(request: &GenerateRequest, names: &Names) -> String {
+fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &ExternType>) -> String {
     let b = &request.boundary;
     let prefix = &b.prefix;
     let mut w = Writer::new();
     w.line(banner(request));
     w.line(format!("#include \"{}.h\"", b.id));
     w.line(format!("#include \"{}_program.h\"", b.id));
+    let mut headers: Vec<&str> = externs.values().map(|e| e.package.as_str()).collect();
+    headers.sort();
+    headers.dedup();
+    for h in headers {
+        w.line(format!("#include {}", super::syntax::string(h.as_bytes())));
+    }
     w.line("");
     for (i, f) in b.functions.iter().enumerate() {
         for l in byte_array(&format!("sig_{i}"), &f.signature().encode()) {
@@ -384,7 +411,27 @@ fn source(request: &GenerateRequest, names: &Names) -> String {
         }
     }
     w.line("");
+    if !externs.is_empty() {
+        w.line(comment("The packages providing extern types were generated for the layouts this program was."));
+        w.line("static lungo_lazy_bits layouts_checked;");
+        w.open("static uint64_t check_layouts(void) {");
+        for (&i, ext) in externs {
+            let named = &b.types[i];
+            w.line(format!(
+                "lungo_check_layout({}, {}, \"{}\", {});",
+                super::syntax::string(named.lean_name.as_bytes()),
+                super::syntax::string(ext.package.as_bytes()),
+                named.fingerprint,
+                fingerprint_macro(&ext.name)
+            ));
+        }
+        w.line("return 1;");
+        w.close("}");
+    }
     w.open(format!("void {}(void) {{", names.initialize));
+    if !externs.is_empty() {
+        w.line("(void)lungo_lazy_bits_get(&layouts_checked, check_layouts);");
+    }
     w.line(format!("{}();", b.initialize));
     w.close("}");
     if let (Some(name), Some(inner)) = (&names.run_main, &b.run_main) {
@@ -426,6 +473,9 @@ fn source(request: &GenerateRequest, names: &Names) -> String {
     for (i, (f, name)) in b.functions.iter().zip(&names.functions).enumerate() {
         let (types, values) = function_params(f);
         w.open(format!("{} {{", function_prototype(name, f)));
+        if !externs.is_empty() {
+            w.line(format!("{}();", names.initialize));
+        }
         let type_args = if types.is_empty() {
             "NULL, 0".to_owned()
         } else {
@@ -473,7 +523,9 @@ fn cmake_string(s: &str) -> String {
     out
 }
 
-fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
+/// The CMake project of the package: its own project, which gets the runtime, or, `embedded`, a
+/// directory of the host's project (`add_subdirectory`), which provides `lungo::runtime`.
+fn cmake(request: &GenerateRequest, embedded: bool) -> Result<String, CodegenError> {
     let b = &request.boundary;
     let id = &b.id;
     let upper = id.to_uppercase();
@@ -483,6 +535,18 @@ fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
         "# Generated by lungo {version} from Lean {} for program {}. Do not edit.",
         request.program.lean_version, request.program.name
     ));
+    if embedded {
+        w.line("# A directory of the host's CMake project (`add_subdirectory`), which provides the lungo");
+        w.line(format!("# runtime {version} as the target lungo::runtime."));
+        w.open("if(NOT TARGET lungo::runtime)");
+        w.line(format!(
+            "message(FATAL_ERROR \"{id} needs the lungo runtime {version}: find it (find_package(lungo {version} EXACT CONFIG)) before adding this directory\")"
+        ));
+        w.close("endif()");
+        w.line("");
+        library(&mut w, request);
+        return Ok(w.finish());
+    }
     w.line("cmake_minimum_required(VERSION 3.20)");
     w.line(format!("project({id} LANGUAGES C)"));
     w.line("");
@@ -588,6 +652,13 @@ fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
     }
     w.close("endif()");
     w.line("");
+    library(&mut w, request);
+    Ok(w.finish())
+}
+
+/// The library target of the package.
+fn library(w: &mut Writer, request: &GenerateRequest) {
+    let id = &request.boundary.id;
     let mut sources: Vec<&str> =
         request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
     sources.sort();
@@ -603,7 +674,6 @@ fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
         "target_include_directories({id} PUBLIC $<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/include> $<BUILD_INTERFACE:${{CMAKE_CURRENT_SOURCE_DIR}}/program>)"
     ));
     w.line(format!("target_link_libraries({id} PUBLIC lungo::runtime)"));
-    Ok(w.finish())
 }
 
 #[cfg(test)]

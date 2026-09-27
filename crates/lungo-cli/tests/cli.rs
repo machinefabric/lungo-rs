@@ -176,3 +176,44 @@ fn configuration_errors_are_reported() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("no lungo configuration"));
 }
+
+#[test]
+fn verify_names_every_file_that_is_not_what_the_project_generates() {
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("verify-out");
+    if out.exists() {
+        std::fs::remove_dir_all(&out).unwrap();
+    }
+    let flag = format!("--rust_out={}", out.display());
+    let verify = |label: &str| -> (bool, String, String) {
+        let (success, stdout, stderr) = cli(&["generate", "--verify", &flag]);
+        eprintln!("{label}: {stdout}{stderr}");
+        (success, stdout, stderr)
+    };
+    // Nothing generated yet: every file is missing.
+    let (success, _, stderr) = verify("empty");
+    assert!(!success);
+    assert!(stderr.contains("error[LNG0110]") && stderr.contains("missing: formal.rs"), "{stderr}");
+    assert!(!out.join("formal").exists(), "--verify writes nothing");
+
+    ok(&["generate", &flag]);
+    let (success, stdout, _) = verify("generated");
+    assert!(success, "freshly generated output verifies");
+    assert!(stdout.contains("verified: rust "), "{stdout}");
+
+    let module = out.join("formal");
+    let rs = module.join("formal.rs");
+    let original = std::fs::read_to_string(&rs).unwrap();
+    std::fs::write(&rs, format!("{original}// edited by hand\n")).unwrap();
+    std::fs::remove_file(module.join("names.json")).unwrap();
+    std::fs::write(module.join("stray.rs"), "// not generated\n").unwrap();
+    let (success, _, stderr) = verify("edited");
+    assert!(!success);
+    for line in ["changed: formal.rs", "missing: names.json", "extra:   stray.rs"] {
+        assert!(stderr.contains(line), "`{line}` not reported:\n{stderr}");
+    }
+    assert_eq!(std::fs::read_to_string(&rs).unwrap(), format!("{original}// edited by hand\n"), "--verify changes nothing");
+    // build-info.json records how the output was generated: it is not compared.
+    ok(&["generate", &flag]);
+    std::fs::write(module.join("build-info.json"), "{}\n").unwrap();
+    assert!(verify("build info").0, "the build record is not part of what is generated");
+}

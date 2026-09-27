@@ -13,7 +13,7 @@ use crate::c::boundary::{Boundary, Function};
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
-use crate::plugin::{Distribution, GenerateRequest, Generator, options};
+use crate::plugin::{Distribution, ExternType, GenerateRequest, Generator, embedded, extern_types, options};
 use lungo_runtime::wire::{Returns, Type};
 use std::collections::BTreeMap;
 
@@ -111,6 +111,7 @@ fn param_name(i: u32) -> String {
 }
 
 struct TypeNames {
+    /// The TypeScript type (for an extern type, the providing module's: `ext<k>.Name`).
     name: String,
     descriptor: String,
     /// Per constructor: its `kind` and fields.
@@ -124,15 +125,75 @@ struct Names {
     host_methods: Vec<String>,
 }
 
+/// The namespace alias of every module providing an extern type (`ext<k>`).
+fn module_aliases(externs: &BTreeMap<usize, &ExternType>) -> BTreeMap<String, String> {
+    let mut modules: Vec<&str> = externs.values().map(|e| e.package.as_str()).collect();
+    modules.sort();
+    modules.dedup();
+    modules.iter().enumerate().map(|(k, m)| (m.to_string(), format!("ext{k}"))).collect()
+}
+
+/// Whether values of `ty` hold handles: opaque values and functions are handles of the program
+/// that made them, and a TypeScript program runs in a WebAssembly instance of its own, so they
+/// cannot pass from one program to another.
+fn holds_handles(table: &lungo_runtime::wire::TypeTable, ty: &Type, seen: &mut Vec<u32>) -> bool {
+    match ty {
+        Type::Opaque | Type::Function { .. } => true,
+        Type::Option(t) | Type::List(t) | Type::Array(t) => holds_handles(table, t, seen),
+        Type::Prod(a, b) | Type::Except { error: a, value: b } => {
+            holds_handles(table, a, seen) || holds_handles(table, b, seen)
+        }
+        Type::Inductive { index, args } => {
+            if args.iter().any(|a| holds_handles(table, a, seen)) {
+                return true;
+            }
+            if seen.contains(index) {
+                return false;
+            }
+            seen.push(*index);
+            let decl = &table.types[*index as usize];
+            decl.opaque || decl.ctors.iter().any(|c| c.fields.iter().any(|f| holds_handles(table, &f.ty, seen)))
+        }
+        _ => false,
+    }
+}
+
 impl Names {
-    fn new(b: &Boundary, class: &str) -> Result<Names, CodegenError> {
+    fn new(
+        b: &Boundary,
+        class: &str,
+        externs: &BTreeMap<usize, &ExternType>,
+        aliases: &BTreeMap<String, String>,
+    ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("TypeScript");
-        for reserved in [class.to_owned(), format!("{class}Host"), "load".into(), "LoadOptions".into()] {
+        for reserved in [class.to_owned(), format!("{class}Host"), "load".into(), "LoadOptions".into(), "leanTypes".into()]
+        {
             scope.claim(reserved, "a generated declaration")?;
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
         let mut types = Vec::new();
-        for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
+        for (index, ((named, decl), short)) in
+            b.types.iter().zip(&b.table.types).zip(short_names(&type_names)).enumerate()
+        {
+            if let Some(ext) = externs.get(&index) {
+                let ty = lungo_runtime::wire::Type::Inductive { index: index as u32, args: Vec::new() };
+                if holds_handles(&b.table, &ty, &mut Vec::new()) {
+                    return Err(CodegenError::Configuration(format!(
+                        "the TypeScript extern type `{}` holds Lean values by handle, which cannot pass between programs: each TypeScript program runs in a WebAssembly instance of its own",
+                        named.lean_name
+                    )));
+                }
+                let descriptor = scope.claim(
+                    format!("ext{}Type", pascal(&short)),
+                    format!("the descriptor of {}", named.lean_name),
+                )?;
+                types.push(TypeNames {
+                    name: format!("{}.{}", aliases[&ext.package], ext.name),
+                    descriptor,
+                    ctors: Vec::new(),
+                });
+                continue;
+            }
             let name = scope.claim(pascal(&short), format!("type {}", named.lean_name))?;
             let descriptor =
                 scope.claim(format!("{}Type", camel(&short)), format!("the descriptor of {}", named.lean_name))?;
@@ -195,7 +256,8 @@ impl Generator for TsGenerator {
     }
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
-        let opts = options(request, "ts", &["package", "version"]).map_err(|e| vec![e])?;
+        let opts = options(request, "ts", &["package", "version", "embed"]).map_err(|e| vec![e])?;
+        let embed = embedded(&opts, "TypeScript", &["package", "version"]).map_err(|e| vec![e])?;
         let b = &request.boundary;
         let package = opts.get("package").map(|s| s.to_string()).unwrap_or_else(|| request.program.name.to_lowercase());
         if !valid_npm_name(&package) {
@@ -205,12 +267,17 @@ impl Generator for TsGenerator {
         }
         let version = opts.get("version").copied().unwrap_or("0.1.0");
         let class = upper_camel_case(&request.program.name);
-        let names = Names::new(b, &class).map_err(|e| vec![e])?;
-        let e = Emitter { request, names: &names };
+        let externs = extern_types(request).map_err(|e| vec![e])?;
+        let aliases = module_aliases(&externs);
+        let names = Names::new(b, &class, &externs, &aliases).map_err(|e| vec![e])?;
+        let e = Emitter { request, names: &names, externs: &externs, aliases: &aliases };
         let mut files = BTreeMap::new();
         files.insert("index.js".to_owned(), e.javascript());
         files.insert("index.d.ts".to_owned(), e.declarations());
-        files.insert("package.json".to_owned(), package_json(request, &package, version));
+        // Embedded, the module is part of the host's package, whose manifest depends on lungo-ts.
+        if !embed {
+            files.insert("package.json".to_owned(), package_json(request, &package, version));
+        }
         Ok(files)
     }
 }
@@ -240,6 +307,9 @@ fn package_json(request: &GenerateRequest, package: &str, version: &str) -> Stri
 struct Emitter<'a> {
     request: &'a GenerateRequest,
     names: &'a Names,
+    /// The extern types, by type index, and the alias of each module providing one.
+    externs: &'a BTreeMap<usize, &'a ExternType>,
+    aliases: &'a BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy)]
@@ -375,6 +445,26 @@ impl Emitter<'_> {
         let mut w = Writer::new();
         w.line(self.banner());
         w.line("import * as L from \"lungo-ts\";");
+        for (module, alias) in self.aliases {
+            w.line(format!("import * as {alias} from {};", js_string(module)));
+        }
+        for (&i, ext) in self.externs {
+            let lean = &b.types[i].lean_name;
+            w.line(format!(
+                "if ({}.leanTypes[{}]?.fingerprint !== {}) {{",
+                self.aliases[&ext.package],
+                js_string(lean),
+                js_string(&b.types[i].fingerprint)
+            ));
+            w.line(format!(
+                "  throw new Error({});",
+                js_string(&format!(
+                    "{lean} of {} has another layout than the one this program was generated for: regenerate both from the same Lean definition",
+                    ext.package
+                ))
+            ));
+            w.line("}");
+        }
         w.line("");
         w.line("async function programModule() {");
         w.line("  const url = new URL(\"./program.wasm\", import.meta.url);");
@@ -387,8 +477,26 @@ impl Emitter<'_> {
         w.line("  return response.arrayBuffer();");
         w.line("}");
         for i in 0..b.types.len() {
-            self.js_type(&mut w, i);
+            if self.externs.contains_key(&i) {
+                self.js_extern_type(&mut w, i);
+            } else if b.types[i].opaque {
+                self.js_opaque_type(&mut w, i);
+            } else {
+                self.js_type(&mut w, i);
+            }
         }
+        w.line("");
+        w.line("/** The layout fingerprint and descriptor of each type, by Lean name, for modules using them. */");
+        w.line("export const leanTypes = Object.freeze({");
+        for (i, t) in b.types.iter().enumerate().filter(|(i, _)| !self.externs.contains_key(i)) {
+            w.line(format!(
+                "  {}: Object.freeze({{ fingerprint: {}, type: {} }}),",
+                js_string(&t.lean_name),
+                js_string(&t.fingerprint),
+                self.names.types[i].descriptor
+            ));
+        }
+        w.line("});");
         w.line("");
         w.line(format!("/** The Lean program {}. */", self.request.program.name));
         w.line(format!("export class {} {{", self.names.class));
@@ -431,6 +539,59 @@ impl Emitter<'_> {
         w.line(format!("  return new {}(program);", self.names.class));
         w.line("}");
         w.finish()
+    }
+
+    /// A type another module provides: its values are that module's, described here by this
+    /// program's own table index.
+    fn js_extern_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let n = b.table.types[i].params;
+        let tn = &self.names.types[i];
+        let ext = self.externs[&i];
+        let params: Vec<String> = (0..n).map(|k| param_name(k).to_lowercase()).collect();
+        let exprs: Vec<String> = params.iter().map(|p| format!(", {p}.expr")).collect();
+        w.line("");
+        w.line(format!("/** Describes {}, provided by {}. */", b.types[i].lean_name, ext.package));
+        w.line(format!("function {}({}) {{", tn.descriptor, params.join(", ")));
+        w.line(format!(
+            "  const provided = {}.leanTypes[{}].type({});",
+            self.aliases[&ext.package],
+            js_string(&b.types[i].lean_name),
+            params.join(", ")
+        ));
+        w.line(format!(
+            "  return new L.Type(L.inductiveExpr({i}{}), (w, v) => provided.encode(w, v), (r) => provided.decode(r), provided.canBeNull);",
+            exprs.join("")
+        ));
+        w.line("}");
+    }
+
+    /// A type whose values cross as handles: a class of its own around `L.Opaque`.
+    fn js_opaque_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let named = &b.types[i];
+        let tn = &self.names.types[i];
+        w.line("");
+        w.line(format!(
+            "/** Lean's {}, held by handle: only the program's functions make and read its values. */",
+            named.lean_name
+        ));
+        w.line(format!("export class {} extends L.Opaque {{}}", tn.name));
+        w.line("");
+        w.line(format!("/** Describes {} for polymorphic functions. */", named.lean_name));
+        w.line(format!("export function {}() {{", tn.descriptor));
+        w.line("  return new L.Type(");
+        w.line(format!("    L.inductiveExpr({i}),"));
+        w.line("    (w, v) => {");
+        w.line(format!(
+            "      if (!(v instanceof {})) throw new L.MalformedError(\"not a {}\");",
+            tn.name, named.lean_name
+        ));
+        w.line("      L.OPAQUE.encode(w, v);");
+        w.line("    },");
+        w.line(format!("    (r) => new {}(r.program, r.u64()),", tn.name));
+        w.line("  );");
+        w.line("}");
     }
 
     fn js_type(&self, w: &mut Writer, i: usize) {
@@ -547,11 +708,29 @@ impl Emitter<'_> {
         let mut w = Writer::new();
         w.line(self.banner());
         w.line("import * as L from \"lungo-ts\";");
+        for (module, alias) in self.aliases {
+            w.line(format!("import * as {alias} from {};", js_string(module)));
+        }
         for i in 0..b.types.len() {
             let named = &b.types[i];
             let decl = &b.table.types[i];
             let tn = &self.names.types[i];
             let n = decl.params;
+            if self.externs.contains_key(&i) {
+                continue;
+            }
+            if named.opaque {
+                w.line("");
+                w.line(format!(
+                    "/** Lean's {}, held by handle: only the program's functions make and read its values. */",
+                    named.lean_name
+                ));
+                w.line(format!("export class {} extends L.Opaque {{", tn.name));
+                w.line("  private constructor();");
+                w.line("}");
+                w.line(format!("export function {}(): L.Type<{}>;", tn.descriptor, tn.name));
+                continue;
+            }
             let generics = if n == 0 {
                 String::new()
             } else {
@@ -588,6 +767,11 @@ impl Emitter<'_> {
                 tn.name
             ));
         }
+        w.line("");
+        w.line("/** The layout fingerprint and descriptor of each type, by Lean name, for modules using them. */");
+        w.line("export const leanTypes: {");
+        w.line("  readonly [lean: string]: { readonly fingerprint: string; readonly type: (...args: L.Type<any>[]) => L.Type<any> };");
+        w.line("};");
         w.line("");
         w.line(format!("/** The Lean program {}. */", self.request.program.name));
         w.line(format!("export class {} {{", self.names.class));

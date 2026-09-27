@@ -153,3 +153,19 @@ test("values Lean cannot represent are rejected", () => {
     assert.throws(() => t.encode(w, v), L.MalformedError, String(v));
   }
 });
+
+test("a handle is written only into calls of the program that holds it", () => {
+  // Stand-ins for two loaded programs: each has a handle table of its own.
+  const program = (name) => ({ name, cloneHandle: (id) => id + 100n, releaseHandle: () => {} });
+  const a = program("a");
+  const b = program("b");
+  const held = new L.Opaque(a, 7n);
+
+  const own = new L.Writer(a);
+  L.OPAQUE.encode(own, held);
+  assert.equal(toHex(own.finish()), "0700000000000000", "an argument lends the handle itself");
+
+  assert.throws(() => L.OPAQUE.encode(new L.Writer(b), held), L.MalformedError, "handle 7 of program a is not program b's");
+  assert.throws(() => L.OPAQUE.encode(new L.Writer(b, true), held), L.MalformedError, "nor as a result");
+  held.close();
+});

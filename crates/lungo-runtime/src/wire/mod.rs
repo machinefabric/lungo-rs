@@ -73,7 +73,7 @@ pub mod field {
 /// The first bytes of a type table.
 pub const TABLE_MAGIC: &[u8; 4] = b"LNGT";
 /// The version of the type-table and type-expression encoding.
-pub const TABLE_VERSION: u32 = 1;
+pub const TABLE_VERSION: u32 = 2;
 
 /// How a `Function` value is passed.
 pub mod function {
@@ -454,6 +454,10 @@ pub struct Ctor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeDecl {
     pub name: String,
+    /// A type whose values cross only as handles (they carry proofs, or are otherwise not
+    /// first-order data): named, so bindings give it a type of its own, but with no parameters
+    /// and no constructors.
+    pub opaque: bool,
     pub params: u32,
     pub repr: Repr,
     /// For a single-constructor type represented by one field: that constructor and field.
@@ -477,6 +481,7 @@ impl TypeTable {
         put_u32(&mut out, self.types.len() as u32);
         for t in &self.types {
             put_str(&mut out, &t.name);
+            out.push(t.opaque as u8);
             put_u32(&mut out, t.params);
             out.push(t.repr.code());
             match t.trivial {
@@ -533,6 +538,11 @@ impl TypeTable {
         let mut types = Vec::new();
         for _ in 0..n {
             let name = r.string()?;
+            let opaque = match r.u8()? {
+                0 => false,
+                1 => true,
+                b => return err(format!("invalid opaque flag {b} in {name}")),
+            };
             let params = r.u32()?;
             let repr = Repr::of_code(r.u8()?)?;
             let trivial = match r.u8()? {
@@ -559,7 +569,7 @@ impl TypeTable {
                 }
                 ctors.push(Ctor { name: cname, tag, size, usize, ssize, fields });
             }
-            types.push(TypeDecl { name, params, repr, trivial, ctors });
+            types.push(TypeDecl { name, opaque, params, repr, trivial, ctors });
         }
         r.finish()?;
         let table = TypeTable { types };
@@ -569,6 +579,15 @@ impl TypeTable {
 
     fn validate(&self) -> Result<(), WireError> {
         for t in &self.types {
+            if t.opaque {
+                if !t.ctors.is_empty() || t.params != 0 || t.trivial.is_some() || t.repr != Repr::Object {
+                    return err(format!(
+                        "opaque type {} must have no constructors, no parameters and an object representation",
+                        t.name
+                    ));
+                }
+                continue;
+            }
             if t.ctors.is_empty() {
                 return err(format!("type {} has no constructors", t.name));
             }
@@ -1244,6 +1263,9 @@ unsafe fn decode_inductive(
     if args.len() != t.params as usize {
         return err(format!("{} applied to {} arguments", t.name, args.len()));
     }
+    if t.opaque {
+        return handles.object(r.u64()?);
+    }
     if let Some((c, f)) = t.trivial {
         let field = &t.ctors[c as usize].fields[f as usize];
         return decode(table, &field.ty.substitute(args)?, r, handles);
@@ -1412,6 +1434,11 @@ unsafe fn encode_inductive(table: &'static TypeTable, index: u32, args: &[Type],
     let t = decl(table, index).unwrap_or_else(|e| lean_internal_panic(&e.0));
     let sub = |ty: &Type| ty.substitute(args).unwrap_or_else(|e| lean_internal_panic(&e.0));
     unsafe {
+        if t.opaque {
+            lean_inc(o);
+            out.extend_from_slice(&handle_new(o).to_le_bytes());
+            return;
+        }
         if let Some((c, f)) = t.trivial {
             encode(table, &sub(&t.ctors[c as usize].fields[f as usize].ty), o, out);
             return;
@@ -1490,12 +1517,14 @@ mod tests {
     use super::*;
 
     fn table() -> &'static TypeTable {
-        // `structure P where x : UInt8, n : Nat` and `inductive T | leaf | node (l : T) (v : Nat) (r : T)`.
+        // `structure P where x : UInt8, n : Nat`, `inductive T | leaf | node (l : T) (v : Nat) (r : T)`
+        // and an opaque `W` (a structure with a proof field, say).
         static T: OnceLock<TypeTable> = OnceLock::new();
         T.get_or_init(|| TypeTable {
             types: vec![
                 TypeDecl {
                     name: "P".into(),
+                    opaque: false,
                     params: 0,
                     repr: Repr::Object,
                     trivial: None,
@@ -1517,6 +1546,7 @@ mod tests {
                 },
                 TypeDecl {
                     name: "T".into(),
+                    opaque: false,
                     params: 0,
                     repr: Repr::Object,
                     trivial: None,
@@ -1544,8 +1574,51 @@ mod tests {
                         },
                     ],
                 },
+                TypeDecl {
+                    name: "W".into(),
+                    opaque: true,
+                    params: 0,
+                    repr: Repr::Object,
+                    trivial: None,
+                    ctors: vec![],
+                },
             ],
         })
+    }
+
+    #[test]
+    fn opaque_types_cross_as_handles_and_are_declared_without_a_layout() {
+        let w = Type::Inductive { index: 2, args: vec![] };
+        let o = lean_mk_string("a proof-carrying value");
+        let mut out = Vec::new();
+        unsafe { encode(table(), &w, o, &mut out) };
+        assert_eq!(out.len(), 8, "a value of an opaque type is its handle");
+        let id = u64::from_le_bytes(out[..8].try_into().unwrap());
+        let mut r = Reader::new(&out);
+        let back = decode(table(), &w, &mut r, Handles::Take).unwrap();
+        r.finish().unwrap();
+        assert_eq!(back, o, "the handle names the object that was encoded");
+        assert!(handle_get(id).is_err(), "a result's handle is taken");
+        unsafe {
+            lean_dec(back);
+            lean_dec(o);
+        }
+
+        // The flag survives the table's encoding.
+        let decoded = TypeTable::decode(&table().encode()).unwrap();
+        assert_eq!(&decoded, table());
+
+        // An opaque type has no layout to describe: constructors or parameters are refused.
+        let mut with_ctor = table().clone();
+        with_ctor.types[2].ctors = table().types[0].ctors.clone();
+        assert!(TypeTable::decode(&with_ctor.encode()).is_err(), "an opaque type with constructors");
+        let mut with_params = table().clone();
+        with_params.types[2].params = 1;
+        assert!(TypeTable::decode(&with_params.encode()).is_err(), "an opaque type with parameters");
+        // And a transparent type still needs its constructors.
+        let mut empty = table().clone();
+        empty.types[0].ctors.clear();
+        assert!(TypeTable::decode(&empty.encode()).is_err(), "a transparent type without constructors");
     }
 
     fn round_trip(ty: &Type, bytes: &[u8]) {

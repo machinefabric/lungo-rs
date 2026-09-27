@@ -7,7 +7,7 @@
 
 use crate::runtime;
 use lungo_build::codegen::c::{ProgramInput, generate_program};
-use lungo_build::codegen::plugin::{GenerateRequest, PROTOCOL_VERSION, ProgramInfo, RuntimeInfo, builtin};
+use lungo_build::codegen::plugin::{ExternType, GenerateRequest, PROTOCOL_VERSION, ProgramInfo, RuntimeInfo, builtin};
 use lungo_build::protocol::{Endian, Target};
 use lungo_build::{Analysis, Builder, Context, Environment, Error, LeanOptions, Result, RustOptions};
 use lungo_driver::output;
@@ -22,6 +22,8 @@ pub struct Output {
     pub language: String,
     pub dir: PathBuf,
     pub options: BTreeMap<String, String>,
+    /// Lean types other generated packages provide (the language's `extern-types`).
+    pub extern_types: BTreeMap<String, ExternType>,
 }
 
 pub struct Settings<'a> {
@@ -33,6 +35,8 @@ pub struct Settings<'a> {
     pub outputs: Vec<Output>,
     pub runtime_dir: Option<PathBuf>,
     pub wasi_sdk: Option<PathBuf>,
+    /// Compare instead of writing (`--verify`).
+    pub verify: bool,
 }
 
 /// The WebAssembly target of the TypeScript binding.
@@ -71,6 +75,7 @@ struct KeyConfig<'a> {
     language: &'a str,
     generator: &'a str,
     options: &'a BTreeMap<String, String>,
+    extern_types: &'a BTreeMap<String, ExternType>,
     runtime: &'a RuntimeInfo,
     host_externs: &'a std::collections::BTreeSet<String>,
     wasi_sdk: Option<&'a str>,
@@ -85,25 +90,94 @@ enum Generator {
     },
 }
 
-/// Runs the generation; one report line per output.
+/// The files of the output directory `dir` (none if it does not exist), by `/`-separated path,
+/// without `build-info.json`: it records how the output was generated, not what was generated.
+fn tree(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
+        let entries = std::fs::read_dir(dir).map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+        for entry in entries {
+            let path = entry.map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+                continue;
+            }
+            let rel = path.strip_prefix(root).expect("under the root");
+            let rel: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            let rel = rel.join("/");
+            if rel == output::BUILD_INFO {
+                continue;
+            }
+            let bytes = std::fs::read(&path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+            out.insert(rel, bytes);
+        }
+        Ok(())
+    }
+    let mut out = BTreeMap::new();
+    if dir.exists() {
+        walk(dir, dir, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// How the output directory `dir` differs from what the project generates now (`expected`).
+fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+    let mut lines = Vec::new();
+    for (rel, bytes) in expected {
+        match actual.get(rel) {
+            None => lines.push(format!("  missing: {rel}")),
+            Some(b) if b != bytes => lines.push(format!("  changed: {rel}")),
+            Some(_) => {}
+        }
+    }
+    lines.extend(actual.keys().filter(|rel| !expected.contains_key(*rel)).map(|rel| format!("  extra:   {rel}")));
+    (!lines.is_empty()).then(|| format!("{} is not what the project generates now:\n{}", dir.display(), lines.join("\n")))
+}
+
+/// Runs the generation, or with `verify` the comparison; one report line per output.
 pub fn run(s: &Settings) -> Result<Vec<String>> {
     let analyses = Analyses { lean: s.lean, host: OnceCell::new(), wasm: OnceCell::new() };
     let mut report = Vec::new();
+    let mut drifts = Vec::new();
     if let Some(dir) = &s.rust_out {
         let mut rust = s.rust.clone();
         rust.out_dir = None;
         let builder = Builder::from_options(s.lean.clone(), rust);
-        let env = Environment { out_dir: dir.clone(), ..s.env.clone() };
-        let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env))?;
-        let at = dir.join(&outcome.name);
-        report.push(if outcome.reused {
-            format!("up to date: rust {}", at.display())
+        if s.verify {
+            // Generated beside the output and compared: the Rust module is the build's output.
+            let scratch = dir.with_file_name(format!(
+                ".lungo-verify-{}-{}",
+                dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                std::process::id()
+            ));
+            let env = Environment { out_dir: scratch.clone(), ..s.env.clone() };
+            let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env));
+            let compared = outcome.and_then(|o| {
+                let expected = tree(&scratch.join(&o.name))?;
+                let actual = tree(&dir.join(&o.name))?;
+                Ok((dir.join(&o.name), expected, actual))
+            });
+            if scratch.exists() {
+                std::fs::remove_dir_all(&scratch)
+                    .map_err(|e| Error::io(format!("cannot remove {}", scratch.display()), e))?;
+            }
+            let (at, expected, actual) = compared?;
+            match drift(&at, &expected, &actual) {
+                Some(d) => drifts.push(d),
+                None => report.push(format!("verified: rust {}", at.display())),
+            }
         } else {
-            format!("generated rust into {}", at.display())
-        });
+            let env = Environment { out_dir: dir.clone(), ..s.env.clone() };
+            let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env))?;
+            let at = dir.join(&outcome.name);
+            report.push(if outcome.reused {
+                format!("up to date: rust {}", at.display())
+            } else {
+                format!("generated rust into {}", at.display())
+            });
+        }
     }
     if s.outputs.is_empty() {
-        return Ok(report);
+        return finish(report, drifts);
     }
     // Every generator is resolved before anything is generated.
     let mut generators = Vec::new();
@@ -132,13 +206,15 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             language: &o.language,
             generator: &identity,
             options: &o.options,
+            extern_types: &o.extern_types,
             runtime: &runtime,
             host_externs: &s.lean.host_externs,
             wasi_sdk: sdk_text.as_deref(),
         })
         .expect("key configuration serializes");
         let key = lungo_driver::build_key(&ctx, env, &config)?;
-        if let Some(previous) = output::read_build_info(&o.dir, &ctx.project)
+        if !s.verify
+            && let Some(previous) = output::read_build_info(&o.dir, &ctx.project)
             && previous.build_key == key.value
             && output::inputs_unchanged(&previous)
         {
@@ -171,6 +247,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             program_files: program.files.clone(),
             runtime: runtime.clone(),
             options: o.options.clone(),
+            extern_types: o.extern_types.clone(),
         };
         let files = match generator {
             Generator::Builtin(g) => g.generate(&request).map_err(|errors| codegen_error(analysis, errors))?,
@@ -186,13 +263,40 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             let module = crate::wasm::link(&program.files, &program.boundary, &runtime_package, sdk, &work)?;
             binary.insert("program.wasm".to_owned(), module);
         }
+        if s.verify {
+            if work.exists() {
+                std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
+            }
+            let expected: BTreeMap<String, Vec<u8>> = files
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_bytes().to_vec()))
+                .chain(binary.iter().map(|(k, v)| (k.clone(), v.clone())))
+                .collect();
+            match drift(&o.dir, &expected, &tree(&dir)?) {
+                Some(d) => drifts.push(d),
+                None => report.push(format!("verified: {} {}", o.language, o.dir.display())),
+            }
+            continue;
+        }
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
         let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &[])?;
         output::publish(&dir, &work, &files, &binary, &info)?;
         std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
         report.push(format!("generated {} into {}", o.language, o.dir.display()));
     }
-    Ok(report)
+    finish(report, drifts)
+}
+
+/// The report, or every output that is not what the project generates now.
+fn finish(report: Vec<String>, drifts: Vec<String>) -> Result<Vec<String>> {
+    if drifts.is_empty() {
+        Ok(report)
+    } else {
+        Err(Error::OutputDrift(format!(
+            "{}\nRun `lungo generate` and commit what it writes.",
+            drifts.join("\n")
+        )))
+    }
 }
 
 fn codegen_error(analysis: &Analysis, errors: Vec<lungo_build::CodegenError>) -> Error {

@@ -8,7 +8,7 @@ use lungo_bir::{ExternEntry, IrType, Param, Program};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 const MAGIC: &[u8; 4] = b"LNGF";
 const HEADER_SIZE: usize = 17;
 /// Nesting permitted in a response: bounded by the control-flow nesting of compiled code.
@@ -436,6 +436,10 @@ pub struct Trust {
 #[serde(deny_unknown_fields)]
 pub struct TypeDecl {
     pub name: String,
+    /// A nominal type whose values are exposed only as opaque Lean values (it carries proofs, or
+    /// fields without a runtime representation): described for its name and layout, never
+    /// generated as data. Facades refer to it as `FacadeType::Opaque` with this head.
+    pub opaque: bool,
     pub params: Vec<String>,
     /// The runtime representation of values of this type.
     pub repr: IrType,

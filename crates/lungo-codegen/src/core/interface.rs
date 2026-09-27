@@ -5,8 +5,9 @@ use lungo_protocol::{Export, ExternRequirement, FacadeParam, FacadeType, TypeDec
 use std::collections::{BTreeSet, HashMap};
 
 /// Names of the described types reachable from the exports' and application externs'
-/// signatures, following constructor fields. Types the application provides (`is_extern`)
-/// are not generated, so the types of their fields are not followed.
+/// signatures, following constructor fields. An opaque type is reached by its head but its
+/// fields are not followed: its values are never taken apart. Types the application provides
+/// (`is_extern`) are not generated, so the types of their fields are not followed either.
 pub fn reachable_types<'t>(
     types: &'t [TypeDecl],
     exports: &[Export],
@@ -38,6 +39,7 @@ pub fn reachable_types<'t>(
                 }
                 collect(result, out);
             }
+            FacadeType::Opaque { head: Some(h), .. } => out.push(h.clone()),
             _ => {}
         }
     }
@@ -67,6 +69,7 @@ pub fn reachable_types<'t>(
         }
         if let Some(t) = by_name.get(n.as_str())
             && seen.insert(t.name.as_str())
+            && !t.opaque
         {
             for c in &t.ctors {
                 for f in &c.fields {

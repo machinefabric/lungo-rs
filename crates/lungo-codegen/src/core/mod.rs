@@ -1,8 +1,10 @@
-//! What every backend shares: extern resolution, naming, the source writer, and error codes.
+//! What every backend shares: extern resolution, naming, layout fingerprints, the source writer,
+//! and error codes.
 
 pub mod codes;
 pub mod exports;
 pub mod externs;
+pub mod fingerprint;
 pub mod interface;
 pub mod model;
 pub mod names;

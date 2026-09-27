@@ -77,6 +77,27 @@ pub unsafe extern "C" fn lungo_run_main(
     run_main(|| unsafe { initialize() }, main, returns_exit_code, args)
 }
 
+/// Checks, before a program first runs, that the package providing its Lean type `lean_type`
+/// (`provider`) was generated for the layout the program was (`expected`): the package reports
+/// `actual`. A difference means the two were generated from different definitions of the type, and
+/// the program would read the package's values at the wrong layout.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lungo_check_layout(
+    lean_type: *const c_char,
+    provider: *const c_char,
+    expected: *const c_char,
+    actual: *const c_char,
+) {
+    let what = "lungo_check_layout";
+    let (lean_type, provider) = unsafe { (text(lean_type, what), text(provider, what)) };
+    let (expected, actual) = unsafe { (text(expected, what), text(actual, what)) };
+    if expected != actual {
+        lean_internal_panic(&format!(
+            "{lean_type} of {provider} has another layout than the one this program was generated for (fingerprint {actual}, expected {expected}): regenerate both from the same Lean definition"
+        ));
+    }
+}
+
 /// Reports that the host did not register its implementation of the Lean extern `declaration`
 /// before the program was initialized.
 #[unsafe(no_mangle)]

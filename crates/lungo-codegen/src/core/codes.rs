@@ -58,6 +58,9 @@ codes! {
     RuntimeUnavailable = "LNG0108", "lungo runtime unavailable";
     /// A downloaded runtime artifact does not have the SHA-256 digest the release lists.
     RuntimeChecksum = "LNG0109", "runtime artifact checksum mismatch";
+    /// `lungo generate --verify`: an output directory holds something other than what the
+    /// project generates now.
+    OutputDrift = "LNG0110", "generated output is out of date";
 
     // Lean (02xx).
     /// Lean rejected the program: elaboration, kernel checking, or Lean's compiler.

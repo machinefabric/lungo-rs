@@ -78,6 +78,10 @@ fn fixture(language: &str) -> PathBuf {
 fn c_binding() {
     let package = generate("c", &["runtime"]);
     let build = root().join("c-build");
+    // A fresh build: a CMake cache records the absolute paths it was configured with.
+    if build.exists() {
+        std::fs::remove_dir_all(&build).unwrap();
+    }
     run(Command::new("cmake")
         .arg("-S")
         .arg(fixture("c"))

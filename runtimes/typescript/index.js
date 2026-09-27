@@ -386,6 +386,11 @@ export class Opaque {
 }
 
 function writeHandle(w, value) {
+  // Each program runs in a WebAssembly instance of its own, with a handle table of its own: a
+  // handle of another program names nothing, or some other value, in this one.
+  if (value.program !== w.program) {
+    throw malformed("a Lean value of another program: each program runs in its own WebAssembly instance");
+  }
   const id = value.live();
   w.u64(w.result ? w.program.cloneHandle(id) : id);
 }

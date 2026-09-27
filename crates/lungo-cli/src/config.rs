@@ -41,13 +41,16 @@ pub struct ProjectFile {
     pub plugins: BTreeMap<String, Language>,
 }
 
-/// A generator's settings: where it writes (relative to the file), and its options.
+/// A generator's settings: where it writes (relative to the file), its options, and the Lean
+/// types other generated packages provide.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Language {
     pub out: Option<PathBuf>,
     #[serde(default)]
     pub options: BTreeMap<String, String>,
+    #[serde(default, rename = "extern-types")]
+    pub extern_types: BTreeMap<String, lungo_build::codegen::plugin::ExternType>,
 }
 
 impl ProjectFile {

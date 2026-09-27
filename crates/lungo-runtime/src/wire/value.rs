@@ -130,8 +130,14 @@ pub fn encode(table: &TypeTable, ty: &Type, v: &Value, out: &mut Vec<u8>) -> Res
             }
         },
         (Type::Opaque, Value::Opaque(h)) => out.extend_from_slice(&h.to_le_bytes()),
+        (Type::Inductive { index, .. }, Value::Opaque(h)) if super::decl(table, *index)?.opaque => {
+            out.extend_from_slice(&h.to_le_bytes())
+        }
         (Type::Inductive { index, args }, Value::Ctor { index: c, fields }) => {
             let decl = super::decl(table, *index)?;
+            if decl.opaque {
+                return err(format!("{} is opaque: its values are handles, not constructors", decl.name));
+            }
             let ctor = decl
                 .ctors
                 .get(*c as usize)
@@ -234,6 +240,9 @@ pub fn decode(table: &TypeTable, ty: &Type, r: &mut Reader) -> Result<Value, Wir
         Type::Param(i) => return err(format!("an uninstantiated type parameter {i}")),
         Type::Inductive { index, args } => {
             let decl = super::decl(table, *index)?;
+            if decl.opaque {
+                return Ok(Value::Opaque(r.u64()?));
+            }
             match decl.trivial {
                 Some((c, f)) => {
                     let ctor = &decl.ctors[c as usize];
@@ -258,4 +267,44 @@ pub fn decode(table: &TypeTable, ty: &Type, r: &mut Reader) -> Result<Value, Wir
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wire::{Ctor, Repr, TypeDecl};
+
+    fn table() -> TypeTable {
+        TypeTable {
+            types: vec![
+                TypeDecl { name: "W".into(), opaque: true, params: 0, repr: Repr::Object, trivial: None, ctors: vec![] },
+                TypeDecl {
+                    name: "E".into(),
+                    opaque: false,
+                    params: 0,
+                    repr: Repr::Object,
+                    trivial: None,
+                    ctors: vec![Ctor { name: "E.e".into(), tag: 0, size: 0, usize: 0, ssize: 0, fields: vec![] }],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_value_of_an_opaque_type_is_its_handle() {
+        let t = table();
+        let w = Type::Inductive { index: 0, args: vec![] };
+        let mut out = Vec::new();
+        encode(&t, &w, &Value::Opaque(42), &mut out).unwrap();
+        assert_eq!(out, 42u64.to_le_bytes());
+        let mut r = Reader::new(&out);
+        assert_eq!(decode(&t, &w, &mut r).unwrap(), Value::Opaque(42));
+        r.finish().unwrap();
+        // Its values are handles: a constructor is not one of them, and a handle is not a value
+        // of a transparent type.
+        let ctor = Value::Ctor { index: 0, fields: vec![] };
+        assert!(encode(&t, &w, &ctor, &mut Vec::new()).is_err());
+        let e = Type::Inductive { index: 1, args: vec![] };
+        assert!(encode(&t, &e, &Value::Opaque(42), &mut Vec::new()).is_err());
+    }
 }

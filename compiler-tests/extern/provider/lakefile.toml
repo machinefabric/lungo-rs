@@ -1,0 +1,6 @@
+name = "provider"
+version = "0.1.0"
+defaultTargets = ["Provider"]
+
+[[lean_lib]]
+name = "Provider"

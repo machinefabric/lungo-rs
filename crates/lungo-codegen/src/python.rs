@@ -12,7 +12,7 @@ use crate::c::boundary::{Boundary, Function};
 use crate::core::names::{components, snake_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
-use crate::plugin::{Distribution, GenerateRequest, Generator, options};
+use crate::plugin::{Distribution, ExternType, GenerateRequest, Generator, extern_types, options};
 use lungo_runtime::wire::{Field, Returns, Type};
 use std::collections::BTreeMap;
 
@@ -58,7 +58,10 @@ const PYTHON_KEYWORDS: &[&str] = &[
     "match",
     "case",
     "type",
-    // Names the generated module uses.
+];
+
+/// Names the generated module itself uses, which its locals avoid (a package may be named so).
+const GENERATED_NAMES: &[&str] = &[
     "lungo_py",
     "os",
     "sys",
@@ -86,7 +89,7 @@ const PYTHON_KEYWORDS: &[&str] = &[
 ];
 
 fn escape(id: String) -> String {
-    if PYTHON_KEYWORDS.contains(&id.as_str()) { format!("{id}_") } else { id }
+    if PYTHON_KEYWORDS.contains(&id.as_str()) || GENERATED_NAMES.contains(&id.as_str()) { format!("{id}_") } else { id }
 }
 
 /// A snake_case Python identifier for Lean name components.
@@ -112,6 +115,7 @@ fn param_name(i: u32) -> String {
 }
 
 struct TypeNames {
+    /// The class (for an extern type, the providing module's: `_ext_<k>.Name`).
     class: String,
     descriptor: String,
     impl_class: String,
@@ -125,13 +129,38 @@ struct Names {
     host_methods: Vec<String>,
 }
 
+/// The module alias of every module providing an extern type (`_ext_<k>`, private).
+fn module_aliases(externs: &BTreeMap<usize, &ExternType>) -> BTreeMap<String, String> {
+    let mut modules: Vec<&str> = externs.values().map(|e| e.package.as_str()).collect();
+    modules.sort();
+    modules.dedup();
+    modules.iter().enumerate().map(|(k, m)| (m.to_string(), format!("_ext_{k}"))).collect()
+}
+
 impl Names {
-    fn new(b: &Boundary) -> Result<Names, CodegenError> {
+    fn new(
+        b: &Boundary,
+        externs: &BTreeMap<usize, &ExternType>,
+        aliases: &BTreeMap<String, String>,
+    ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Python");
         scope.reserve_prefix("_");
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
         let mut types = Vec::new();
-        for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
+        for (index, ((named, decl), short)) in
+            b.types.iter().zip(&b.table.types).zip(short_names(&type_names)).enumerate()
+        {
+            if let Some(ext) = externs.get(&index) {
+                // The providing module's class, with a descriptor of this program's own (its
+                // type expressions index this program's table).
+                types.push(TypeNames {
+                    class: format!("{}.{}", aliases[&ext.package], ext.name),
+                    descriptor: format!("_ext_type_{index}"),
+                    impl_class: format!("_ExtType{index}"),
+                    ctors: Vec::new(),
+                });
+                continue;
+            }
             let class = scope.claim(py_class(&short), format!("type {}", named.lean_name))?;
             let descriptor =
                 scope.claim(format!("{}_type", py_snake(&short)), format!("the descriptor of {}", named.lean_name))?;
@@ -181,8 +210,30 @@ impl Generator for PythonGenerator {
     }
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
-        let opts = options(request, "python", &["package", "distribution", "version"]).map_err(|e| vec![e])?;
+        let opts =
+            options(request, "python", &["package", "distribution", "version", "embed"]).map_err(|e| vec![e])?;
         let b = &request.boundary;
+        let externs = extern_types(request).map_err(|e| vec![e])?;
+        let aliases = module_aliases(&externs);
+        let names = Names::new(b, &externs, &aliases).map_err(|e| vec![e])?;
+        let e = Emitter { request, names: &names, externs: &externs, aliases: &aliases };
+        let mut files = request.program_files.clone();
+        if let Some(module) = opts.get("embed") {
+            // A module of a package the host builds: the output directory is the module.
+            if let Some(standalone) = ["package", "distribution", "version"].iter().find(|k| opts.contains_key(*k)) {
+                return Err(vec![CodegenError::Configuration(format!(
+                    "the Python option `{standalone}` names a package of its own, and `embed` a module of the host's"
+                ))]);
+            }
+            if module.is_empty() || !module.split('.').all(valid_package) {
+                return Err(vec![CodegenError::Configuration(format!(
+                    "`{module}` cannot name a Python module: dotted lowercase identifiers (option `embed`)"
+                ))]);
+            }
+            files.insert("__init__.py".to_owned(), e.module());
+            files.insert("CMakeLists.txt".to_owned(), cmake(request, &module.replace('.', "/"), true));
+            return Ok(files);
+        }
         let package = opts.get("package").map(|s| s.to_string()).unwrap_or_else(|| b.id.to_lowercase());
         if !valid_package(&package) {
             return Err(vec![CodegenError::Configuration(format!(
@@ -191,13 +242,10 @@ impl Generator for PythonGenerator {
         }
         let distribution = opts.get("distribution").map(|s| s.to_string()).unwrap_or_else(|| package.replace('_', "-"));
         let version = opts.get("version").copied().unwrap_or("0.1.0");
-        let names = Names::new(b).map_err(|e| vec![e])?;
-        let mut files = request.program_files.clone();
-        let e = Emitter { request, names: &names };
         files.insert(format!("src/{package}/__init__.py"), e.module());
         files.insert(format!("src/{package}/py.typed"), "\n".to_owned());
         files.insert("pyproject.toml".to_owned(), pyproject(request, &package, &distribution, version));
-        files.insert("CMakeLists.txt".to_owned(), cmake(request, &package));
+        files.insert("CMakeLists.txt".to_owned(), cmake(request, &package, false));
         Ok(files)
     }
 }
@@ -262,7 +310,10 @@ cmake.build-type = "Release"
     )
 }
 
-fn cmake(request: &GenerateRequest, package: &str) -> String {
+/// The CMake project building the program's shared library and installing it at `destination`
+/// (the package directory in the wheel); `embedded` for a directory the host's project adds with
+/// `add_subdirectory`, whose sources are relative to it.
+fn cmake(request: &GenerateRequest, destination: &str, embedded: bool) -> String {
     let b = &request.boundary;
     let mut sources: Vec<&str> =
         request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
@@ -272,10 +323,16 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
         "# Generated by lungo {} from Lean {} for program {}. Do not edit.",
         request.runtime.version, request.program.lean_version, request.program.name
     ));
-    w.line("cmake_minimum_required(VERSION 3.20)");
-    w.line(format!("project({}_lean LANGUAGES C)", b.id));
+    if embedded {
+        w.line("# A directory of the host package's CMake project (`add_subdirectory`): it builds the program");
+        w.line(format!("# and installs it into the module {destination}."));
+    } else {
+        w.line("cmake_minimum_required(VERSION 3.20)");
+        w.line(format!("project({}_lean LANGUAGES C)", b.id));
+    }
     w.line("");
     w.line("# The runtime this package runs on is the one lungo_py carries.");
+    w.open("if(NOT TARGET lungo::runtime_shared)");
     w.line("find_package(Python COMPONENTS Interpreter REQUIRED)");
     w.line("execute_process(");
     w.line("  COMMAND \"${Python_EXECUTABLE}\" -c \"import lungo_py; print(lungo_py.cmake_dir())\"");
@@ -284,6 +341,7 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
         "find_package(lungo {} EXACT CONFIG REQUIRED PATHS \"${{LUNGO_CMAKE_DIR}}\" NO_DEFAULT_PATH)",
         request.runtime.version
     ));
+    w.close("endif()");
     w.line("");
     w.line(format!("add_library({}_lean SHARED", b.id));
     for s in sources {
@@ -303,7 +361,7 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
     w.line(format!("  target_link_options({}_lean PRIVATE -undefined dynamic_lookup)", b.id));
     w.line("endif()");
     w.line(format!(
-        "install(TARGETS {id}_lean LIBRARY DESTINATION {package} RUNTIME DESTINATION {package})",
+        "install(TARGETS {id}_lean LIBRARY DESTINATION {destination} RUNTIME DESTINATION {destination})",
         id = b.id
     ));
     w.finish()
@@ -312,6 +370,9 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
 struct Emitter<'a> {
     request: &'a GenerateRequest,
     names: &'a Names,
+    /// The extern types, by type index, and the alias of each module providing one.
+    externs: &'a BTreeMap<usize, &'a ExternType>,
+    aliases: &'a BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy)]
@@ -441,6 +502,9 @@ impl Emitter<'_> {
         w.line("from dataclasses import dataclass as _dataclass");
         w.line("");
         w.line("import lungo_py");
+        for (module, alias) in self.aliases {
+            w.line(format!("import {module} as {alias}"));
+        }
         w.line("");
         w.line(format!("if lungo_py.__version__ != {}:", py_string(&r.runtime.version)));
         w.line(format!(
@@ -475,8 +539,30 @@ impl Emitter<'_> {
                 w.line(format!("{0} = _t.TypeVar({0:?})", param_name(i)));
             }
         }
+        for (&i, ext) in self.externs {
+            w.line("");
+            w.line(format!(
+                "if {}.{}.__lungo_fingerprint__ != {}:",
+                self.aliases[&ext.package],
+                ext.name,
+                py_string(&b.types[i].fingerprint)
+            ));
+            w.line(format!(
+                "    raise ImportError({})",
+                py_string(&format!(
+                    "{} of {} has another layout than the one this program was generated for: regenerate both from the same Lean definition",
+                    b.types[i].lean_name, ext.package
+                ))
+            ));
+        }
         for i in 0..b.types.len() {
-            self.named_type(&mut w, i);
+            if self.externs.contains_key(&i) {
+                self.extern_type(&mut w, i);
+            } else if b.types[i].opaque {
+                self.opaque_type(&mut w, i);
+            } else {
+                self.named_type(&mut w, i);
+            }
         }
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
@@ -491,6 +577,92 @@ impl Emitter<'_> {
         }
         let text = w.finish();
         format!("{}\n", text.trim_end())
+    }
+
+    /// Records the layout fingerprint and the descriptor of type `i` on its class, where a package
+    /// using the type from this one finds them.
+    fn class_attributes(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let tn = &self.names.types[i];
+        w.line("");
+        w.line("");
+        w.line(format!("{}.__lungo_fingerprint__ = {}", tn.class, py_string(&b.types[i].fingerprint)));
+        w.line(format!("{}.__lungo_descriptor__ = staticmethod({})", tn.class, tn.descriptor));
+    }
+
+    /// A type another module provides: its values are that module's, described here by this
+    /// program's own table index.
+    fn extern_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let n = b.table.types[i].params;
+        let tn = &self.names.types[i];
+        let ext = self.externs[&i];
+        let params: Vec<String> = (0..n).map(|k| format!("type_{}", param_name(k).to_lowercase())).collect();
+        let provided = format!(
+            "{}.{}.__lungo_descriptor__({})",
+            self.aliases[&ext.package],
+            ext.name,
+            params.iter().map(|p| format!("self.{p}")).collect::<Vec<_>>().join(", ")
+        );
+        w.line("");
+        w.line("");
+        w.line(format!("class {}(lungo_py.Type):", tn.impl_class));
+        w.line(format!("    \"\"\"Lean's {}, provided by {}.\"\"\"", b.types[i].lean_name, ext.package));
+        w.line("");
+        w.line(format!("    def __init__(self{}):", params.iter().map(|p| format!(", {p}")).collect::<String>()));
+        for p in &params {
+            w.line(format!("        self.{p} = {p}"));
+        }
+        w.line(format!("        self._provided = {provided}"));
+        w.line("");
+        let exprs: Vec<String> = params.iter().map(|p| format!(", self.{p}.expr()")).collect();
+        w.line("    def expr(self):");
+        w.line(format!("        return lungo_py.inductive_expr({i}{})", exprs.join("")));
+        w.line("");
+        w.line("    def encode(self, w, v):");
+        w.line("        self._provided.encode(w, v)");
+        w.line("");
+        w.line("    def decode(self, r):");
+        w.line("        return self._provided.decode(r)");
+        w.line("");
+        w.line("");
+        w.line(format!("def {}({}):", tn.descriptor, params.join(", ")));
+        w.line(format!("    return {}({})", tn.impl_class, params.join(", ")));
+    }
+
+    /// A type whose values cross as handles: a class of its own around `lungo_py.Opaque`.
+    fn opaque_type(&self, w: &mut Writer, i: usize) {
+        let b = self.boundary();
+        let named = &b.types[i];
+        let tn = &self.names.types[i];
+        w.line("");
+        w.line("");
+        w.line(format!("class {}(lungo_py.Opaque):", tn.class));
+        w.line(format!(
+            "    \"\"\"Lean's {}, held by handle: only the program's functions make and read its values.\"\"\"",
+            named.lean_name
+        ));
+        w.line("");
+        w.line("    __slots__ = ()");
+        w.line("");
+        w.line("");
+        w.line(format!("class {}(lungo_py.Type):", tn.impl_class));
+        w.line("    def expr(self):");
+        w.line(format!("        return lungo_py.inductive_expr({i})"));
+        w.line("");
+        w.line("    def encode(self, w, v):");
+        w.line(format!("        if not isinstance(v, {}):", tn.class));
+        w.line(format!("            raise lungo_py.MalformedError(f\"{{v!r}} is not a {}\")", named.lean_name));
+        w.line("        lungo_py.OPAQUE.encode(w, v)");
+        w.line("");
+        w.line("    def decode(self, r):");
+        w.line(format!("        return {}(r.u64())", tn.class));
+        w.line("");
+        w.line("");
+        w.line(format!("def {}() -> lungo_py.Type[{}]:", tn.descriptor, tn.class));
+        w.line(format!("    \"\"\"Describes {} for polymorphic functions.\"\"\"", named.lean_name));
+        w.line(format!("    return {}()", tn.impl_class));
+        self.class_attributes(w, i);
     }
 
     fn named_type(&self, w: &mut Writer, i: usize) {
@@ -608,6 +780,7 @@ impl Emitter<'_> {
         w.line(format!("def {}({}) -> lungo_py.Type[{applied}]:", tn.descriptor, typed.join(", ")));
         w.line(format!("    \"\"\"Describes {} for polymorphic functions.\"\"\"", named.lean_name));
         w.line(format!("    return {}({})", tn.impl_class, params.join(", ")));
+        self.class_attributes(w, i);
     }
 
     fn returns(&self, r: &Returns) -> String {
