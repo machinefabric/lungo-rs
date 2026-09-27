@@ -79,6 +79,15 @@ npm run dev      # http://localhost:5173
 npm run build    # the static site, in docs/build
 ```
 
+## Contributing
+
+Issues and pull requests are welcome: bug reports, questions, documentation fixes, and code.
+For a larger change, opening an issue first to talk it over is a good start. Everyone taking
+part is expected to follow the [code of conduct](CODE_OF_CONDUCT.md): be kind and respectful.
+
+Unless you say otherwise, a contribution you submit is licensed under the Apache License,
+Version 2.0, like the rest of the project.
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
