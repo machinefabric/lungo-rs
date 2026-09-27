@@ -41,6 +41,8 @@ pub struct ProgramInput<'a> {
     pub host_externs: &'a BTreeSet<String>,
     /// Path of the Lean project relative to the package, used in source references.
     pub local_prefix: &'a str,
+    /// The target triple the program is compiled for; primitives the target lacks are errors.
+    pub target: &'a str,
 }
 
 /// The generated program.
@@ -82,6 +84,7 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
         describe_source(&r.source, input.local_prefix)
     })?;
+    check_target(&externs, input)?;
     let mut init_values = HashMap::new();
     for m in &program.modules {
         for init in &m.initializers {
@@ -209,6 +212,25 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
         return Err(errors);
     }
     Ok(Program { files, initialize: format!("{prefix}initialize"), run_main, id, prefix, boundary })
+}
+
+/// Every runtime primitive the program uses is available on the target.
+fn check_target(externs: &ExternPlan, input: &ProgramInput) -> Result<(), Vec<CodegenError>> {
+    let mut errors = Vec::new();
+    for (decl, resolution) in &externs.resolutions {
+        if let crate::Resolution::Intrinsic(i) = resolution
+            && let Some(reason) = lungo_runtime::registry::unavailable_on(i.symbol, input.target)
+        {
+            errors.push(CodegenError::external(
+                crate::ErrorCode::UnsupportedOnTarget,
+                format!(
+                    "the program uses {decl} (runtime primitive `{}`), which {} does not provide: {reason}",
+                    i.symbol, input.target
+                ),
+            ));
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 
 /// Emits wrappers giving the Lean definitions the runtime calls the C signature the runtime

@@ -42,3 +42,20 @@ pub(crate) static TABLES: &[&[Intrinsic]] = &[
 
 pub(crate) static UNSUPPORTED_TABLES: &[&[Unsupported]] =
     &[crate::io::UNSUPPORTED, crate::platform::UNSUPPORTED, crate::uv::UNSUPPORTED];
+
+/// Why a `wasm32-wasip1` runtime lacks the primitive `symbol`, if it does: that runtime is built
+/// without the modules for child processes (`process`) and for sockets, signals, timers and the
+/// event loop (`uv`), and without the primitives listed in [`WASI_UNAVAILABLE`].
+pub(crate) fn wasi_unavailable(symbol: &str) -> Option<&'static str> {
+    let in_table = |t: &[Intrinsic]| t.iter().any(|i| i.symbol == symbol);
+    if in_table(crate::process::externs::INTRINSICS) {
+        return Some("WebAssembly has no child processes");
+    }
+    if in_table(crate::uv::externs::INTRINSICS) {
+        return Some("WebAssembly has no sockets, signals, timers or event loop");
+    }
+    WASI_UNAVAILABLE.iter().find(|u| u.symbol == symbol).map(|u| u.reason)
+}
+
+/// Primitives of otherwise available modules that a `wasm32-wasip1` runtime lacks.
+pub(crate) static WASI_UNAVAILABLE: &[Unsupported] = &[];

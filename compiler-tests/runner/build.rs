@@ -33,6 +33,7 @@ fn main() -> lungo_build::Result<()> {
             name,
             host_externs: &host_externs,
             local_prefix: "../conformance",
+            target: &std::env::var("TARGET").expect("Cargo sets TARGET"),
         })
         .unwrap_or_else(|errors| {
             let text: Vec<String> = errors.iter().map(|e| e.to_string()).collect();

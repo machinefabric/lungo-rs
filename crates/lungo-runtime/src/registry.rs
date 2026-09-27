@@ -138,3 +138,13 @@ pub fn unsupported_symbols() -> impl Iterator<Item = &'static Unsupported> {
 pub fn unsupported(symbol: &str) -> Option<&'static Unsupported> {
     unsupported_symbols().find(|u| u.symbol == symbol)
 }
+
+/// Why the primitive `symbol` is unavailable on the target `target` (a target triple), if it is.
+/// WebAssembly (`wasm32-wasip1`) runs a program on one thread, without child processes, sockets
+/// or an event loop; every other target has every primitive.
+pub fn unavailable_on(symbol: &str, target: &str) -> Option<&'static str> {
+    if !target.starts_with("wasm32-") {
+        return None;
+    }
+    crate::intrinsics::wasi_unavailable(symbol)
+}
