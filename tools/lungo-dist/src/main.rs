@@ -215,19 +215,26 @@ fn runtime_target_dir() -> PathBuf {
     target_dir().join("lungo-dist")
 }
 
-/// `cargo`, building for Apple platforms at the supported deployment targets.
-fn cargo() -> Command {
+/// `cargo`, building the runtime for `target`: for Apple platforms at the supported deployment
+/// targets; for Windows with `windows_raw_dylib`, so that the Windows API bindings import their
+/// DLLs directly instead of through the import library the `windows-targets` crate carries in
+/// Cargo's registry, which the programs linking the runtime do not have.
+fn cargo(target: &str) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(repo())
         .env("CARGO_TARGET_DIR", runtime_target_dir())
         .env("MACOSX_DEPLOYMENT_TARGET", lungo_runtime::header::MACOS_DEPLOYMENT_TARGET)
         .env("IPHONEOS_DEPLOYMENT_TARGET", lungo_runtime::header::IOS_DEPLOYMENT_TARGET);
+    if target.contains("-windows-") {
+        let var = format!("CARGO_TARGET_{}_RUSTFLAGS", target.to_uppercase().replace('-', "_"));
+        cmd.env(var, "--cfg windows_raw_dylib");
+    }
     cmd
 }
 
 /// The native libraries the static runtime needs, as `rustc` reports them.
 fn native_libraries(target: &str) -> Result<Vec<String>> {
-    let out = run(cargo()
+    let out = run(cargo(target)
         .args(["rustc", "-p", "lungo-capi", "--release", "--target", target, "--crate-type", "staticlib", "--"])
         .args(["--print", "native-static-libs"]))?;
     let text = String::from_utf8_lossy(&out.stderr);
@@ -253,6 +260,11 @@ fn native_libraries(target: &str) -> Result<Vec<String>> {
         } else if !implicit.contains(&t) && !t.starts_with("/defaultlib:") && !items.iter().any(|i| i == t) {
             items.push(t.to_owned());
         }
+    }
+    if let Some(bundled) = items.iter().find(|i| i.contains("windows.0.")) {
+        return Err(format!(
+            "the runtime links `{bundled}`, the import library of the windows-targets crate, which exists only in Cargo's registry: it must be built with `--cfg windows_raw_dylib` (RUSTFLAGS, when set, overrides the target's)"
+        ));
     }
     Ok(items)
 }
@@ -287,7 +299,7 @@ fn placeholder(s: &str) -> Option<&str> {
 /// Builds the runtime package of `target` into `out` (replaced).
 fn runtime(target: &str, out: &Path) -> Result<()> {
     let repo = repo();
-    run(cargo().args(["build", "-p", "lungo-capi", "--release", "--target", target]))?;
+    run(cargo(target).args(["build", "-p", "lungo-capi", "--release", "--target", target]))?;
     let natives = native_libraries(target)?;
     let built = runtime_target_dir().join(target).join("release");
     let libs = libraries(target);

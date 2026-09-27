@@ -292,6 +292,9 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
     w.line(")");
     w.line(format!("target_include_directories({}_lean PRIVATE program)", b.id));
     w.line(format!("target_compile_features({}_lean PRIVATE c_std_11)", b.id));
+    w.line("# lungo_py looks the program's entry points up by name: a Windows DLL exports its symbols as");
+    w.line("# shared libraries elsewhere do.");
+    w.line(format!("set_target_properties({}_lean PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)", b.id));
     w.line("# The runtime's symbols come from lungo_py's library, loaded first into the process: on");
     w.line("# Windows through its import library, elsewhere resolved when the program is loaded.");
     w.line("if(WIN32)");
