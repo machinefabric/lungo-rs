@@ -198,9 +198,10 @@ let package = Package(
         ),
     )
     .unwrap();
-    let out = Command::new("swift").args(["test", "--parallel"]).current_dir(&tests).output().unwrap();
+    let out = Command::new("swift").arg("test").current_dir(&tests).output().unwrap();
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert!(out.status.success(), "{text}");
     assert!(!text.contains("warning:"), "the generated package builds with warnings:\n{text}");
-    assert!(text.contains("Executed 12 tests, with 0 failures") || text.contains("12 tests passed"), "{text}");
+    assert!(text.contains("Executed 10 tests, with 0 failures"), "the Swift tests ran:\n{text}");
+    assert!(text.contains("Executed 3 tests, with 0 failures"), "the Objective-C tests ran:\n{text}");
 }

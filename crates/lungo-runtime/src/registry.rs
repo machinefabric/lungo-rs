@@ -140,8 +140,10 @@ pub fn unsupported(symbol: &str) -> Option<&'static Unsupported> {
 }
 
 /// Why the primitive `symbol` is unavailable on the target `target` (a target triple), if it is.
+/// Known to the code generator, which never runs on WebAssembly.
 /// WebAssembly (`wasm32-wasip1`) runs a program on one thread, without child processes, sockets
 /// or an event loop; every other target has every primitive.
+#[cfg(not(target_os = "wasi"))]
 pub fn unavailable_on(symbol: &str, target: &str) -> Option<&'static str> {
     if !target.starts_with("wasm32-") {
         return None;

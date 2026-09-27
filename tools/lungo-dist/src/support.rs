@@ -220,3 +220,23 @@ pub fn swift_local(runtime: &Path, out: &Path) -> Result<()> {
     xcframework(&[runtime.join("lib/liblungo.a")], &out.join("LungoRuntime.xcframework"))?;
     swift(".binaryTarget(name: \"LungoRuntime\", path: \"LungoRuntime.xcframework\")", runtime, out)
 }
+
+/// The npm package `lungo-ts` in `out` (replaced).
+pub fn typescript(out: &Path) -> Result<()> {
+    if out.exists() {
+        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+    }
+    let repo = repo();
+    copy_tree(&repo.join("runtimes/typescript"), out, &|rel| {
+        rel == Path::new("package.json.in") || rel.starts_with("node_modules")
+    })?;
+    let template =
+        io("cannot read package.json.in", fs::read_to_string(repo.join("runtimes/typescript/package.json.in")))?;
+    io("cannot write package.json", fs::write(out.join("package.json"), crate::fill(&template, &[("VERSION", VERSION)])?))?;
+    io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
+    io(
+        "cannot copy the wire vectors",
+        fs::copy(repo.join("compiler-tests/wire/vectors.json"), out.join("test/vectors.json")).map(|_| ()),
+    )?;
+    Ok(())
+}

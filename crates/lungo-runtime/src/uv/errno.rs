@@ -10,7 +10,7 @@
 macro_rules! uv_codes {
     ($( $name:ident = $errno:ident / $fixed:literal, $msg:literal; )*) => {
         $(
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "wasi"))]
             pub const $name: i32 = -(libc::$errno as i32);
             #[cfg(windows)]
             pub const $name: i32 = $fixed;
@@ -24,7 +24,7 @@ macro_rules! uv_codes {
     };
 }
 
-// Codes that are `-errno` on every Unix platform the runtime supports.
+// Codes that are `-errno` on every Unix platform the runtime supports, and on WASI.
 uv_codes! {
     UV_E2BIG = E2BIG / -4093, "argument list too long";
     UV_EACCES = EACCES / -4092, "permission denied";
@@ -73,7 +73,6 @@ uv_codes! {
     UV_EPROTONOSUPPORT = EPROTONOSUPPORT / -4045, "protocol not supported";
     UV_EPROTOTYPE = EPROTOTYPE / -4044, "protocol wrong type for socket";
     UV_EROFS = EROFS / -4043, "read-only file system";
-    UV_ESHUTDOWN = ESHUTDOWN / -4042, "cannot send after transport endpoint shutdown";
     UV_ESPIPE = ESPIPE / -4041, "invalid seek";
     UV_ESRCH = ESRCH / -4040, "no such process";
     UV_ETIMEDOUT = ETIMEDOUT / -4039, "connection timed out";
@@ -84,15 +83,28 @@ uv_codes! {
     UV_ERANGE = ERANGE / -4034, "result too large";
     UV_ENXIO = ENXIO / -4033, "no such device or address";
     UV_EMLINK = EMLINK / -4032, "too many links";
-    UV_EHOSTDOWN = EHOSTDOWN / -4031, "host is down";
     UV_ENOTTY = ENOTTY / -4029, "inappropriate ioctl for device";
     UV_EILSEQ = EILSEQ / -4027, "illegal byte sequence";
-    UV_ESOCKTNOSUPPORT = ESOCKTNOSUPPORT / -4025, "socket type not supported";
-    UV_ENODATA = ENODATA / -4024, "no data available";
     UV_ENOEXEC = ENOEXEC / -4022, "exec format error";
 }
 
 // Codes whose `errno` exists only on some platforms.
+#[cfg(unix)]
+pub const UV_EHOSTDOWN: i32 = -libc::EHOSTDOWN;
+#[cfg(not(unix))]
+pub const UV_EHOSTDOWN: i32 = -4031;
+#[cfg(unix)]
+pub const UV_ESHUTDOWN: i32 = -libc::ESHUTDOWN;
+#[cfg(not(unix))]
+pub const UV_ESHUTDOWN: i32 = -4042;
+#[cfg(unix)]
+pub const UV_ESOCKTNOSUPPORT: i32 = -libc::ESOCKTNOSUPPORT;
+#[cfg(not(unix))]
+pub const UV_ESOCKTNOSUPPORT: i32 = -4025;
+#[cfg(unix)]
+pub const UV_ENODATA: i32 = -libc::ENODATA;
+#[cfg(not(unix))]
+pub const UV_ENODATA: i32 = -4024;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub const UV_ENONET: i32 = -libc::ENONET;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -156,6 +168,10 @@ fn unknown_message(code: i32) -> &'static str {
 
 fn fixed_message(code: i32) -> Option<&'static str> {
     Some(match code {
+        UV_EHOSTDOWN => "host is down",
+        UV_ESHUTDOWN => "cannot send after transport endpoint shutdown",
+        UV_ESOCKTNOSUPPORT => "socket type not supported",
+        UV_ENODATA => "no data available",
         UV_ENONET => "machine is not on the network",
         UV_EREMOTEIO => "remote I/O error",
         UV_EUNATCH => "protocol driver not attached",
@@ -181,9 +197,9 @@ fn fixed_message(code: i32) -> Option<&'static str> {
     })
 }
 
-/// The libuv error code for an operating-system error (`UV__ERR(errno)` on Unix,
+/// The libuv error code for an operating-system error (`UV__ERR(errno)` on Unix and WASI,
 /// `uv_translate_sys_error` on Windows).
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "wasi"))]
 pub fn uv_code_of_os_error(raw: i32) -> i32 {
     if raw <= 0 { raw } else { -raw }
 }

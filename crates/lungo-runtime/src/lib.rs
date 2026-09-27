@@ -27,6 +27,7 @@ pub mod io;
 pub mod misc;
 pub mod nat;
 pub mod platform;
+#[cfg(not(target_os = "wasi"))]
 pub mod process;
 pub mod sharecommon;
 pub mod st;

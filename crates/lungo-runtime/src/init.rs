@@ -193,7 +193,8 @@ pub fn run_main(initialize: impl FnOnce(), main: MainFn, returns_exit_code: bool
             code
         }
     };
-    let code = if std::env::var("LEAN_MAIN_USE_THREAD").as_deref() == Ok("0") {
+    // WebAssembly has no threads: `main` runs on the calling thread.
+    let code = if cfg!(target_os = "wasi") || std::env::var("LEAN_MAIN_USE_THREAD").as_deref() == Ok("0") {
         run()
     } else {
         std::thread::Builder::new()

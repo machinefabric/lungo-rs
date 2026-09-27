@@ -1,0 +1,18 @@
+{
+  "name": "lungo-ts",
+  "version": "@VERSION@",
+  "description": "The TypeScript/JavaScript support library of the packages lungo generates from Lean programs: the wire format and the WebAssembly host",
+  "license": "Apache-2.0",
+  "author": "Bahram Joharshamshiri <jowharshamshiri@gmail.com>",
+  "repository": { "type": "git", "url": "git+https://github.com/jowharshamshiri/lungo.git", "directory": "runtimes/typescript" },
+  "homepage": "https://github.com/jowharshamshiri/lungo",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" }
+  },
+  "files": ["index.js", "index.d.ts", "wasi.js", "LICENSE", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" }
+}

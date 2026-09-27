@@ -5,7 +5,44 @@
 @interface CAPITests : XCTestCase
 @end
 
+static int32_t scale(void *ctx, const lungo_value *const *args, size_t n, lungo_value **result, lungo_error **error) {
+    (void)ctx;
+    (void)n;
+    (void)error;
+    uint64_t x = 0;
+    lungo_value_get_nat(args[0], &x);
+    *result = lungo_value_nat(x * 10);
+    return LUNGO_OK;
+}
+
+static int32_t record(void *ctx, const lungo_value *const *args, size_t n, lungo_value **result, lungo_error **error) {
+    (void)ctx;
+    (void)n;
+    (void)args;
+    (void)error;
+    *result = lungo_value_unit();
+    return LUNGO_OK;
+}
+
 @implementation CAPITests
+
++ (void)setUp {
+    polyglot_implement_host_scale(scale, NULL, NULL);
+    polyglot_implement_host_record(record, NULL, NULL);
+}
+
+- (void)testHostExternsThroughTheCAPI {
+    lungo_value *items[2] = {lungo_value_nat(1), lungo_value_nat(2)};
+    lungo_value *list = lungo_value_list(items, 2);
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    XCTAssertEqual(polyglot_scaled_sum(list, &result, &error), LUNGO_OK);
+    uint64_t sum = 0;
+    XCTAssertTrue(lungo_value_get_nat(result, &sum));
+    XCTAssertEqual(sum, 30u);
+    lungo_value_free(result);
+    lungo_value_free(list);
+}
 
 - (void)testFactorialThroughTheCAPI {
     lungo_value *n = lungo_value_nat(20);

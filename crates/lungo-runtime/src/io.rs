@@ -112,8 +112,8 @@ mod crt {
     pub const EWOULDBLOCK: i32 = 140;
 }
 
-/// Platform `errno` constants under uniform names.
-#[cfg(unix)]
+/// Platform `errno` constants under uniform names (WASI's are wasi-libc's).
+#[cfg(any(unix, target_os = "wasi"))]
 mod errno {
     pub use libc::*;
 }
@@ -184,6 +184,7 @@ pub(crate) fn uv_code_of_errno(err: i32) -> i32 {
         e::ETIMEDOUT => uve::UV_ETIMEDOUT,
         e::ETXTBSY => uve::UV_ETXTBSY,
         e::EXDEV => uve::UV_EXDEV,
+        #[cfg(not(target_os = "wasi"))]
         e::ENODATA => uve::UV_ENODATA,
         e::ENOMSG => uve::UV_ENODATA,
         e::ENOEXEC => uve::UV_ENOEXEC,
@@ -196,8 +197,11 @@ pub(crate) fn uv_code_of_errno(err: i32) -> i32 {
         e::ENETRESET => uve::UV_ECONNRESET,
         e::ENOLCK => uve::UV_EAGAIN,
         e::ENOLINK => uve::UV_ECONNRESET,
+        #[cfg(not(target_os = "wasi"))]
         e::ENOSR => uve::UV_ENOBUFS,
+        #[cfg(not(target_os = "wasi"))]
         e::ENOSTR => uve::UV_EINVAL,
+        #[cfg(not(target_os = "wasi"))]
         e::ETIME => uve::UV_ETIMEDOUT,
         _ => -err,
     }
@@ -401,7 +405,7 @@ pub(crate) unsafe fn decode_uv_error(errnum: i32, fname: Option<Obj>) -> Obj {
 /// standard library: the `errno` itself on Unix, the C runtime's translation (`_dosmaperr`) of
 /// the Win32 error code on Windows.
 pub(crate) fn errno_of(e: &std::io::Error) -> i32 {
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "wasi"))]
     {
         match e.raw_os_error() {
             Some(n) => n,
@@ -428,7 +432,7 @@ pub(crate) fn uv_code_of_io_error(e: &std::io::Error) -> i32 {
 
 /// An `IO.Error` for an operating-system error of a C-runtime call, with an optional file
 /// name.
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg(unix)]
 pub(crate) fn io_error_from_std(e: &std::io::Error, fname: Option<&str>) -> Obj {
     unsafe {
         let f = fname.map(lean_mk_string);
@@ -640,7 +644,7 @@ impl Handle {
 }
 
 fn ebadf() -> std::io::Error {
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "wasi"))]
     {
         std::io::Error::from_raw_os_error(libc::EBADF)
     }
@@ -825,6 +829,7 @@ pub(crate) fn wrap_handle(h: Arc<Handle>) -> Obj {
 }
 
 /// Wraps a file opened by the runtime (for example a pipe to a child process) as a Lean handle.
+#[cfg(not(target_os = "wasi"))]
 pub(crate) fn wrap_file(file: File, readable: bool, writable: bool) -> Obj {
     wrap_handle(Handle::new(Device::Owned(file), readable, writable, Buffering::Full, None))
 }
@@ -847,7 +852,7 @@ static STD_HANDLES: OnceLock<[Arc<Handle>; 3]> = OnceLock::new();
 
 fn std_handles() -> &'static [Arc<Handle>; 3] {
     STD_HANDLES.get_or_init(|| {
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "wasi"))]
         let open = |fd: i32| {
             use std::os::fd::FromRawFd;
             // The process's standard descriptors are borrowed for the lifetime of the process.
@@ -859,7 +864,7 @@ fn std_handles() -> &'static [Arc<Handle>; 3] {
             let h = unsafe { windows_sys::Win32::System::Console::GetStdHandle(which) };
             ManuallyDrop::new(unsafe { File::from_raw_handle(h as _) })
         };
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "wasi"))]
         let (fin, fout, ferr) = (open(0), open(1), open(2));
         #[cfg(windows)]
         let (fin, fout, ferr) = {
@@ -885,7 +890,7 @@ fn flush_line_buffered_stdout() {
 }
 
 fn is_tty_file(f: &File) -> bool {
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "wasi"))]
     {
         use std::os::fd::AsRawFd;
         unsafe { libc::isatty(f.as_raw_fd()) == 1 }
@@ -1043,7 +1048,7 @@ fn steady_nanos() -> u64 {
         unsafe { libc::clock_gettime(libc::CLOCK_UPTIME_RAW, &mut ts) };
         ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
     }
-    #[cfg(all(unix, not(target_vendor = "apple")))]
+    #[cfg(all(any(unix, target_os = "wasi"), not(target_vendor = "apple")))]
     {
         let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
         unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
@@ -1087,9 +1092,12 @@ fn format_g(v: f64, prec: usize) -> String {
 // Primitives
 // =============================================================================================
 
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "wasi"))]
 fn os_str_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStrExt;
+    #[cfg(target_os = "wasi")]
+    use std::os::wasi::ffi::OsStrExt;
     s.as_bytes().to_vec()
 }
 
@@ -1100,7 +1108,7 @@ fn os_str_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
 
 /// The system temporary directory as libuv's `uv_os_tmpdir` computes it.
 fn uv_os_tmpdir() -> Result<String, i32> {
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "wasi"))]
     {
         for var in ["TMPDIR", "TMP", "TEMP", "TEMPDIR"] {
             if let Some(v) = std::env::var_os(var)
@@ -1151,8 +1159,8 @@ unsafe fn temp_template() -> Result<String, Obj> {
 }
 
 /// Replaces the trailing six `X` characters with random ones, as libuv's Windows `mkstemp`
-/// and `mkdtemp` do.
-#[cfg(windows)]
+/// and `mkdtemp` do (WASI's C library has neither).
+#[cfg(any(windows, target_os = "wasi"))]
 fn fill_template(template: &str) -> String {
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut bytes = [0u8; 6];
@@ -1189,7 +1197,7 @@ fn mkstemp(template: &str) -> Result<(String, File), i32> {
         use std::os::fd::FromRawFd;
         Ok((path, unsafe { File::from_raw_fd(fd) }))
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "wasi"))]
     {
         const TMP_MAX: usize = 32767;
         for _ in 0..TMP_MAX {
@@ -1216,7 +1224,7 @@ fn mkdtemp(template: &str) -> Result<String, i32> {
         buf.pop();
         Ok(String::from_utf8(buf).expect("mkdtemp keeps the template's UTF-8"))
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "wasi"))]
     {
         const TMP_MAX: usize = 32767;
         for _ in 0..TMP_MAX {
@@ -1285,6 +1293,31 @@ fn stat_of(m: &std::fs::Metadata) -> Stat {
     }
 }
 
+/// `uv_fs_stat`/`uv_fs_lstat` on WASI, through the C library (Rust's `MetadataExt` for WASI is
+/// not stable).
+#[cfg(target_os = "wasi")]
+fn stat_path_wasi(path: &str, follow: bool) -> std::io::Result<Stat> {
+    let c = std::ffi::CString::new(path).map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let r = unsafe { if follow { libc::stat(c.as_ptr(), &mut st) } else { libc::lstat(c.as_ptr(), &mut st) } };
+    if r != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let kind = match st.st_mode & libc::S_IFMT {
+        libc::S_IFDIR => 0,
+        libc::S_IFREG => 1,
+        libc::S_IFLNK => 2,
+        _ => 3,
+    };
+    Ok(Stat {
+        atime: (st.st_atim.tv_sec, st.st_atim.tv_nsec as u32),
+        mtime: (st.st_mtim.tv_sec, st.st_mtim.tv_nsec as u32),
+        size: st.st_size as u64,
+        nlink: st.st_nlink,
+        kind,
+    })
+}
+
 #[cfg(windows)]
 fn stat_path(path: &str) -> std::io::Result<Stat> {
     use std::os::windows::fs::OpenOptionsExt;
@@ -1321,6 +1354,8 @@ unsafe fn metadata_impl(filename: Obj, follow: bool) -> Obj {
         let Some(path) = path_arg(filename) else { return embedded_nul_error(filename) };
         #[cfg(unix)]
         let r = if follow { std::fs::metadata(path) } else { std::fs::symlink_metadata(path) }.map(|m| stat_of(&m));
+        #[cfg(target_os = "wasi")]
+        let r = stat_path_wasi(path, follow);
         #[cfg(windows)]
         let r = {
             let _ = follow;
@@ -1346,7 +1381,7 @@ fn last_error_code(e: &std::io::Error) -> String {
 /// Reports an error of a handle operation that Lean's runtime reports via `decode_io_error` on
 /// Unix and as the numeric Windows error code on Windows.
 unsafe fn lock_error(e: &std::io::Error) -> Obj {
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "wasi"))]
     {
         unsafe { io_error_result(e, None) }
     }
@@ -1371,6 +1406,12 @@ pub mod externs {
             let r = {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+            };
+            // WASI file systems have no permission bits.
+            #[cfg(target_os = "wasi")]
+            let r: std::io::Result<()> = {
+                let _ = (path, mode);
+                Err(std::io::Error::from_raw_os_error(libc::ENOTSUP))
             };
             #[cfg(windows)]
             let r = {
@@ -1631,7 +1672,7 @@ pub mod externs {
             if nbytes == 0 {
                 return lean_io_result_mk_ok(lean_alloc_sarray(1, 0, 0));
             }
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "wasi"))]
             let mut urandom = match File::open("/dev/urandom") {
                 Ok(f) => f,
                 Err(e) => {
@@ -1646,7 +1687,7 @@ pub mod externs {
             }
             let res = lean_alloc_sarray(1, 0, nbytes);
             let out = std::slice::from_raw_parts_mut(lean_sarray_cptr(res), nbytes);
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "wasi"))]
             {
                 let mut n = 0;
                 while n < nbytes {
@@ -1729,7 +1770,7 @@ pub mod externs {
                 lean_dec(filename);
                 return r;
             };
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "wasi"))]
             {
                 match std::fs::canonicalize(path) {
                     Ok(p) => {
@@ -1813,7 +1854,7 @@ pub mod externs {
         /* createDir : @& FilePath → IO Unit */
         fn lean_io_create_dir(p: b_obj) -> obj {
             let Some(path) = path_arg(p) else { return embedded_nul_error(p) };
-            #[cfg_attr(windows, allow(unused_mut))]
+            #[cfg_attr(not(unix), allow(unused_mut))]
             let mut b = std::fs::DirBuilder::new();
             #[cfg(unix)]
             {
@@ -1841,7 +1882,7 @@ pub mod externs {
             let Some(to_path) = path_arg(to) else { return embedded_nul_error(to) };
             match std::fs::rename(from_path, to_path) {
                 Ok(()) => io_ok_unit(),
-                #[cfg(unix)]
+                #[cfg(any(unix, target_os = "wasi"))]
                 Err(e) => {
                     let both = lean_mk_string(&format!("{from_path} and/or {to_path}"));
                     let r = io_error_result(&e, Some(both));
@@ -1936,7 +1977,7 @@ pub mod externs {
                     Err(_) => io_result_mk_user_error("failed to resolve symbolic links when locating application"),
                 }
             }
-            #[cfg(all(unix, not(target_vendor = "apple")))]
+            #[cfg(all(any(unix, target_os = "wasi"), not(target_vendor = "apple")))]
             {
                 match std::fs::read_link(format!("/proc/{}/exe", std::process::id())) {
                     Ok(p) => lean_io_result_mk_ok(lean_mk_string_from_bytes(&os_str_bytes(p.as_os_str()))),
@@ -1968,7 +2009,7 @@ pub mod externs {
 
         /* IO.Process.forceExit : UInt8 → IO α */
         fn lean_io_force_exit(code: u8) -> obj {
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "wasi"))]
             {
                 libc::_exit(code as i32)
             }
@@ -1980,7 +2021,15 @@ pub mod externs {
 
         /* getTID : BaseIO UInt64 */
         fn lean_io_get_tid() -> u64 {
-            crate::process::current_thread_id()
+            #[cfg(not(target_os = "wasi"))]
+            {
+                crate::process::current_thread_id()
+            }
+            // WebAssembly runs the program on its one thread, which has no system identifier.
+            #[cfg(target_os = "wasi")]
+            {
+                0
+            }
         }
     }
 }

@@ -17,6 +17,8 @@ mod cells;
 mod object;
 mod program;
 pub mod value;
+#[cfg(target_os = "wasi")]
+mod wasm;
 
 pub use cells::{InitBits, InitObj, LazyBits, LazyObj};
 

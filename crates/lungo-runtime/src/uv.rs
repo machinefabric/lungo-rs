@@ -5,28 +5,45 @@
 //! Operations that complete asynchronously return `IO.Promise` values resolved from the event
 //! loop with `Except IO.Error _`, exactly as Lean's runtime does; errors are libuv error codes
 //! decoded by `lean_decode_uv_error`.
+//!
+//! On WebAssembly (`wasm32-wasip1`), which has no sockets, signals or event loop, only the error
+//! codes are built: the primitives are unavailable there (see `registry::unavailable_on`).
 
+#[cfg(not(target_os = "wasi"))]
 mod addr;
+#[cfg(not(target_os = "wasi"))]
 mod dns;
 pub(crate) mod errno;
+#[cfg(not(target_os = "wasi"))]
 mod reactor;
+#[cfg(not(target_os = "wasi"))]
 mod signal;
+#[cfg(not(target_os = "wasi"))]
 mod sys;
+#[cfg(not(target_os = "wasi"))]
 mod system;
+#[cfg(not(target_os = "wasi"))]
 mod tcp;
+#[cfg(not(target_os = "wasi"))]
 mod timer;
+#[cfg(not(target_os = "wasi"))]
 mod udp;
 
 pub(crate) use errno::{uv_code_of_os_error, uv_strerror};
 
+#[cfg(not(target_os = "wasi"))]
 use crate::object::*;
+#[cfg(not(target_os = "wasi"))]
 use crate::registry::Unsupported;
+#[cfg(not(target_os = "wasi"))]
 use errno::uv_code_of_io_error;
 
 /// Every `lean_uv_*` symbol is implemented.
+#[cfg(not(target_os = "wasi"))]
 pub(crate) const UNSUPPORTED: &[Unsupported] = &[];
 
 /// The data of external object `o` of class `class`, failing hard on a mismatch.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn external_data<'a, T>(o: Obj, class: &'static ExternalClass, what: &str) -> &'a T {
     unsafe {
         if !std::ptr::eq(lean_get_external_class(o), class) {
@@ -37,6 +54,7 @@ unsafe fn external_data<'a, T>(o: Obj, class: &'static ExternalClass, what: &str
 }
 
 /// A new promise, shared with the event loop thread.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn new_promise() -> Obj {
     unsafe {
         let p = crate::task::new_promise();
@@ -45,11 +63,13 @@ unsafe fn new_promise() -> Obj {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 unsafe fn promise_is_resolved(p: Obj) -> bool {
     unsafe { crate::task::promise_is_resolved(p) }
 }
 
 /// `Except.ok v`.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn except_ok(v: Obj) -> Obj {
     unsafe {
         let r = lean_alloc_ctor(1, 1, 0);
@@ -59,6 +79,7 @@ unsafe fn except_ok(v: Obj) -> Obj {
 }
 
 /// `Except.error e`.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn except_err(e: Obj) -> Obj {
     unsafe {
         let r = lean_alloc_ctor(0, 1, 0);
@@ -67,6 +88,7 @@ unsafe fn except_err(e: Obj) -> Obj {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 unsafe fn some(v: Obj) -> Obj {
     unsafe {
         let r = lean_alloc_ctor(1, 1, 0);
@@ -75,22 +97,26 @@ unsafe fn some(v: Obj) -> Obj {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn none() -> Obj {
     lean_box(0)
 }
 
 /// `lean_decode_uv_error`: the `IO.Error` for libuv error `code`. `fname` is borrowed.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn uv_error(code: i32, fname: Option<Obj>) -> Obj {
     unsafe { crate::io::decode_uv_error(code, fname) }
 }
 
 /// An `IO` error result for libuv error `code`.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn uv_io_error(code: i32) -> Obj {
     unsafe { lean_io_result_mk_error(uv_error(code, None)) }
 }
 
 /// `lean_promise_resolve_with_code`: resolves `promise` (borrowed) with `Except.ok ()` or the
 /// decoded error.
+#[cfg(not(target_os = "wasi"))]
 unsafe fn resolve_with_code(status: i32, promise: Obj) {
     unsafe {
         let v = if status == 0 { except_ok(lean_box(0)) } else { except_err(uv_error(status, None)) };
@@ -98,10 +124,12 @@ unsafe fn resolve_with_code(status: i32, promise: Obj) {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn is_would_block(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::WouldBlock || uv_code_of_io_error(e) == errno::UV_EAGAIN
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub mod externs {
     use super::*;
 
@@ -247,6 +275,7 @@ pub mod externs {
 }
 
 /// The C runtime's `EINVAL`.
+#[cfg(not(target_os = "wasi"))]
 fn einval_errno() -> u32 {
     #[cfg(unix)]
     {
@@ -259,6 +288,7 @@ fn einval_errno() -> u32 {
 }
 
 #[cfg(test)]
+#[cfg(not(target_os = "wasi"))]
 mod tests {
     //! Expected outcomes were observed from Lean 4.34.1 (`lean --run`) running the same
     //! sequence of `Std.Internal.UV` operations over loopback.

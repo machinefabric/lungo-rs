@@ -32,7 +32,8 @@ enum Cli {
     Local {
         #[arg(long)]
         out: PathBuf,
-        /// Components to include (default: all but swift off macOS): runtime, go, python, swift.
+        /// Components to include (default: all but swift off macOS): runtime, wasm, go, python,
+        /// swift, ts.
         #[arg(long = "component")]
         components: Vec<String>,
     },
@@ -45,6 +46,11 @@ enum Cli {
     Go {
         #[arg(long = "runtime", value_parser = target_dir_pair)]
         runtimes: Vec<(String, PathBuf)>,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Assemble the npm package `lungo-ts`.
+    Ts {
         #[arg(long)]
         out: PathBuf,
     },
@@ -86,6 +92,7 @@ fn main() -> ExitCode {
         Cli::Archive { dir, out } => archive(&dir, &out),
         Cli::Go { runtimes, out } => support::go(&runtimes, &out),
         Cli::Python { runtime, out } => support::python(&runtime, &out),
+        Cli::Ts { out } => support::typescript(&out),
         Cli::Manifest { artifacts, base_url, out } => manifest(&artifacts, &base_url, &out),
     };
     match result {
@@ -308,7 +315,7 @@ fn runtime(target: &str, out: &Path) -> Result<()> {
 
 /// A local distribution for this machine.
 fn local(out: &Path, components: &[String]) -> Result<()> {
-    const ALL: &[&str] = &["runtime", "go", "python", "swift"];
+    const ALL: &[&str] = &["runtime", "wasm", "go", "python", "swift", "ts"];
     for c in components {
         if !ALL.contains(&c.as_str()) {
             return Err(format!("unknown component {c} (components: {})", ALL.join(", ")));
@@ -323,6 +330,12 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     let out = io("cannot resolve the output", out.canonicalize())?;
     if wanted("runtime") || wanted("go") || wanted("python") || wanted("swift") {
         runtime(&host, &out.join("runtime"))?;
+    }
+    if wanted("wasm") {
+        runtime("wasm32-wasip1", &out.join("wasm"))?;
+    }
+    if wanted("ts") {
+        support::typescript(&out.join("ts"))?;
     }
     if wanted("go") {
         support::go(&[(host.clone(), out.join("runtime"))], &out.join("go"))?;

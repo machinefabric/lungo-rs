@@ -613,7 +613,13 @@ fn atoi(s: &str) -> i64 {
     if neg { -n } else { n }
 }
 
+/// The number of task workers: `LEAN_NUM_THREADS`, else the hardware concurrency. WebAssembly
+/// has no threads: tasks run eagerly on the thread that spawns them, as Lean's runtime runs them
+/// without a task manager.
 fn lean_num_threads() -> u32 {
+    if cfg!(target_os = "wasi") {
+        return 0;
+    }
     match std::env::var("LEAN_NUM_THREADS") {
         Ok(v) => atoi(&v) as u32,
         Err(_) => hardware_concurrency(),
