@@ -270,11 +270,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # `cargo install lungo-cli` builds a release that knows its runtime.
+      - uses: actions/download-artifact@v4
+        with:
+          name: manifest
+          path: crates/lungo-cli
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          if [ "$PUBLISH" = true ]; then cargo publish --workspace; else cargo publish --workspace --dry-run; fi
+          # The manifest is the one file the checkout lacks (it is ignored by Git).
+          if [ "$PUBLISH" = true ]; then cargo publish --workspace --allow-dirty; else cargo publish --workspace --allow-dirty --dry-run; fi
 
   pypi:
     name: PyPI lungo-py

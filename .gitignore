@@ -7,3 +7,5 @@ target/
 .scrap/
 .atest/
 atest/
+# Added to the lungo-cli crate by the release workflow only.
+crates/lungo-cli/runtime-manifest.json

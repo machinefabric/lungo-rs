@@ -20,10 +20,13 @@ therefore how much one has to trust to believe that it does.
   Anyone running Lean code natively trusts the same components.
 - **The worker's adapter.** It reads the compiler's output and metadata and encodes them; it
   transforms no code.
-- **The Rust backend.** The translation of each Bridge IR instruction, the facade's
-  conversions, and the runtime's primitives.
+- **The backends.** The translation of each Bridge IR instruction into Rust and into C, the
+  Rust facade's conversions, the language bindings' encoding of values, and the runtime's
+  primitives.
+- **The distribution** of the prebuilt runtime, for languages other than Rust (see
+  [the runtime distribution](distribution.md)).
 
-The first is Lean's responsibility. The other two are lungo's, and each is checked from a
+The first is Lean's responsibility. The others are lungo's, and each is checked from a
 different side.
 
 ## How the backend is checked
@@ -33,9 +36,9 @@ Bridge IR on its own terms: variables and join points in scope, calls with the r
 and representation of arguments, literals in range, every called declaration present. A
 defect in the worker surfaces as a verification error instead of wrong Rust.
 
-**Comparison with Lean's own backend.** The conformance programs are compiled twice, as Rust
-and by Lean's native backend, and their output, error output and exit codes must agree byte
-for byte. The corpus covers every instruction the toolchain emits. Separately, a library of
+**Comparison with Lean's own backend.** The conformance programs are compiled three times,
+as Rust, as C on the runtime's C library, and by Lean's native backend, and their output,
+error output and exit codes must agree byte for byte. The corpus covers every instruction the toolchain emits. Separately, a library of
 exported functions runs on both backends in one process, compared call by call over generated
 inputs: large numbers, Unicode text, floats including NaN and negative zero, trees, closures in
 both directions, IO errors.
@@ -43,6 +46,14 @@ both directions, IO errors.
 **Ties to the toolchain.** Every extern symbol of the standard library is accounted for with
 the representation Lean declares, and the complete executable standard library, about fifty
 thousand compiled declarations, passes verification and generates Rust that type-checks.
+
+**One program in every language.** A program using every kind of value that crosses the
+boundary (big numbers, structures, recursive and polymorphic types, options, arrays, pairs,
+`Except`, closures in both directions, opaque values, `IO` and `EIO` errors, host externs,
+`main`, concurrent calls) is generated for C, Go, Python, Swift, Objective-C and TypeScript,
+and each language's tests make the same assertions on it. Each support library, and the
+runtime itself, is also checked against shared test vectors of the
+[wire format](../reference/wire-format.md), including encodings every codec must reject.
 
 None of this is a proof of the backend. It is the level of assurance of a compiler that is
 tested against a reference implementation, and the reference is Lean's own.

@@ -21,6 +21,21 @@ Lean's C backend. And the facade's conversions read objects the same way whether
 the Rust runtime or from Lean's native runtime in `LeanOracle` mode, which is what makes a
 call-by-call comparison of the two meaningful.
 
+## One runtime for every language
+
+The same runtime serves programs generated in C, for every language but Rust. Built with its
+C ABI, it is `liblungo`, and `lungo.h` declares it the way `lean.h` declares Lean's runtime:
+the object layout and the fast paths of boxing and reference counting are inline functions
+of the header, identical to the Rust definitions they mirror, and every primitive is an
+exported function with the signature the registry records. Generated C compiled against it
+behaves as the Rust compiler layer does, which the conformance programs check.
+
+The runtime also builds for WebAssembly (`wasm32-wasip1`). There it has one thread: Lean's
+tasks run when they are spawned, as Lean's runtime runs them without a task manager, and the
+primitives that need threads of the operating system, child processes, sockets, signals or
+timers are left out, so a program using them is rejected when it is generated rather than
+failing when it runs.
+
 ## Primitives are declared, not assumed
 
 Lean code reaches native functionality through `@[extern]` symbols. Every primitive the

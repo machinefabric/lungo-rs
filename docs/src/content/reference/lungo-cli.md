@@ -22,8 +22,8 @@ curl -sSfL https://github.com/jowharshamshiri/lungo/releases/latest/download/ins
 irm https://github.com/jowharshamshiri/lungo/releases/latest/download/install.ps1 | iex
 ```
 
-or build it from source with `cargo install lungo-cli` (a development build: see
-[the runtime](#the-runtime)).
+or with `cargo install lungo-cli`, which builds the same release from crates.io. Built from
+the repository, `lungo` is a development build (see [the runtime](#the-runtime)).
 
 ## Configuration
 
