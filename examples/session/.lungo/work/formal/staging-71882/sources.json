@@ -1,0 +1,1358 @@
+[
+  {
+    "lean_name": "Array.getInternalBorrowed",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3272,
+      1
+    ],
+    "end": [
+      3279,
+      22
+    ]
+  },
+  {
+    "lean_name": "Array.mk",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3210,
+      3
+    ],
+    "end": [
+      3210,
+      5
+    ]
+  },
+  {
+    "lean_name": "Array.size",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3259,
+      1
+    ],
+    "end": [
+      3270,
+      17
+    ]
+  },
+  {
+    "lean_name": "Bool.repr",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      76,
+      1
+    ],
+    "end": [
+      78,
+      24
+    ]
+  },
+  {
+    "lean_name": "ByteArray.get!",
+    "file": "<lean>/Init/Data/ByteArray/Basic.lean",
+    "start": [
+      65,
+      1
+    ],
+    "end": [
+      70,
+      22
+    ]
+  },
+  {
+    "lean_name": "ByteArray.size",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3472,
+      1
+    ],
+    "end": [
+      3480,
+      20
+    ]
+  },
+  {
+    "lean_name": "ByteArray.toUInt64LE!",
+    "file": "<lean>/Init/Data/ByteArray/Extra.lean",
+    "start": [
+      15,
+      1
+    ],
+    "end": [
+      29,
+      23
+    ]
+  },
+  {
+    "lean_name": "Formal.Op.close.elim",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      5,
+      3
+    ],
+    "end": [
+      5,
+      10
+    ]
+  },
+  {
+    "lean_name": "Formal.Op.ctorElim",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      3,
+      1
+    ],
+    "end": [
+      7,
+      29
+    ]
+  },
+  {
+    "lean_name": "Formal.Op.ctorIdx",
+    "file": "lean/Formal/Session.lean",
+    "start": null,
+    "end": null
+  },
+  {
+    "lean_name": "Formal.Op.ofNat",
+    "file": "lean/Formal/Session.lean",
+    "start": null,
+    "end": null
+  },
+  {
+    "lean_name": "Formal.Op.open.elim",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      4,
+      3
+    ],
+    "end": [
+      4,
+      11
+    ]
+  },
+  {
+    "lean_name": "Formal.Op.tick.elim",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      6,
+      3
+    ],
+    "end": [
+      6,
+      9
+    ]
+  },
+  {
+    "lean_name": "Formal.apply",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      14,
+      1
+    ],
+    "end": [
+      26,
+      43
+    ]
+  },
+  {
+    "lean_name": "Formal.instDecidableEqOp",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      7,
+      18
+    ],
+    "end": [
+      7,
+      29
+    ]
+  },
+  {
+    "lean_name": "Formal.instDecidableEqSess",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      12,
+      18
+    ],
+    "end": [
+      12,
+      29
+    ]
+  },
+  {
+    "lean_name": "Formal.instDecidableEqSess.decEq",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      12,
+      18
+    ],
+    "end": [
+      12,
+      29
+    ]
+  },
+  {
+    "lean_name": "Formal.instReprOp",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      7,
+      12
+    ],
+    "end": [
+      7,
+      16
+    ]
+  },
+  {
+    "lean_name": "Formal.instReprOp.repr",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      7,
+      12
+    ],
+    "end": [
+      7,
+      16
+    ]
+  },
+  {
+    "lean_name": "Formal.instReprSess",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      12,
+      12
+    ],
+    "end": [
+      12,
+      16
+    ]
+  },
+  {
+    "lean_name": "Formal.instReprSess.repr",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      12,
+      12
+    ],
+    "end": [
+      12,
+      16
+    ]
+  },
+  {
+    "lean_name": "Formal.run",
+    "file": "lean/Formal/Session.lean",
+    "start": [
+      38,
+      1
+    ],
+    "end": [
+      41,
+      48
+    ]
+  },
+  {
+    "lean_name": "IO.Error.fopenErrorToString",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      256,
+      1
+    ],
+    "end": [
+      258,
+      91
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkAlreadyExists",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      202,
+      1
+    ],
+    "end": [
+      204,
+      21
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkAlreadyExistsFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      158,
+      1
+    ],
+    "end": [
+      160,
+      23
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkEofError",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      162,
+      1
+    ],
+    "end": [
+      164,
+      16
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkHardwareFault",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      234,
+      1
+    ],
+    "end": [
+      236,
+      16
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkIllegalOperation",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      242,
+      1
+    ],
+    "end": [
+      244,
+      19
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkInappropriateType",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      206,
+      1
+    ],
+    "end": [
+      208,
+      25
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkInappropriateTypeFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      166,
+      1
+    ],
+    "end": [
+      168,
+      27
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkInterrupted",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      170,
+      1
+    ],
+    "end": [
+      172,
+      14
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkInvalidArgument",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      222,
+      1
+    ],
+    "end": [
+      224,
+      23
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkInvalidArgumentFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      174,
+      1
+    ],
+    "end": [
+      176,
+      25
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkNoFileOrDirectory",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      178,
+      1
+    ],
+    "end": [
+      180,
+      20
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkNoSuchThing",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      210,
+      1
+    ],
+    "end": [
+      212,
+      19
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkNoSuchThingFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      182,
+      1
+    ],
+    "end": [
+      184,
+      21
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkOtherError",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      226,
+      1
+    ],
+    "end": [
+      228,
+      13
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkPermissionDenied",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      230,
+      1
+    ],
+    "end": [
+      232,
+      24
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkPermissionDeniedFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      186,
+      1
+    ],
+    "end": [
+      188,
+      26
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkProtocolError",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      246,
+      1
+    ],
+    "end": [
+      248,
+      16
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkResourceBusy",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      218,
+      1
+    ],
+    "end": [
+      220,
+      15
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkResourceExhausted",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      198,
+      1
+    ],
+    "end": [
+      200,
+      25
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkResourceExhaustedFile",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      190,
+      1
+    ],
+    "end": [
+      192,
+      27
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkResourceVanished",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      214,
+      1
+    ],
+    "end": [
+      216,
+      19
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkTimeExpired",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      250,
+      1
+    ],
+    "end": [
+      252,
+      14
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkUnsatisfiedConstraints",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      238,
+      1
+    ],
+    "end": [
+      240,
+      25
+    ]
+  },
+  {
+    "lean_name": "IO.Error.mkUnsupportedOperation",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      194,
+      1
+    ],
+    "end": [
+      196,
+      23
+    ]
+  },
+  {
+    "lean_name": "IO.Error.otherErrorToString",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      260,
+      1
+    ],
+    "end": [
+      262,
+      75
+    ]
+  },
+  {
+    "lean_name": "IO.Error.toString",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      264,
+      1
+    ],
+    "end": [
+      297,
+      52
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.flush",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      822,
+      1
+    ],
+    "end": [
+      826,
+      77
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.getLine",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      856,
+      1
+    ],
+    "end": [
+      862,
+      84
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.isTty",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      817,
+      1
+    ],
+    "end": [
+      820,
+      82
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.putStr",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      863,
+      1
+    ],
+    "end": [
+      869,
+      96
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.read",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      841,
+      1
+    ],
+    "end": [
+      847,
+      96
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Handle.write",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      848,
+      1
+    ],
+    "end": [
+      854,
+      101
+    ]
+  },
+  {
+    "lean_name": "IO.FS.Stream.ofHandle",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      1678,
+      1
+    ],
+    "end": [
+      1689,
+      28
+    ]
+  },
+  {
+    "lean_name": "IO.eprint",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      1279,
+      1
+    ],
+    "end": [
+      1285,
+      27
+    ]
+  },
+  {
+    "lean_name": "IO.eprintln",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      1287,
+      1
+    ],
+    "end": [
+      1292,
+      36
+    ]
+  },
+  {
+    "lean_name": "IO.getRandomBytes",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      423,
+      1
+    ],
+    "end": [
+      428,
+      91
+    ]
+  },
+  {
+    "lean_name": "IO.getStderr",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      749,
+      1
+    ],
+    "end": [
+      754,
+      64
+    ]
+  },
+  {
+    "lean_name": "IO.stdGenRef",
+    "file": "<lean>/Init/Data/Random.lean",
+    "start": [
+      124,
+      1
+    ],
+    "end": [
+      126,
+      27
+    ]
+  },
+  {
+    "lean_name": "IO.userError",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      145,
+      1
+    ],
+    "end": [
+      152,
+      23
+    ]
+  },
+  {
+    "lean_name": "Int.decLt",
+    "file": "<lean>/Init/Data/Int/Basic.lean",
+    "start": [
+      303,
+      1
+    ],
+    "end": [
+      314,
+      14
+    ]
+  },
+  {
+    "lean_name": "Int.natAbs",
+    "file": "<lean>/Init/Data/Int/Basic.lean",
+    "start": [
+      317,
+      1
+    ],
+    "end": [
+      332,
+      22
+    ]
+  },
+  {
+    "lean_name": "Int.ofNat",
+    "file": "<lean>/Init/Data/Int/Basic.lean",
+    "start": [
+      47,
+      3
+    ],
+    "end": [
+      52,
+      24
+    ]
+  },
+  {
+    "lean_name": "Int.repr",
+    "file": "<lean>/Init/Data/Int/Repr.lean",
+    "start": [
+      14,
+      1
+    ],
+    "end": [
+      19,
+      46
+    ]
+  },
+  {
+    "lean_name": "List.mapTR.loop",
+    "file": "<lean>/Init/Data/List/Basic.lean",
+    "start": [
+      2440,
+      17
+    ],
+    "end": [
+      2442,
+      37
+    ]
+  },
+  {
+    "lean_name": "List.range",
+    "file": "<lean>/Init/Data/List/Basic.lean",
+    "start": [
+      2092,
+      1
+    ],
+    "end": [
+      2107,
+      32
+    ]
+  },
+  {
+    "lean_name": "List.range.loop",
+    "file": "<lean>/Init/Data/List/Basic.lean",
+    "start": [
+      2105,
+      3
+    ],
+    "end": [
+      2107,
+      32
+    ]
+  },
+  {
+    "lean_name": "List.reverse",
+    "file": "<lean>/Init/Data/List/Basic.lean",
+    "start": [
+      562,
+      1
+    ],
+    "end": [
+      576,
+      19
+    ]
+  },
+  {
+    "lean_name": "List.reverseAux",
+    "file": "<lean>/Init/Data/List/Basic.lean",
+    "start": [
+      554,
+      1
+    ],
+    "end": [
+      557,
+      35
+    ]
+  },
+  {
+    "lean_name": "Nat.add",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      1764,
+      1
+    ],
+    "end": [
+      1775,
+      44
+    ]
+  },
+  {
+    "lean_name": "Nat.ble",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      1881,
+      1
+    ],
+    "end": [
+      1896,
+      30
+    ]
+  },
+  {
+    "lean_name": "Nat.decEq",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      1860,
+      1
+    ],
+    "end": [
+      1876,
+      44
+    ]
+  },
+  {
+    "lean_name": "Nat.decLe",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2079,
+      1
+    ],
+    "end": [
+      2091,
+      128
+    ]
+  },
+  {
+    "lean_name": "Nat.decLt",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2093,
+      1
+    ],
+    "end": [
+      2105,
+      19
+    ]
+  },
+  {
+    "lean_name": "Nat.digitChar",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      169,
+      1
+    ],
+    "end": [
+      197,
+      6
+    ]
+  },
+  {
+    "lean_name": "Nat.div",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2170,
+      1
+    ],
+    "end": [
+      2197,
+      17
+    ]
+  },
+  {
+    "lean_name": "Nat.mod",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2248,
+      1
+    ],
+    "end": [
+      2285,
+      57
+    ]
+  },
+  {
+    "lean_name": "Nat.pow",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      1802,
+      1
+    ],
+    "end": [
+      1811,
+      38
+    ]
+  },
+  {
+    "lean_name": "Nat.reprFast",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      238,
+      1
+    ],
+    "end": [
+      241,
+      37
+    ]
+  },
+  {
+    "lean_name": "Nat.sub",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2110,
+      1
+    ],
+    "end": [
+      2129,
+      36
+    ]
+  },
+  {
+    "lean_name": "Nat.toDigits",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      207,
+      1
+    ],
+    "end": [
+      218,
+      31
+    ]
+  },
+  {
+    "lean_name": "Nat.toDigitsCore",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      199,
+      1
+    ],
+    "end": [
+      205,
+      43
+    ]
+  },
+  {
+    "lean_name": "Repr.addAppParen",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      83,
+      1
+    ],
+    "end": [
+      94,
+      6
+    ]
+  },
+  {
+    "lean_name": "ST.Prim.mkRef",
+    "file": "<lean>/Init/System/ST.lean",
+    "start": [
+      186,
+      1
+    ],
+    "end": [
+      187,
+      123
+    ]
+  },
+  {
+    "lean_name": "String.Internal.append",
+    "file": "<lean>/Init/Data/String/Bootstrap.lean",
+    "start": [
+      77,
+      1
+    ],
+    "end": [
+      78,
+      46
+    ]
+  },
+  {
+    "lean_name": "String.Internal.length",
+    "file": "<lean>/Init/Data/String/Bootstrap.lean",
+    "start": [
+      70,
+      1
+    ],
+    "end": [
+      71,
+      34
+    ]
+  },
+  {
+    "lean_name": "String.Pos.Raw.get",
+    "file": "<lean>/Init/Data/String/Basic.lean",
+    "start": [
+      1877,
+      1
+    ],
+    "end": [
+      1894,
+      26
+    ]
+  },
+  {
+    "lean_name": "String.Pos.Raw.set",
+    "file": "<lean>/Init/Data/String/Modify.lean",
+    "start": [
+      143,
+      1
+    ],
+    "end": [
+      162,
+      58
+    ]
+  },
+  {
+    "lean_name": "String.append",
+    "file": "<lean>/Init/Data/String/Defs.lean",
+    "start": [
+      83,
+      1
+    ],
+    "end": [
+      96,
+      52
+    ]
+  },
+  {
+    "lean_name": "String.ofList",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3551,
+      1
+    ],
+    "end": [
+      3561,
+      42
+    ]
+  },
+  {
+    "lean_name": "String.push",
+    "file": "<lean>/Init/Data/String/Bootstrap.lean",
+    "start": [
+      23,
+      1
+    ],
+    "end": [
+      39,
+      80
+    ]
+  },
+  {
+    "lean_name": "System.Platform.getNumBits",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2297,
+      1
+    ],
+    "end": [
+      2306,
+      28
+    ]
+  },
+  {
+    "lean_name": "System.Platform.numBits",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2308,
+      1
+    ],
+    "end": [
+      2312,
+      22
+    ]
+  },
+  {
+    "lean_name": "UInt32.add",
+    "file": "<lean>/Init/Data/UInt/BasicAux.lean",
+    "start": [
+      225,
+      1
+    ],
+    "end": [
+      232,
+      78
+    ]
+  },
+  {
+    "lean_name": "UInt32.decLe",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2693,
+      1
+    ],
+    "end": [
+      2707,
+      60
+    ]
+  },
+  {
+    "lean_name": "UInt32.toNat",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2641,
+      1
+    ],
+    "end": [
+      2647,
+      56
+    ]
+  },
+  {
+    "lean_name": "UInt64.lor",
+    "file": "<lean>/Init/Data/UInt/Basic.lean",
+    "start": [
+      647,
+      1
+    ],
+    "end": [
+      656,
+      80
+    ]
+  },
+  {
+    "lean_name": "UInt64.shiftLeft",
+    "file": "<lean>/Init/Data/UInt/Basic.lean",
+    "start": [
+      667,
+      1
+    ],
+    "end": [
+      673,
+      102
+    ]
+  },
+  {
+    "lean_name": "UInt64.toNat",
+    "file": "<lean>/Init/Data/UInt/BasicAux.lean",
+    "start": [
+      289,
+      1
+    ],
+    "end": [
+      295,
+      56
+    ]
+  },
+  {
+    "lean_name": "UInt8.toUInt64",
+    "file": "<lean>/Init/Data/UInt/BasicAux.lean",
+    "start": [
+      317,
+      1
+    ],
+    "end": [
+      323,
+      97
+    ]
+  },
+  {
+    "lean_name": "USize.ofNat",
+    "file": "<lean>/Init/Data/UInt/BasicAux.lean",
+    "start": [
+      344,
+      1
+    ],
+    "end": [
+      351,
+      59
+    ]
+  },
+  {
+    "lean_name": "USize.ofNatLT",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      2807,
+      1
+    ],
+    "end": [
+      2815,
+      33
+    ]
+  },
+  {
+    "lean_name": "USize.repr",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      220,
+      1
+    ],
+    "end": [
+      232,
+      38
+    ]
+  },
+  {
+    "lean_name": "_private.Init.Data.Random.0.initFn._@.Init.Data.Random.2456098205._hygCtx._hyg.2",
+    "file": "<lean>/Init/Data/Random.lean",
+    "start": [
+      124,
+      1
+    ],
+    "end": [
+      126,
+      27
+    ]
+  },
+  {
+    "lean_name": "_private.Init.Data.Repr.0.Nat.reprArray",
+    "file": "<lean>/Init/Data/Repr.lean",
+    "start": [
+      234,
+      1
+    ],
+    "end": [
+      236,
+      53
+    ]
+  },
+  {
+    "lean_name": "_private.Init.System.IO.0.IO.eprintlnAux",
+    "file": "<lean>/Init/System/IO.lean",
+    "start": [
+      1298,
+      1
+    ],
+    "end": [
+      1300,
+      13
+    ]
+  },
+  {
+    "lean_name": "_private.Init.System.IOError.0.IO.Error.downCaseFirst",
+    "file": "<lean>/Init/System/IOError.lean",
+    "start": [
+      254,
+      1
+    ],
+    "end": [
+      254,
+      66
+    ]
+  },
+  {
+    "lean_name": "mkPanicMessage",
+    "file": "<lean>/Init/Util.lean",
+    "start": [
+      44,
+      1
+    ],
+    "end": [
+      57,
+      8
+    ]
+  },
+  {
+    "lean_name": "mkPanicMessageWithDecl",
+    "file": "<lean>/Init/Util.lean",
+    "start": [
+      62,
+      1
+    ],
+    "end": [
+      79,
+      8
+    ]
+  },
+  {
+    "lean_name": "mkStdGen",
+    "file": "<lean>/Init/Data/Random.lean",
+    "start": [
+      40,
+      1
+    ],
+    "end": [
+      45,
+      19
+    ]
+  },
+  {
+    "lean_name": "panic",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3710,
+      1
+    ],
+    "end": [
+      3723,
+      16
+    ]
+  },
+  {
+    "lean_name": "panicCore",
+    "file": "<lean>/Init/Prelude.lean",
+    "start": [
+      3696,
+      1
+    ],
+    "end": [
+      3708,
+      73
+    ]
+  }
+]

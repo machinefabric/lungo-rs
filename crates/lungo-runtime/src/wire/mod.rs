@@ -992,7 +992,9 @@ host_trampolines! {
 }
 
 /// A Lean closure calling host function `callback` of type `params → result`.
-fn host_closure(table: &'static TypeTable, callback: u64, params: &[Type], result: &Type) -> Obj {
+/// A host function in the arguments of a call is retained; one in a result comes with the
+/// reference the host gives up.
+fn host_closure(table: &'static TypeTable, callback: u64, params: &[Type], result: &Type, handles: Handles) -> Obj {
     let fun: *const () = match params.len() {
         1 => host1 as *const (),
         2 => host2 as *const (),
@@ -1011,7 +1013,9 @@ fn host_closure(table: &'static TypeTable, callback: u64, params: &[Type], resul
         15 => host15 as *const (),
         n => lean_internal_panic(&format!("a host function with {n} parameters")),
     };
-    unsafe { (host().retain)(callback) };
+    if handles == Handles::Borrow {
+        unsafe { (host().retain)(callback) };
+    }
     let ctx = Box::new(HostClosure { callback, params: params.to_vec(), result: result.clone(), table });
     unsafe {
         let ext = lean_alloc_external(&HOST_CLOSURE_CLASS, Box::into_raw(ctx) as *mut ());
@@ -1026,7 +1030,9 @@ fn host_closure(table: &'static TypeTable, callback: u64, params: &[Type], resul
 // ---------------------------------------------------------------------------------------------
 
 /// How decoding treats the handles in wire data: the arguments of a call lend theirs (the
-/// sender keeps them), the result of a call transfers its handles to the receiver.
+/// sender keeps them), the result of a call transfers its handles to the receiver. Host
+/// functions likewise: one in the arguments is retained, one in a result comes with a
+/// reference the host gives up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Handles {
     Borrow,
@@ -1171,7 +1177,7 @@ pub fn decode(table: &'static TypeTable, ty: &Type, r: &mut Reader, handles: Han
             },
             Type::Function { params, result } => match r.u8()? {
                 function::LEAN => handles.object(r.u64()?)?,
-                function::HOST => host_closure(table, r.u64()?, params, result),
+                function::HOST => host_closure(table, r.u64()?, params, result, handles),
                 b => return err(format!("invalid function kind {b}")),
             },
             Type::Opaque => handles.object(r.u64()?)?,

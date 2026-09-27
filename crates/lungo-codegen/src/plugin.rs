@@ -98,7 +98,7 @@ pub trait Generator: Sync {
 
 /// The built-in generators.
 pub fn builtins() -> &'static [&'static dyn Generator] {
-    &[&crate::c::api::CGenerator]
+    &[&crate::c::api::CGenerator, &crate::go::GoGenerator, &crate::python::PythonGenerator, &crate::swift::SwiftGenerator]
 }
 
 /// The built-in generator of `language`.

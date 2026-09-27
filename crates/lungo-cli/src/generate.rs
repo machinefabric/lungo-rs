@@ -76,6 +76,12 @@ struct KeyConfig<'a> {
     wasi_sdk: Option<&'a str>,
 }
 
+enum Generator {
+    Builtin(&'static dyn lungo_build::codegen::plugin::Generator),
+    /// A plugin program, identified by its digest in build keys.
+    Plugin { program: PathBuf, digest: String },
+}
+
 /// Runs the generation; one report line per output.
 pub fn run(s: &Settings) -> Result<Vec<String>> {
     let analyses = Analyses { lean: s.lean, host: OnceCell::new(), wasm: OnceCell::new() };
@@ -96,18 +102,26 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
     if s.outputs.is_empty() {
         return Ok(report);
     }
-    let runtime = runtime::select(s.runtime_dir.as_deref())?;
-    let ctx = s.lean.context(s.project, s.env)?;
-    let wasm = wasm_env(s.env);
+    // Every generator is resolved before anything is generated.
+    let mut generators = Vec::new();
     for o in &s.outputs {
-        let env = if o.language == "ts" { &wasm } else { s.env };
-        let (generator, identity) = match builtin(&o.language) {
-            Some(g) => (Some(g), format!("builtin {}", lungo_build::codegen::GENERATOR_VERSION)),
+        generators.push(match builtin(&o.language) {
+            Some(g) => Generator::Builtin(g),
             None => {
                 let program = crate::plugin::find(&o.language)?;
                 let digest = runtime::file_sha256(&program)?;
-                (None, format!("plugin {} {digest}", program.display()))
+                Generator::Plugin { program, digest }
             }
+        });
+    }
+    let runtime = runtime::select(s.runtime_dir.as_deref())?;
+    let ctx = s.lean.context(s.project, s.env)?;
+    let wasm = wasm_env(s.env);
+    for (o, generator) in s.outputs.iter().zip(&generators) {
+        let env = if o.language == "ts" { &wasm } else { s.env };
+        let identity = match generator {
+            Generator::Builtin(_) => format!("builtin {}", lungo_build::codegen::GENERATOR_VERSION),
+            Generator::Plugin { program, digest } => format!("plugin {} {digest}", program.display()),
         };
         let sdk = if o.language == "ts" { Some(crate::wasm::wasi_sdk(s.wasi_sdk.as_deref())?) } else { None };
         let sdk_text = sdk.as_ref().map(|p| p.to_string_lossy().into_owned());
@@ -155,8 +169,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             options: o.options.clone(),
         };
         let files = match generator {
-            Some(g) => g.generate(&request).map_err(|errors| codegen_error(analysis, errors))?,
-            None => crate::plugin::run(&crate::plugin::find(&o.language)?, &request)?,
+            Generator::Builtin(g) => g.generate(&request).map_err(|errors| codegen_error(analysis, errors))?,
+            Generator::Plugin { program, .. } => crate::plugin::run(program, &request)?,
         };
         let work = dir.parent().expect("an absolute path has a parent").join(format!(
             ".lungo-work-{}",

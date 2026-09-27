@@ -298,7 +298,11 @@ fn generate_settings<'a>(
     flags: LanguageFlags,
     args: GenerateArgs,
 ) -> Result<Settings<'a>> {
+    // Paths of the configuration are relative to its file, paths of the command line to the
+    // current directory.
     let resolve = |p: &Path| if p.is_absolute() { p.to_path_buf() } else { base.join(p) };
+    let cwd = std::env::current_dir().map_err(|e| Error::io("cannot determine the current directory", e))?;
+    let resolve_arg = |p: &Path| cwd.join(p);
     let mut rust_out = None;
     let mut outputs: Vec<Output> = Vec::new();
     let mut cli_options: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
@@ -330,7 +334,7 @@ fn generate_settings<'a>(
     } else {
         for (language, dir) in flags.outs {
             if language == "rust" {
-                if rust_out.replace(resolve(&dir)).is_some() {
+                if rust_out.replace(resolve_arg(&dir)).is_some() {
                     return Err(Error::Configuration("--rust_out is given twice".into()));
                 }
                 continue;
@@ -338,7 +342,7 @@ fn generate_settings<'a>(
             if outputs.iter().any(|o| o.language == language) {
                 return Err(Error::Configuration(format!("--{language}_out is given twice")));
             }
-            outputs.push(Output { dir: resolve(&dir), options: options(&language), language });
+            outputs.push(Output { dir: resolve_arg(&dir), options: options(&language), language });
         }
     }
     for language in cli_options.keys() {

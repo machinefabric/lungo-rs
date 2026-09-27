@@ -11,6 +11,12 @@ use crate::registry::{self, Ty};
 pub const HEADER: &str = include_str!("../include/lungo.h");
 
 /// The markers delimiting the generated section of [`HEADER`].
+/// The oldest macOS the runtime and generated Swift packages support (`MACOSX_DEPLOYMENT_TARGET`).
+pub const MACOS_DEPLOYMENT_TARGET: &str = "12.0";
+
+/// The oldest iOS the runtime and generated Swift packages support (`IPHONEOS_DEPLOYMENT_TARGET`).
+pub const IOS_DEPLOYMENT_TARGET: &str = "15.0";
+
 /// The runtime functions a WebAssembly module of a program exports besides the program's
 /// boundary: the interface the TypeScript support library (`lungo-ts`) uses to pass bytes,
 /// install itself as the host, and manage handles.

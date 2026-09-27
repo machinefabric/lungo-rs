@@ -1,0 +1,29 @@
+# The lungo runtime @VERSION@ for @TARGET@: the library lungo's generated programs link against.
+#
+#   find_package(lungo @VERSION@ EXACT CONFIG REQUIRED)
+#   target_link_libraries(app PRIVATE lungo::runtime)          # static
+#   target_link_libraries(app PRIVATE lungo::runtime_shared)   # shared
+#
+# A process uses one lungo runtime: link every generated program of it against the same one.
+
+get_filename_component(_lungo_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+
+if(NOT TARGET lungo::runtime)
+  add_library(lungo::runtime STATIC IMPORTED)
+  set_target_properties(lungo::runtime PROPERTIES
+    IMPORTED_LOCATION "${_lungo_prefix}/lib/@STATIC_LIBRARY@"
+    INTERFACE_INCLUDE_DIRECTORIES "${_lungo_prefix}/include"
+    INTERFACE_LINK_LIBRARIES "@NATIVE_LIBRARIES@")
+endif()
+
+if(NOT TARGET lungo::runtime_shared AND EXISTS "${_lungo_prefix}/@SHARED_LIBRARY@")
+  add_library(lungo::runtime_shared SHARED IMPORTED)
+  set_target_properties(lungo::runtime_shared PROPERTIES
+    IMPORTED_LOCATION "${_lungo_prefix}/@SHARED_LIBRARY@"
+    INTERFACE_INCLUDE_DIRECTORIES "${_lungo_prefix}/include")
+  if(NOT "@IMPORT_LIBRARY@" STREQUAL "")
+    set_target_properties(lungo::runtime_shared PROPERTIES IMPORTED_IMPLIB "${_lungo_prefix}/lib/@IMPORT_LIBRARY@")
+  endif()
+endif()
+
+unset(_lungo_prefix)

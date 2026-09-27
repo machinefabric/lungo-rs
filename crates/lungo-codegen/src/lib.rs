@@ -7,8 +7,11 @@
 
 pub mod c;
 pub mod core;
+pub mod go;
 pub mod plugin;
+pub mod python;
 pub mod rust;
+pub mod swift;
 
 pub use crate::core::codes::ErrorCode;
 pub use crate::core::externs::{Resolution, resolution_key};

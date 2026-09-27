@@ -11,6 +11,7 @@ members = [
     "crates/lungo-driver",
     "crates/lungo-protocol",
     "crates/lungo-runtime",
+    "tools/lungo-dist",
     "examples/session",
     "compiler-tests/runner",
     "compiler-tests/facade-runner",

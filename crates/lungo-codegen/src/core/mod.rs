@@ -4,6 +4,7 @@ pub mod codes;
 pub mod exports;
 pub mod externs;
 pub mod interface;
+pub mod model;
 pub mod names;
 pub mod naming;
 pub mod writer;

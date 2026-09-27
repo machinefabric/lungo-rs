@@ -1,0 +1,206 @@
+//! End-to-end tests of every language binding: the polyglot fixture
+//! (`compiler-tests/polyglot`) is generated for each language with a local distribution built
+//! from this repository, the generated package is built with the language's own toolchain, and
+//! the language's test program makes the same assertions on it.
+//!
+//! Each test requires its language's toolchain (CMake and a C compiler, Go, Python, Swift,
+//! Node.js) and fails when it is missing.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
+
+fn repo() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+}
+
+/// Where the tests work: the fixture's distribution, generated packages and builds.
+fn root() -> PathBuf {
+    repo().join("target").join("polyglot-e2e")
+}
+
+#[track_caller]
+fn run(cmd: &mut Command) -> String {
+    let shown = format!("{cmd:?}");
+    let out = cmd.output().unwrap_or_else(|e| panic!("cannot run {shown}: {e} (is the toolchain installed?)"));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "{shown} failed ({}):\n{stdout}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stdout
+}
+
+/// The local distribution with `components`, built once per component set with its own Cargo
+/// target directory (the outer `cargo test` holds the repository's).
+fn distribution(components: &[&str]) -> PathBuf {
+    static BUILT: OnceLock<std::sync::Mutex<Vec<String>>> = OnceLock::new();
+    let built = BUILT.get_or_init(Default::default);
+    let mut built = built.lock().unwrap_or_else(|p| p.into_inner());
+    let dist = root().join("dist");
+    let missing: Vec<&str> = components.iter().copied().filter(|c| !built.iter().any(|b| b == c)).collect();
+    if !missing.is_empty() {
+        let mut cmd = Command::new(env!("CARGO"));
+        cmd.current_dir(repo())
+            .env("CARGO_TARGET_DIR", root().join("cargo"))
+            .args(["run", "--quiet", "-p", "lungo-dist", "--", "local", "--out"])
+            .arg(&dist);
+        for c in &missing {
+            cmd.args(["--component", c]);
+        }
+        run(&mut cmd);
+        built.extend(missing.iter().map(|c| c.to_string()));
+    }
+    dist
+}
+
+/// Generates the fixture for `language` with the distribution components `components`.
+fn generate(language: &str, components: &[&str]) -> PathBuf {
+    let dist = distribution(components);
+    let out = root().join(language);
+    run(Command::new(env!("CARGO_BIN_EXE_lungo"))
+        .arg("--config")
+        .arg(repo().join("compiler-tests/polyglot/lungo.toml"))
+        .arg("generate")
+        .arg(format!("--{language}_out={}", out.display()))
+        .arg("--runtime-dir")
+        .arg(&dist));
+    out
+}
+
+fn fixture(language: &str) -> PathBuf {
+    repo().join("compiler-tests/polyglot").join(language)
+}
+
+#[test]
+fn c_binding() {
+    let package = generate("c", &["runtime"]);
+    let build = root().join("c-build");
+    run(Command::new("cmake")
+        .arg("-S")
+        .arg(fixture("c"))
+        .arg("-B")
+        .arg(&build)
+        .arg(format!("-DPOLYGLOT_PACKAGE={}", package.display()))
+        .arg("-DCMAKE_BUILD_TYPE=Debug"));
+    run(Command::new("cmake").arg("--build").arg(&build).args(["--config", "Debug", "--parallel"]));
+    let exe = ["polyglot_test", "Debug/polyglot_test.exe", "polyglot_test.exe"]
+        .iter()
+        .map(|p| build.join(p))
+        .find(|p| p.is_file())
+        .expect("the test program is built");
+    let out = run(&mut Command::new(exe));
+    assert_eq!(out, "polyglot [one, two]\n20! = 2432902008176640000\nok\n");
+}
+
+/// A generated package in a module of the language's test program (`lungo generate` owns the
+/// package's directory).
+fn generate_into(language: &str, components: &[&str], module: &Path, package: &str) -> PathBuf {
+    let dist = distribution(components);
+    std::fs::create_dir_all(module).unwrap();
+    let out = module.join(package);
+    run(Command::new(env!("CARGO_BIN_EXE_lungo"))
+        .arg("--config")
+        .arg(repo().join("compiler-tests/polyglot/lungo.toml"))
+        .arg("generate")
+        .arg(format!("--{language}_out={}", out.display()))
+        .arg("--runtime-dir")
+        .arg(&dist));
+    out
+}
+
+#[test]
+fn go_binding() {
+    let module = root().join("go-module");
+    let package = generate_into("go", &["go"], &module, "polyglot");
+    let dist = distribution(&["go"]);
+    std::fs::write(
+        module.join("go.mod"),
+        format!(
+            "module example.com/polyglottest\n\ngo 1.22\n\nrequire github.com/jowharshamshiri/lungo-go v{v}\n\nreplace github.com/jowharshamshiri/lungo-go => {}\n",
+            dist.join("go").display(),
+            v = env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    std::fs::copy(fixture("go").join("polyglot_test.go"), module.join("polyglot_test.go")).unwrap();
+    let unformatted = run(Command::new("gofmt").arg("-l").arg(&package));
+    assert!(unformatted.is_empty(), "the generated Go is not gofmt-formatted: {unformatted}");
+    run(Command::new("go").arg("vet").arg("./...").current_dir(&module));
+    let out = run(Command::new("go").args(["test", "-count=1", "-race", "./..."]).current_dir(&module));
+    assert!(out.contains("ok  \texample.com/polyglottest"), "{out}");
+}
+
+#[test]
+fn python_binding() {
+    let dist = distribution(&["python"]);
+    let package = generate("python", &["python"]);
+    let venv = root().join("python-venv");
+    if venv.exists() {
+        std::fs::remove_dir_all(&venv).unwrap();
+    }
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
+    run(Command::new(python).args(["-m", "venv"]).arg(&venv));
+    let bin = venv.join(if cfg!(windows) { "Scripts" } else { "bin" });
+    let py = bin.join(if cfg!(windows) { "python.exe" } else { "python" });
+    run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(dist.join("python")));
+    run(Command::new(&py).args(["-m", "unittest", "test_wire"]).current_dir(dist.join("python/tests")));
+    run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(&package));
+    let out = Command::new(&py)
+        .args(["-m", "unittest", "-v", "test_polyglot"])
+        .current_dir(fixture("python"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("Ran 10 tests") && text.trim_end().ends_with("OK"), "{text}");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn swift_binding() {
+    let dist = distribution(&["swift"]);
+    let package = generate("swift", &["swift"]);
+    let tests = root().join("swift-tests");
+    if tests.exists() {
+        std::fs::remove_dir_all(&tests).unwrap();
+    }
+    std::fs::create_dir_all(tests.join("Tests/PolyglotTests")).unwrap();
+    std::fs::create_dir_all(tests.join("Tests/PolyglotCAPITests")).unwrap();
+    std::fs::copy(fixture("swift").join("PolyglotTests.swift"), tests.join("Tests/PolyglotTests/PolyglotTests.swift")).unwrap();
+    std::fs::copy(fixture("swift").join("CAPITests.m"), tests.join("Tests/PolyglotCAPITests/CAPITests.m")).unwrap();
+    std::fs::write(
+        tests.join("Package.swift"),
+        format!(
+            r#"// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "PolyglotE2E",
+    platforms: [.macOS("12.0")],
+    dependencies: [.package(path: {package:?}), .package(path: {support:?})],
+    targets: [
+        .testTarget(
+            name: "PolyglotTests",
+            dependencies: [.product(name: "Polyglot", package: "swift"), .product(name: "LungoKit", package: "lungo-swift")]
+        ),
+        .testTarget(
+            name: "PolyglotCAPITests",
+            dependencies: [.product(name: "PolyglotProgram", package: "swift")]
+        ),
+    ]
+)
+"#,
+            package = package.display().to_string(),
+            support = dist.join("lungo-swift").display().to_string(),
+        ),
+    )
+    .unwrap();
+    let out = Command::new("swift").args(["test", "--parallel"]).current_dir(&tests).output().unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{text}");
+    assert!(!text.contains("warning:"), "the generated package builds with warnings:\n{text}");
+    assert!(text.contains("Executed 12 tests, with 0 failures") || text.contains("12 tests passed"), "{text}");
+}

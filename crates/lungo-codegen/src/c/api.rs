@@ -29,14 +29,20 @@ impl Generator for CGenerator {
 
     fn generate(&self, request: &GenerateRequest) -> Result<BTreeMap<String, String>, Vec<CodegenError>> {
         options(request, "c", &[]).map_err(|e| vec![e])?;
-        let names = Names::new(&request.boundary).map_err(|e| vec![e])?;
         let b = &request.boundary;
+        let (h, c) = c_api(request).map_err(|e| vec![e])?;
         let mut files = request.program_files.clone();
-        files.insert(format!("include/{}.h", b.id), header(request, &names));
-        files.insert(format!("src/{}.c", b.id), source(request, &names));
+        files.insert(format!("include/{}.h", b.id), h);
+        files.insert(format!("src/{}.c", b.id), c);
         files.insert("CMakeLists.txt".to_owned(), cmake(request).map_err(|e| vec![e])?);
         Ok(files)
     }
+}
+
+/// The C API of the program (`include/<id>.h`, `src/<id>.c`): the header and its source.
+pub(crate) fn c_api(request: &GenerateRequest) -> Result<(String, String), CodegenError> {
+    let names = Names::new(&request.boundary)?;
+    Ok((header(request, &names), source(request, &names)))
 }
 
 /// The C names of one constructor.
@@ -71,11 +77,36 @@ fn snake(parts: &[String]) -> String {
     parts.iter().map(|p| snake_case(p)).collect::<Vec<_>>().join("_")
 }
 
-/// A local C identifier for a Lean binder name.
+/// Names of the generated functions' own locals and parameters, which Lean binders avoid.
+const RESERVED_LOCALS: &[&str] = &["args", "types", "fields", "result", "error", "v", "f", "ctx", "drop"];
+
+/// A local C identifier for a Lean binder name: never a C keyword, a type parameter (`t<i>`),
+/// or a local of the generated function.
 fn local(name: &str, index: usize) -> String {
     let s = snake_case(name);
-    if name.is_empty() || s.chars().all(|c| c == '_') { format!("x{index}") } else { super::identifier(&s) }
+    let id = if name.is_empty() || s.chars().all(|c| c == '_') { format!("x{index}") } else { super::identifier(&s) };
+    let type_param = id.strip_prefix('t').is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    if RESERVED_LOCALS.contains(&id.as_str()) || type_param || C_KEYWORDS.contains(&id.as_str()) {
+        format!("{id}_")
+    } else {
+        id
+    }
 }
+
+/// C and C++ keywords (the header is also compiled as C++), and names of the C library a
+/// parameter would shadow in its macros.
+const C_KEYWORDS: &[&str] = &[
+    "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case", "catch", "char",
+    "char16_t", "char32_t", "char8_t", "class", "compl", "concept", "const", "const_cast", "consteval", "constexpr",
+    "constinit", "continue", "co_await", "co_return", "co_yield", "decltype", "default", "delete", "do", "double",
+    "dynamic_cast", "else", "enum", "explicit", "export", "extern", "false", "float", "for", "friend", "goto", "if",
+    "inline", "int", "long", "mutable", "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or",
+    "or_eq", "private", "protected", "public", "register", "reinterpret_cast", "requires", "restrict", "return",
+    "short", "signed", "sizeof", "static", "static_assert", "static_cast", "struct", "switch", "template", "this",
+    "thread_local", "throw", "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using", "virtual",
+    "void", "volatile", "wchar_t", "while", "xor", "xor_eq", "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex",
+    "_Generic", "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "NULL", "errno", "assert",
+];
 
 impl Names {
     fn new(b: &Boundary) -> Result<Names, CodegenError> {

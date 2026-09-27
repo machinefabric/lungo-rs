@@ -1,0 +1,6 @@
+name = "polyglot"
+version = "0.1.0"
+defaultTargets = ["Polyglot"]
+
+[[lean_lib]]
+name = "Polyglot"

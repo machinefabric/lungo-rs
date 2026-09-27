@@ -1,0 +1,6 @@
+# The polyglot fixture: one Lean program generated for every language, whose end-to-end tests
+# make the same assertions in each.
+project = "lean"
+
+[lean]
+host-externs = ["polyglot_scale", "polyglot_record"]

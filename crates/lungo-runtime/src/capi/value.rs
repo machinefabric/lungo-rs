@@ -1264,7 +1264,7 @@ unsafe extern "C" fn c_dispatch(id: u64, input: *const u8, len: usize, out: *mut
     let ptrs: Vec<*const Value> = args.iter().map(|v| v as *const Value).collect();
     let outcome = unsafe { run_host(&entry, &ptrs) };
     args.into_iter().for_each(free_value);
-    // The result transfers its handles to Lean; the host references in it are Lean's to retain.
+    // The result transfers its handles and host function references to Lean.
     let mut bytes = Vec::new();
     let encoded: Result<(), String> = match (&entry.sig.returns, outcome) {
         (Returns::Value(t), Ok(v)) => {
@@ -1317,20 +1317,9 @@ unsafe extern "C" fn c_dispatch(id: u64, input: *const u8, len: usize, out: *mut
     }
 }
 
-/// Gives up `v`, whose handles now belong to the runtime, releasing its host references.
+/// Gives up `v`, whose handles and host function references now belong to the runtime.
 fn transfer(v: Value) {
-    match v {
-        Value::Function(FunctionRef::Host(id)) => host_release(id),
-        Value::Option(Some(x)) => transfer(*x),
-        Value::List(xs) | Value::Array(xs) => xs.into_iter().for_each(transfer),
-        Value::Ctor { fields, .. } => fields.into_iter().for_each(transfer),
-        Value::Prod(a, b) => {
-            transfer(*a);
-            transfer(*b);
-        }
-        Value::Except(Ok(x)) | Value::Except(Err(x)) => transfer(*x),
-        _ => {}
-    }
+    drop(v);
 }
 
 /// Registers the C function `f` as the implementation of a host extern of the generated
@@ -1433,7 +1422,15 @@ mod tests {
         }
     }
 
-    static DROPPED: AtomicUsize = AtomicUsize::new(0);
+    /// The context of `add`: its addend, and the counter of freed contexts of the test.
+    struct Ctx {
+        k: u64,
+        dropped: &'static AtomicUsize,
+    }
+
+    fn ctx(k: u64, dropped: &'static AtomicUsize) -> *mut c_void {
+        Box::into_raw(Box::new(Ctx { k, dropped })) as *mut c_void
+    }
 
     unsafe extern "C" fn add(
         ctx: *mut c_void,
@@ -1444,7 +1441,7 @@ mod tests {
     ) -> i32 {
         unsafe {
             assert_eq!(n, 1);
-            let k = *(ctx as *const u64);
+            let k = (*(ctx as *const Ctx)).k;
             let x = nat(*args);
             if x == 0 {
                 *error = lungo_error_io(c"zero".as_ptr());
@@ -1456,16 +1453,17 @@ mod tests {
     }
 
     unsafe extern "C" fn drop_ctx(ctx: *mut c_void) {
-        drop(unsafe { Box::from_raw(ctx as *mut u64) });
-        DROPPED.fetch_add(1, Ordering::SeqCst);
+        let ctx = unsafe { Box::from_raw(ctx as *mut Ctx) };
+        ctx.dropped.fetch_add(1, Ordering::SeqCst);
     }
 
     #[test]
     fn host_functions_live_while_referenced_by_values_or_lean() {
         unsafe {
             let ty = nat_to_nat();
-            let before = DROPPED.load(Ordering::SeqCst);
-            let f = lungo_value_function(ty, Some(add), Box::into_raw(Box::new(10u64)) as *mut c_void, Some(drop_ctx));
+            static DROPPED: AtomicUsize = AtomicUsize::new(0);
+            let before = 0;
+            let f = lungo_value_function(ty, Some(add), ctx(10, &DROPPED), Some(drop_ctx));
             // The host function called from C.
             let three = lungo_value_nat(3);
             let (mut r, mut e) = (std::ptr::null_mut(), std::ptr::null_mut());
@@ -1495,6 +1493,25 @@ mod tests {
             lean_dec(closure);
             assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1, "freeing the last reference frees the context");
             lungo_value_free(three);
+            lungo_type_free(ty);
+        }
+    }
+
+    #[test]
+    fn a_host_function_in_a_result_gives_its_reference_to_lean() {
+        unsafe {
+            let ty = nat_to_nat();
+            static DROPPED: AtomicUsize = AtomicUsize::new(0);
+            let before = 0;
+            let f = lungo_value_function(ty, Some(add), ctx(1, &DROPPED), Some(drop_ctx));
+            let mut bytes = Vec::new();
+            wv::encode(empty_table(), &(*ty).ty, &*f, &mut bytes).unwrap();
+            transfer(*Box::from_raw(f));
+            let mut rd = Reader::new(&bytes);
+            let closure = wire::decode(empty_table(), &(*ty).ty, &mut rd, wire::Handles::Take).unwrap();
+            assert_eq!(DROPPED.load(Ordering::SeqCst), before, "Lean holds the reference the result gave");
+            lean_dec(closure);
+            assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1, "and releases it with the closure");
             lungo_type_free(ty);
         }
     }
@@ -1551,7 +1568,8 @@ mod tests {
     fn arguments_that_do_not_match_the_signature_are_malformed() {
         unsafe {
             let ty = nat_to_nat();
-            let f = lungo_value_function(ty, Some(add), Box::into_raw(Box::new(1u64)) as *mut c_void, Some(drop_ctx));
+            static DROPPED: AtomicUsize = AtomicUsize::new(0);
+            let f = lungo_value_function(ty, Some(add), ctx(1, &DROPPED), Some(drop_ctx));
             let s = lungo_value_cstring(c"not a Nat".as_ptr());
             let mut bytes = Vec::new();
             let err = encode_args(empty_table(), &[Type::Nat], &[&*s], &mut bytes).unwrap_err();

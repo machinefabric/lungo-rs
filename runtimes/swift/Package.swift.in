@@ -1,0 +1,25 @@
+// swift-tools-version:5.9
+// The Swift support library of the packages lungo generates from Lean programs: LungoKit, on
+// the lungo runtime (LungoRuntime, an XCFramework). Written by lungo-dist for release @VERSION@.
+import PackageDescription
+
+let package = Package(
+    name: "lungo-swift",
+    platforms: [.macOS("@MACOS@"), .iOS("@IOS@")],
+    products: [
+        .library(name: "LungoKit", targets: ["LungoKit"])
+    ],
+    targets: [
+        @RUNTIME_TARGET@,
+        .target(
+            name: "LungoKit",
+            dependencies: ["LungoRuntime"],
+            linkerSettings: [@LINKER_SETTINGS@]
+        ),
+        .testTarget(
+            name: "LungoKitTests",
+            dependencies: ["LungoKit"],
+            resources: [.copy("vectors.json")]
+        ),
+    ]
+)
