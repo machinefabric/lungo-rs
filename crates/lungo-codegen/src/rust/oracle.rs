@@ -1,10 +1,12 @@
 //! The native layer of `LeanOracle` mode: the facade calls Lean's natively compiled functions
 //! through FFI, and facade conversions allocate through Lean's C runtime.
 
-use crate::compiler::{rust_params, rust_type};
-use crate::names::mangle;
-use crate::rust::{Writer, string};
-use crate::{CodegenError, GenInput};
+use super::GenInput;
+use super::compiler::{rust_params, rust_type};
+use super::syntax::string;
+use crate::CodegenError;
+use crate::core::names::mangle;
+use crate::core::writer::Writer;
 use lungo_bir::{Declaration, IrType};
 use std::collections::HashMap;
 

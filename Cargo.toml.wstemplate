@@ -2,11 +2,13 @@
 
 [workspace]
 members = [
-    "crates/cargo-lungo",
     "crates/lungo",
     "crates/lungo-bir",
     "crates/lungo-build",
+    "crates/lungo-capi",
+    "crates/lungo-cli",
     "crates/lungo-codegen",
+    "crates/lungo-driver",
     "crates/lungo-protocol",
     "crates/lungo-runtime",
     "examples/session",
@@ -35,14 +37,21 @@ lungo = { path = "crates/lungo", version = "={{ project.version }}" }
 lungo-bir = { path = "crates/lungo-bir", version = "={{ project.version }}" }
 lungo-build = { path = "crates/lungo-build", version = "={{ project.version }}" }
 lungo-codegen = { path = "crates/lungo-codegen", version = "={{ project.version }}" }
+lungo-driver = { path = "crates/lungo-driver", version = "={{ project.version }}" }
 lungo-protocol = { path = "crates/lungo-protocol", version = "={{ project.version }}" }
 lungo-runtime = { path = "crates/lungo-runtime", version = "={{ project.version }}" }
 
+cc = "1.2"
 ciborium = "0.2.2"
+clap = { version = "4.5", features = ["derive"] }
+flate2 = "1.1"
 libc = "0.2"
 num-bigint = "0.4"
 num-traits = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
+tar = "0.4"
 toml = "0.8"
+ureq = "3.1"
 windows-sys = "0.59"

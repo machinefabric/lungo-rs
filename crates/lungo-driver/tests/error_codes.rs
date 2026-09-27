@@ -1,7 +1,7 @@
 //! Every error code is documented in `docs/src/content/reference/errors.md`, and the reference documents
 //! no code that does not exist.
 
-use lungo_build::ErrorCode;
+use lungo_driver::ErrorCode;
 use std::collections::BTreeSet;
 
 #[test]

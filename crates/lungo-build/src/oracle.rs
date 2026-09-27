@@ -6,8 +6,7 @@
 //! Lean runtime and libraries. The generated facade is identical to PureRust mode's apart from
 //! the object backend. This mode exists to serve as a reference oracle.
 
-use crate::error::{Error, Result};
-use crate::{Analysis, Builder, Context, Environment, Generation};
+use crate::{Analysis, Builder, Context, Environment, Error, Generation, Result};
 use lungo_protocol::PackageOrigin;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -79,7 +78,7 @@ pub(crate) fn generate(
     }
     std::fs::create_dir_all(&objects_dir).map_err(|e| Error::io("cannot create oracle objects", e))?;
     let shim = objects_dir.join("lungo_oracle_shim.c");
-    std::fs::write(&shim, lungo_codegen::ORACLE_C_SHIM).map_err(|e| Error::io("cannot write the oracle shim", e))?;
+    std::fs::write(&shim, lungo_codegen::rust::ORACLE_C_SHIM).map_err(|e| Error::io("cannot write the oracle shim", e))?;
     let leanc = tool(ctx, "leanc");
     let mut objects = Vec::new();
     for (i, c) in c_files.iter().chain(std::iter::once(&shim)).enumerate() {
@@ -96,18 +95,18 @@ pub(crate) fn generate(
     run(Command::new(tool(ctx, "llvm-ar")).arg("rcs").arg(&archive).args(&objects), "llvm-ar")?;
     let archive_bytes = std::fs::read(&archive).map_err(|e| Error::io("cannot read the oracle archive", e))?;
     let link_directives = link_directives(&leanc, &ctx.toolchain.root, &ctx.out_dir.join("native"), &library)?;
-    let input = lungo_codegen::GenInput {
-        layer: lungo_codegen::Layer::Oracle,
+    let input = lungo_codegen::rust::GenInput {
+        layer: lungo_codegen::rust::Layer::Oracle,
         success: &analysis.success,
         toolchain: &analysis.toolchain,
         facade_namespace: namespace,
         aggregate: &ctx.name,
-        rust_externs: &cfg.rust_externs,
+        rust_externs: &cfg.rust.rust_externs,
         local_prefix: &ctx.local_prefix,
         embedded_sources: embedded,
         shaping,
     };
-    let generated = lungo_codegen::generate(&input).map_err(|errors| Error::Codegen {
+    let generated = lungo_codegen::rust::generate(&input).map_err(|errors| Error::Codegen {
         toolchain: format!("v{}", analysis.toolchain.lean_version),
         bir_version: analysis.success.bir.bir_version,
         errors,

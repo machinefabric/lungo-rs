@@ -92,6 +92,18 @@ macro_rules! lean_externs {
                 unsafe { $body }
             }
         )*
+        /// The primitives under their C symbols (`lungo_<symbol>`), for generated C programs.
+        /// Exported symbols are part of the library's interface whatever the module's visibility.
+        #[cfg(feature = "capi")]
+        mod capi {
+            $(
+                #[allow(non_snake_case, clippy::missing_safety_doc, clippy::too_many_arguments)]
+                #[unsafe(export_name = concat!("lungo_", stringify!($name)))]
+                pub unsafe extern "C" fn $name($($arg: $crate::registry::$ty),*) -> $crate::registry::$ret {
+                    unsafe { super::$name($($arg),*) }
+                }
+            )*
+        }
         #[allow(dead_code)]
         pub(crate) const INTRINSICS: &[$crate::registry::Intrinsic] = &[
             $(

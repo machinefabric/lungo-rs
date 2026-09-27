@@ -72,6 +72,12 @@ pub enum Error {
     Environment(String),
     /// The build configuration cannot be applied.
     Configuration(String),
+    /// No lungo runtime is available for a language binding.
+    RuntimeUnavailable(String),
+    /// A runtime artifact does not have its recorded digest.
+    RuntimeChecksum(String),
+    /// A generator plugin failed.
+    Plugin(String),
 }
 
 impl Error {
@@ -98,6 +104,9 @@ impl Error {
             Error::Command { .. } => ErrorCode::CommandFailed,
             Error::Environment(_) => ErrorCode::Environment,
             Error::Configuration(_) => ErrorCode::InvalidConfiguration,
+            Error::RuntimeUnavailable(_) => ErrorCode::RuntimeUnavailable,
+            Error::RuntimeChecksum(_) => ErrorCode::RuntimeChecksum,
+            Error::Plugin(_) => ErrorCode::PluginFailed,
         }
     }
 }
@@ -153,7 +162,7 @@ impl fmt::Display for Error {
             ),
             Error::ToolchainNotInstalled { toolchain, expected_at } => write!(
                 f,
-                "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `cargo lungo setup`; builds never install toolchains implicitly.",
+                "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `lungo setup`; builds never install toolchains implicitly.",
                 expected_at.display()
             ),
             Error::LeanElaboration { output } => {
@@ -197,7 +206,11 @@ impl fmt::Display for Error {
                 Ok(())
             }
             Error::Command { program, status, output } => write!(f, "`{program}` failed ({status})\n{output}"),
-            Error::Environment(msg) | Error::Configuration(msg) => f.write_str(msg),
+            Error::Environment(msg)
+            | Error::Configuration(msg)
+            | Error::RuntimeUnavailable(msg)
+            | Error::RuntimeChecksum(msg)
+            | Error::Plugin(msg) => f.write_str(msg),
         }
     }
 }

@@ -80,7 +80,7 @@ pub fn validate_project(project: &Path) -> Result<LakeProject> {
         };
         if !dir.is_dir() {
             return Err(Error::Project(format!(
-                "dependency {} is not materialized at {}; fetch it explicitly with `lake update` or `cargo lungo setup` — builds never fetch dependencies",
+                "dependency {} is not materialized at {}; fetch it explicitly with `lake update` or `lungo setup` — builds never fetch dependencies",
                 p.name,
                 dir.display()
             )));

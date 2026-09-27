@@ -52,22 +52,7 @@ impl WorkerCache {
 /// The per-user default cache: `$XDG_CACHE_HOME/lungo/workers`, `~/.cache/lungo/workers`,
 /// or `%LOCALAPPDATA%\lungo\workers` on Windows.
 pub fn default_shared_cache() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("LUNGO_CACHE_DIR") {
-        return Ok(PathBuf::from(dir).join("workers"));
-    }
-    if cfg!(windows) {
-        if let Some(dir) = std::env::var_os("LOCALAPPDATA") {
-            return Ok(PathBuf::from(dir).join("lungo").join("workers"));
-        }
-    } else if let Some(dir) = std::env::var_os("XDG_CACHE_HOME") {
-        return Ok(PathBuf::from(dir).join("lungo").join("workers"));
-    } else if let Some(home) = std::env::var_os("HOME") {
-        return Ok(PathBuf::from(home).join(".cache").join("lungo").join("workers"));
-    }
-    Err(Error::Environment(
-        "cannot determine a cache directory for Lean workers; set LUNGO_CACHE_DIR or use a hermetic worker cache"
-            .into(),
-    ))
+    Ok(crate::cache_root()?.join("workers"))
 }
 
 #[derive(Debug, Clone)]
@@ -420,7 +405,7 @@ fn exceeded_cpu_limit(status: &std::process::ExitStatus) -> bool {
 }
 
 /// A directory private to one worker invocation, holding its request and response and removed
-/// afterwards. Builds and `cargo lungo` commands on the same package share a scratch
+/// afterwards. Builds and `lungo` commands on the same package share a scratch
 /// directory and may run at the same time; each worker exchanges its files in its own.
 struct Exchange {
     dir: PathBuf,
@@ -557,7 +542,7 @@ mod tests {
 
     use super::*;
     use crate::toolchain::{Toolchain, ToolchainPolicy};
-    use crate::{Environment, configure};
+    use crate::{Environment, LeanOptions};
     use std::os::unix::fs::PermissionsExt;
 
     struct Setup {
@@ -581,7 +566,7 @@ mod tests {
         .unwrap();
         let toolchain = Toolchain::resolve_pin("leanprover/lean4:v4.34.1", None, ToolchainPolicy::Strict).unwrap();
         let env = Environment::native(dir.clone(), dir.join("out"), dir.join("work"));
-        let cfg = configure().root_module("P");
+        let cfg = LeanOptions::default().root_module("P");
         let ctx = cfg.context(&project, &env).unwrap();
         let request = cfg.request(&ctx, &env);
         Setup { dir, toolchain, request }

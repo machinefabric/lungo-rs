@@ -53,6 +53,11 @@ codes! {
     /// The build configuration cannot be applied: an invalid or conflicting output name, or a
     /// setting that selects nothing.
     InvalidConfiguration = "LNG0107", "invalid configuration";
+    /// No lungo runtime is available for a language binding: this lungo is not a release and
+    /// no local runtime distribution was given, or the release has no runtime for the target.
+    RuntimeUnavailable = "LNG0108", "lungo runtime unavailable";
+    /// A downloaded runtime artifact does not have the SHA-256 digest the release lists.
+    RuntimeChecksum = "LNG0109", "runtime artifact checksum mismatch";
 
     // Lean (02xx).
     /// Lean rejected the program: elaboration, kernel checking, or Lean's compiler.
@@ -87,6 +92,9 @@ codes! {
     ExternSignature = "LNG0406", "extern has no Rust signature";
     /// LeanOracle mode cannot provide an application extern of this form.
     OracleExternForm = "LNG0407", "extern form unsupported in LeanOracle mode";
+    /// The program needs a runtime primitive the target does not provide (WebAssembly has no
+    /// threads, processes or sockets).
+    UnsupportedOnTarget = "LNG0408", "primitive unsupported on the target";
 
     // Code generation (05xx).
     /// The Bridge IR violates an invariant the backend relies on.
@@ -95,6 +103,8 @@ codes! {
     UnsupportedCompilerOutput = "LNG0502", "unsupported compiler output";
     /// An internal invariant of the code generator was violated.
     InternalGenerator = "LNG0503", "internal code generator error";
+    /// A generator plugin (`lungo-gen-<language>`) failed, or its response is malformed.
+    PluginFailed = "LNG0504", "generator plugin failed";
 
     // Trust policy (06xx).
     /// An export violates `deny_sorry`, `deny_axioms`, or `deny_unsafe`.

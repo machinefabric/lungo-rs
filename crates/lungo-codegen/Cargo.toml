@@ -12,6 +12,6 @@ description = "The Rust backend: Bridge IR to Rust. An internal part of lungo: d
 [dependencies]
 lungo-bir.workspace = true
 lungo-protocol.workspace = true
-lungo-runtime.workspace = true
+lungo-runtime = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,413 @@
+{
+  "description": "Test vectors of the lungo wire format: every language's support library must encode each valid value to exactly its bytes, decode the bytes to the value, and reject every invalid encoding. Types are encoded type expressions; see the wire-format reference for the JSON conventions of values.",
+  "invalid": [
+    {
+      "bytes": "02",
+      "name": "bool out of range",
+      "type": "02"
+    },
+    {
+      "bytes": "00d80000",
+      "name": "char surrogate",
+      "type": "0f"
+    },
+    {
+      "bytes": "00001100",
+      "name": "char beyond unicode",
+      "type": "0f"
+    },
+    {
+      "bytes": "01000000ff",
+      "name": "string invalid utf-8",
+      "type": "10"
+    },
+    {
+      "bytes": "0900000061",
+      "name": "string longer than data",
+      "type": "10"
+    },
+    {
+      "bytes": "0100000000",
+      "name": "nat leading zero byte",
+      "type": "00"
+    },
+    {
+      "bytes": "0100000000",
+      "name": "int negative zero",
+      "type": "01"
+    },
+    {
+      "bytes": "020100000001",
+      "name": "int invalid sign",
+      "type": "01"
+    },
+    {
+      "bytes": "02",
+      "name": "option invalid tag",
+      "type": "1400"
+    },
+    {
+      "bytes": "0200000000",
+      "name": "except invalid tag",
+      "type": "180000"
+    },
+    {
+      "bytes": "020000000000000000",
+      "name": "function invalid kind",
+      "type": "19010000000000"
+    },
+    {
+      "bytes": "00",
+      "name": "trailing bytes",
+      "type": "11"
+    },
+    {
+      "bytes": "010203",
+      "name": "truncated",
+      "type": "05"
+    },
+    {
+      "bytes": "0500000001",
+      "name": "list longer than data",
+      "type": "1503"
+    }
+  ],
+  "valid": [
+    {
+      "bytes": "00000000",
+      "name": "nat zero",
+      "type": "00",
+      "value": "0"
+    },
+    {
+      "bytes": "01000000ff",
+      "name": "nat one byte",
+      "type": "00",
+      "value": "255"
+    },
+    {
+      "bytes": "020000000001",
+      "name": "nat two bytes",
+      "type": "00",
+      "value": "256"
+    },
+    {
+      "bytes": "09000000000000000000000001",
+      "name": "nat 2^64",
+      "type": "00",
+      "value": "18446744073709551616"
+    },
+    {
+      "bytes": "1a0000000000000000000000000000000000000000000000000000000001",
+      "name": "nat 2^200",
+      "type": "00",
+      "value": "1606938044258990275541962092341162602522202993782792835301376"
+    },
+    {
+      "bytes": "0000000000",
+      "name": "int zero",
+      "type": "01",
+      "value": "0"
+    },
+    {
+      "bytes": "010100000001",
+      "name": "int minus one",
+      "type": "01",
+      "value": "-1"
+    },
+    {
+      "bytes": "00080000000000000000000080",
+      "name": "int 2^63",
+      "type": "01",
+      "value": "9223372036854775808"
+    },
+    {
+      "bytes": "0109000000000000000000000040",
+      "name": "int -(2^70)",
+      "type": "01",
+      "value": "-1180591620717411303424"
+    },
+    {
+      "bytes": "01",
+      "name": "bool true",
+      "type": "02",
+      "value": true
+    },
+    {
+      "bytes": "00",
+      "name": "bool false",
+      "type": "02",
+      "value": false
+    },
+    {
+      "bytes": "ff",
+      "name": "uint8 max",
+      "type": "03",
+      "value": 255
+    },
+    {
+      "bytes": "ffff",
+      "name": "uint16 max",
+      "type": "04",
+      "value": 65535
+    },
+    {
+      "bytes": "ffffffff",
+      "name": "uint32 max",
+      "type": "05",
+      "value": 4294967295
+    },
+    {
+      "bytes": "ffffffffffffffff",
+      "name": "uint64 max",
+      "type": "06",
+      "value": "18446744073709551615"
+    },
+    {
+      "bytes": "d204000000000000",
+      "name": "usize",
+      "type": "07",
+      "value": "1234"
+    },
+    {
+      "bytes": "80",
+      "name": "int8 min",
+      "type": "08",
+      "value": -128
+    },
+    {
+      "bytes": "feff",
+      "name": "int16 minus two",
+      "type": "09",
+      "value": -2
+    },
+    {
+      "bytes": "00000080",
+      "name": "int32 min",
+      "type": "0a",
+      "value": -2147483648
+    },
+    {
+      "bytes": "0000000000000080",
+      "name": "int64 min",
+      "type": "0b",
+      "value": "-9223372036854775808"
+    },
+    {
+      "bytes": "fbffffffffffffff",
+      "name": "isize minus five",
+      "type": "0c",
+      "value": "-5"
+    },
+    {
+      "bytes": "000000000000f83f",
+      "name": "float",
+      "type": "0d",
+      "value": {
+        "bits": "3ff8000000000000"
+      }
+    },
+    {
+      "bytes": "0000000000000080",
+      "name": "float negative zero",
+      "type": "0d",
+      "value": {
+        "bits": "8000000000000000"
+      }
+    },
+    {
+      "bytes": "000000000000f07f",
+      "name": "float infinity",
+      "type": "0d",
+      "value": {
+        "bits": "7ff0000000000000"
+      }
+    },
+    {
+      "bytes": "010000000000f87f",
+      "name": "float nan payload",
+      "type": "0d",
+      "value": {
+        "bits": "7ff8000000000001"
+      }
+    },
+    {
+      "bytes": "00005040",
+      "name": "float32",
+      "type": "0e",
+      "value": {
+        "bits": "40500000"
+      }
+    },
+    {
+      "bytes": "61000000",
+      "name": "char ascii",
+      "type": "0f",
+      "value": "a"
+    },
+    {
+      "bytes": "e9000000",
+      "name": "char two bytes",
+      "type": "0f",
+      "value": "é"
+    },
+    {
+      "bytes": "00f60100",
+      "name": "char astral",
+      "type": "0f",
+      "value": "😀"
+    },
+    {
+      "bytes": "00000000",
+      "name": "string empty",
+      "type": "10",
+      "value": ""
+    },
+    {
+      "bytes": "0f00000068c3a96c6c6f20e2858c20f09f9880",
+      "name": "string unicode",
+      "type": "10",
+      "value": "héllo ⅌ 😀"
+    },
+    {
+      "bytes": "03000000610062",
+      "name": "string embedded nul",
+      "type": "10",
+      "value": "a\u0000b"
+    },
+    {
+      "bytes": "",
+      "name": "unit",
+      "type": "11",
+      "value": null
+    },
+    {
+      "bytes": "00000000",
+      "name": "byte array empty",
+      "type": "12",
+      "value": {
+        "bytes": ""
+      }
+    },
+    {
+      "bytes": "0300000000ff07",
+      "name": "byte array",
+      "type": "12",
+      "value": {
+        "bytes": "00ff07"
+      }
+    },
+    {
+      "bytes": "02000000000000000000f03f00000000000004c0",
+      "name": "float array",
+      "type": "13",
+      "value": [
+        "3ff0000000000000",
+        "c004000000000000"
+      ]
+    },
+    {
+      "bytes": "00",
+      "name": "option none",
+      "type": "1400",
+      "value": {
+        "none": null
+      }
+    },
+    {
+      "bytes": "010100000005",
+      "name": "option some",
+      "type": "1400",
+      "value": {
+        "some": "5"
+      }
+    },
+    {
+      "bytes": "00000000",
+      "name": "list empty",
+      "type": "1503",
+      "value": []
+    },
+    {
+      "bytes": "03000000010203",
+      "name": "list",
+      "type": "1503",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "bytes": "02000000010000007802000000797a",
+      "name": "array of strings",
+      "type": "1610",
+      "value": [
+        "x",
+        "yz"
+      ]
+    },
+    {
+      "bytes": "01020000006f6b",
+      "name": "prod",
+      "type": "170210",
+      "value": [
+        true,
+        "ok"
+      ]
+    },
+    {
+      "bytes": "0003000000626164",
+      "name": "except error",
+      "type": "181000",
+      "value": {
+        "error": "bad"
+      }
+    },
+    {
+      "bytes": "01010000002a",
+      "name": "except ok",
+      "type": "181000",
+      "value": {
+        "ok": "42"
+      }
+    },
+    {
+      "bytes": "010300000001010000000300000000000009000000ffff0f632d5ec76b05",
+      "name": "nested",
+      "type": "141501",
+      "value": {
+        "some": [
+          "-3",
+          "0",
+          "99999999999999999999"
+        ]
+      }
+    },
+    {
+      "bytes": "000700000000000000",
+      "name": "function lean",
+      "type": "19010000000000",
+      "value": {
+        "lean": "7"
+      }
+    },
+    {
+      "bytes": "010900000000000000",
+      "name": "function host",
+      "type": "1902000000000210",
+      "value": {
+        "host": "9"
+      }
+    },
+    {
+      "bytes": "2a00000000000000",
+      "name": "opaque",
+      "type": "1c",
+      "value": {
+        "handle": "42"
+      }
+    }
+  ],
+  "version": 1
+}

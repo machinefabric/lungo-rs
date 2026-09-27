@@ -1,5 +1,5 @@
 [package]
-name = "cargo-lungo"
+name = "lungo-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,15 +7,25 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Inspect and build Lean projects integrated with lungo"
-keywords = ["lean", "lean4", "cargo", "subcommand"]
-categories = ["development-tools::cargo-plugins"]
+description = "The lungo command: generate C, Go, Python, Swift, TypeScript and Rust from Lean programs"
+keywords = ["lean", "lean4", "codegen", "ffi", "protoc"]
+categories = ["development-tools", "development-tools::ffi", "compilers"]
 
 [[bin]]
-name = "cargo-lungo"
+name = "lungo"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+clap.workspace = true
+flate2.workspace = true
 lungo-build.workspace = true
+lungo-driver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+toml.workspace = true
+ureq.workspace = true
+
+[build-dependencies]
 serde_json.workspace = true

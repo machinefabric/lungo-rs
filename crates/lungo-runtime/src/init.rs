@@ -136,6 +136,15 @@ pub unsafe fn check_initializer(decl: &str, r: Obj) -> Obj {
     }
 }
 
+/// Ends module initialization: `IO.initializing` becomes false and the task manager starts, as
+/// Lean's generated `main` does once the module initializers have run. Programs call it at the
+/// end of their initialization, whether they run a `main` or are used as a library; it is
+/// idempotent.
+pub fn end_initialization() {
+    crate::io::mark_end_initialization();
+    crate::task::ensure_task_manager();
+}
+
 /// How a Lean `main` receives its arguments and reports its exit code.
 pub enum MainFn {
     /// `main : IO Unit` or `main : IO UInt32`.
@@ -145,9 +154,10 @@ pub enum MainFn {
 }
 
 /// Runs a Lean program's `main`, mirroring the entry point Lean's C backend emits: module
-/// initialization on the calling thread, then `main` on a thread with Lean's default stack size
-/// (`LEAN_STACK_SIZE_KB` and `LEAN_MAIN_USE_THREAD` are honoured). Returns the process exit code.
-pub fn run_main(initialize: fn(), main: MainFn, returns_exit_code: bool, args: Vec<String>) -> i32 {
+/// initialization on the calling thread (`initialize` ends it with [`end_initialization`]), then
+/// `main` on a thread with Lean's default stack size (`LEAN_STACK_SIZE_KB` and
+/// `LEAN_MAIN_USE_THREAD` are honoured). Returns the process exit code.
+pub fn run_main(initialize: impl FnOnce(), main: MainFn, returns_exit_code: bool, args: Vec<String>) -> i32 {
     #[cfg(windows)]
     unsafe {
         // As Lean's generated `main` does on Windows: no error dialogs, UTF-8 console output.
@@ -157,8 +167,7 @@ pub fn run_main(initialize: fn(), main: MainFn, returns_exit_code: bool, args: V
         windows_sys::Win32::System::Console::SetConsoleOutputCP(windows_sys::Win32::Globalization::CP_UTF8);
     }
     initialize();
-    crate::io::mark_end_initialization();
-    crate::task::init_task_manager();
+    end_initialization();
     let run = move || -> i32 {
         unsafe {
             let res = match main {

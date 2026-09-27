@@ -12,9 +12,10 @@
 //!   primitives with the same names as `lean.h`;
 //! * nullary declarations are lazily initialized persistent constants.
 
-use crate::externs::ExternPlan;
-use crate::names::mangle;
-use crate::rust::{Writer, byte_string, string};
+use super::syntax::{byte_string, string, word_offset};
+use crate::core::externs::{ExternPlan, Implementation};
+use crate::core::names::mangle;
+use crate::core::writer::Writer;
 use crate::{CodegenError, SourceIndex};
 use lungo_bir::{Alt, Arg, Block, Body, CtorInfo, Declaration, Expr, IrType, Literal, Param, Stmt, Terminator};
 use std::collections::HashMap;
@@ -115,14 +116,20 @@ impl<'a> Emitter<'a> {
         let call = self.externs.call(decl, &|n| self.decls.get(n).copied())?;
         let params = rust_params(&decl.params);
         let sig: Vec<String> = params.iter().map(|p| format!("x_{}: {}", p.var, rust_type(p.ty))).collect();
+        let args: Vec<String> = call.args.iter().map(|v| format!("x_{v}")).collect();
+        let callee = match &call.implementation {
+            Implementation::Lean(implementation) => mangle(implementation),
+            Implementation::Intrinsic(intrinsic) => format!("{RT}::intrinsics::{}", intrinsic.symbol),
+            Implementation::Application => format!("a_{m}"),
+        };
         w.line("#[inline(always)]");
         w.open(format!("pub(crate) unsafe extern \"C\" fn {m}({}) -> {} {{", sig.join(", "), rust_type(decl.result)));
-        for line in call.pre {
-            w.line(line);
+        for v in &call.retain {
+            w.line(format!("{RT}::lean_inc(x_{v});"));
         }
-        w.line(format!("let r: {} = {};", rust_type(decl.result), call.call));
-        for line in call.post {
-            w.line(line);
+        w.line(format!("let r: {} = {callee}({});", rust_type(decl.result), args.join(", ")));
+        for v in &call.release {
+            w.line(format!("{RT}::lean_dec(x_{v});"));
         }
         w.line("r");
         w.close("}");
@@ -535,11 +542,11 @@ impl<'e, 'a> FnCtx<'e, 'a> {
 }
 
 fn alloc_ctor(info: &CtorInfo) -> String {
-    format!("{RT}::lean_alloc_ctor({}, {}, {})", info.tag, info.size, crate::rust::word_offset(info.usize, info.ssize))
+    format!("{RT}::lean_alloc_ctor({}, {}, {})", info.tag, info.size, word_offset(info.usize, info.ssize))
 }
 
 fn scalar_offset(fields: u32, offset: u32) -> String {
-    crate::rust::word_offset(fields, offset)
+    word_offset(fields, offset)
 }
 
 fn scalar_accessor(ty: IrType, op: &str) -> Result<String, CodegenError> {

@@ -1,9 +1,11 @@
-//! Resolution of Lean `@[extern]` declarations.
+//! Resolution of Lean `@[extern]` declarations, shared by every backend.
 //!
-//! Externs resolve, in order, to runtime primitives implemented by `lungo-runtime` and to
-//! Rust functions the application maps with `Builder::rust_extern`. An extern that resolves to
-//! neither is a build error naming the Lean declaration, the symbol, its Lean type, the runtime
-//! representation it must have, and its source location; it is never replaced or ignored.
+//! Externs resolve, in order, to Lean definitions exported with `@[export]`, to runtime
+//! primitives implemented by `lungo-runtime`, and to implementations the application provides
+//! (a Rust function for the Rust backend, a host function of the target language otherwise). An
+//! extern that resolves to none of them is a build error naming the Lean declaration, the symbol,
+//! its Lean type, the runtime representation it must have, and its source location; it is never
+//! replaced or ignored.
 //!
 //! Runtime primitives are checked against the representation Lean's compiler expects. Their
 //! ownership conventions are reconciled explicitly: when Lean passes an owned argument to a
@@ -11,9 +13,7 @@
 //! borrowed argument to a primitive that consumes it, the caller retains it first.
 
 use crate::CodegenError;
-use crate::codes::ErrorCode;
-use crate::compiler::RT;
-use crate::names::mangle;
+use crate::core::codes::ErrorCode;
 use lungo_bir::{Body, Declaration, ExternEntry, IrType, Param};
 use lungo_protocol::ExternRequirement;
 use lungo_runtime::registry::{self, Intrinsic, Ty};
@@ -27,11 +27,23 @@ pub enum Resolution {
         implementation: String,
     },
     Intrinsic(&'static Intrinsic),
-    /// A Rust function supplied by the application, reached through a generated adapter.
-    User {
+    /// An implementation the application provides, reached through a generated adapter.
+    Application {
         key: String,
-        rust_path: String,
+        /// How the application provides it: a Rust path for the Rust backend, the host symbol
+        /// otherwise.
+        implementation: String,
     },
+}
+
+/// How the application provides externs to a backend, for resolution and its diagnostics.
+pub struct ApplicationExterns<'a> {
+    /// Extern key → the application's implementation.
+    pub implementations: &'a BTreeMap<String, String>,
+    /// The setting that provides them, named in diagnostics (`Builder::rust_extern`).
+    pub setting: &'a str,
+    /// How to provide an unresolved extern with key `key`, appended to its diagnostic.
+    pub hint: &'a dyn Fn(&str) -> String,
 }
 
 /// The key under which an extern declaration is resolved: its C symbol for `@[extern "sym"]`,
@@ -47,10 +59,28 @@ pub fn resolution_key(decl: &Declaration) -> Result<String, CodegenError> {
     }
 }
 
+/// What implements an extern call.
+#[derive(Debug, Clone)]
+pub enum Implementation {
+    /// The compiled Lean definition with this name.
+    Lean(String),
+    Intrinsic(&'static Intrinsic),
+    /// The application's implementation, through the backend's adapter for the extern
+    /// declaration.
+    Application,
+}
+
+/// How the wrapper of an extern declaration calls its implementation. Arguments are the IR
+/// variables of the wrapper's parameters; ownership differences between Lean's convention and
+/// the implementation's are reconciled by retaining and releasing object arguments.
+#[derive(Debug, Clone)]
 pub struct ExternCall {
-    pub pre: Vec<String>,
-    pub call: String,
-    pub post: Vec<String>,
+    pub implementation: Implementation,
+    pub args: Vec<u32>,
+    /// Object arguments Lean lends that the implementation consumes: retained before the call.
+    pub retain: Vec<u32>,
+    /// Object arguments Lean passes owned that the implementation borrows: released after it.
+    pub release: Vec<u32>,
 }
 
 #[derive(Default)]
@@ -103,9 +133,10 @@ impl ExternPlan {
     pub fn resolve(
         decls: &[Declaration],
         requirements: &[ExternRequirement],
-        user: &BTreeMap<String, String>,
+        application: &ApplicationExterns,
         source: &dyn Fn(&ExternRequirement) -> Option<String>,
     ) -> Result<ExternPlan, Vec<CodegenError>> {
+        let user = application.implementations;
         let reqs: HashMap<&str, &ExternRequirement> =
             requirements.iter().map(|r| (r.declaration.as_str(), r)).collect();
         let mut plan = ExternPlan::default();
@@ -124,7 +155,7 @@ impl ExternPlan {
                 if intrinsic.is_some() || user.contains_key(&key) {
                     errors.push(CodegenError::external(ErrorCode::ConflictingExtern, format!(
                         "the symbol `{key}` is provided both by the Lean definition {implementation} (via @[export]) and by {}\n\n{}",
-                        if intrinsic.is_some() { "the lungo runtime" } else { "a Builder::rust_extern mapping" },
+                        if intrinsic.is_some() { "the lungo runtime".to_owned() } else { format!("a {} mapping", application.setting) },
                         describe(req, decl, &key, source)
                     )));
                 } else {
@@ -147,13 +178,10 @@ impl ExternPlan {
                         describe(req, decl, &key, source)
                     ))),
                 },
-                (None, Some(path)) => {
+                (None, Some(implementation)) => {
                     plan.resolutions.insert(
                         decl.name.clone(),
-                        Resolution::User {
-                            key: key.clone(),
-                            rust_path: path.clone(),
-                        },
+                        Resolution::Application { key: key.clone(), implementation: implementation.clone() },
                     );
                 }
                 (None, None) => {
@@ -165,26 +193,27 @@ impl ExternPlan {
                         None => String::new(),
                     };
                     errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
-                        "unresolved Lean external symbol\n\n{}{reason}\nProvide a Rust mapping with Builder::rust_extern({:?}, \"crate::path::to::function\")",
+                        "unresolved Lean external symbol\n\n{}{reason}\n{}",
                         describe(req, decl, &key, source),
-                        key
+                        (application.hint)(&key)
                     )));
                 }
             }
         }
         for key in user.keys() {
-            let used = plan.resolutions.values().any(|r| matches!(r, Resolution::User { key: k, .. } if k == key));
+            let used = plan.resolutions.values().any(|r| matches!(r, Resolution::Application { key: k, .. } if k == key));
             if !used {
                 errors.push(CodegenError::external(ErrorCode::UnusedExternMapping, format!(
-                    "Builder::rust_extern maps `{key}`, but no extern declaration reachable from the root modules uses that symbol"
+                    "{} provides `{key}`, but no extern declaration reachable from the root modules uses that symbol",
+                    application.setting
                 )));
             }
         }
         if errors.is_empty() { Ok(plan) } else { Err(errors) }
     }
 
-    /// The call of the implementation of extern `decl`, whose Rust wrapper receives the
-    /// declaration's non-`void` parameters as `x_<var>`.
+    /// How the wrapper of extern `decl`, which receives the declaration's implementation
+    /// parameters, calls its implementation.
     pub fn call<'d>(
         &self,
         decl: &Declaration,
@@ -195,7 +224,10 @@ impl ExternPlan {
             .get(&decl.name)
             .ok_or_else(|| CodegenError::internal(format!("extern {} was not resolved", decl.name)))?;
         let params = implementation_params(decl);
-        match resolution {
+        let args: Vec<u32> = params.iter().map(|p| p.var).collect();
+        let mut retain = Vec::new();
+        let mut release = Vec::new();
+        let implementation = match resolution {
             Resolution::Lean { implementation } => {
                 let callee = lookup(implementation).ok_or_else(|| {
                     CodegenError::internal(format!("@[export] implementation {implementation} is not in the program"))
@@ -219,52 +251,32 @@ impl ExternPlan {
                         ),
                     ));
                 }
-                let mut pre = Vec::new();
-                let mut post = Vec::new();
-                let mut args = Vec::new();
                 for (p, q) in params.iter().zip(&callee_params) {
-                    let x = format!("x_{}", p.var);
                     if p.ty.is_object() {
                         match (p.borrow, q.borrow) {
-                            (false, true) => post.push(format!("{RT}::lean_dec({x});")),
-                            (true, false) => pre.push(format!("{RT}::lean_inc({x});")),
+                            (false, true) => release.push(p.var),
+                            (true, false) => retain.push(p.var),
                             _ => {}
                         }
                     }
-                    args.push(x);
                 }
-                Ok(ExternCall { pre, call: format!("{}({})", mangle(implementation), args.join(", ")), post })
+                Implementation::Lean(implementation.clone())
             }
             Resolution::Intrinsic(intrinsic) => {
-                let mut pre = Vec::new();
-                let mut post = Vec::new();
-                let mut args = Vec::new();
                 for (p, ty) in params.iter().zip(intrinsic.params) {
-                    let x = format!("x_{}", p.var);
                     if p.ty.is_object() {
                         match (p.borrow, ty) {
-                            (false, Ty::b_obj) => post.push(format!("{RT}::lean_dec({x});")),
-                            (true, Ty::obj) => pre.push(format!("{RT}::lean_inc({x});")),
+                            (false, Ty::b_obj) => release.push(p.var),
+                            (true, Ty::obj) => retain.push(p.var),
                             _ => {}
                         }
                     }
-                    args.push(x);
                 }
-                Ok(ExternCall {
-                    pre,
-                    call: format!("{RT}::intrinsics::{}({})", intrinsic.symbol, args.join(", ")),
-                    post,
-                })
+                Implementation::Intrinsic(intrinsic)
             }
-            Resolution::User { .. } => {
-                let args: Vec<String> = params.iter().map(|p| format!("x_{}", p.var)).collect();
-                Ok(ExternCall {
-                    pre: Vec::new(),
-                    call: format!("a_{}({})", mangle(&decl.name), args.join(", ")),
-                    post: Vec::new(),
-                })
-            }
-        }
+            Resolution::Application { .. } => Implementation::Application,
+        };
+        Ok(ExternCall { implementation, args, retain, release })
     }
 }
 

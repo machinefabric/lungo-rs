@@ -1,0 +1,29 @@
+[package]
+name = "lungo-driver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The language-neutral lungo pipeline: builds a Lake project and analyses its compiled program. An internal part of lungo: depend on `lungo` and `lungo-build`."
+
+[dependencies]
+blake3 = "1.8"
+dunce = "1.0"
+lungo-bir.workspace = true
+lungo-codegen.workspace = true
+lungo-protocol.workspace = true
+lungo-runtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects"] }

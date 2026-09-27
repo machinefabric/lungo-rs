@@ -15,6 +15,18 @@ libc.workspace = true
 num-bigint.workspace = true
 num-integer = "0.1"
 num-traits.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+# The C ABI of the runtime (`capi`): every primitive under a `lungo_`-prefixed C symbol, and the
+# object, initialization and boundary API generated C programs use. Built into the prebuilt
+# runtime library by `lungo-capi`.
+capi = []
+# Serialization of the wire format's type descriptions (`wire`), for code generators.
+serde = ["dep:serde"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

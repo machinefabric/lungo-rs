@@ -11,6 +11,7 @@
 
 pub mod apply;
 pub mod exports;
+pub mod header;
 pub mod init;
 pub mod object;
 pub mod panic;
@@ -35,6 +36,10 @@ pub mod uint;
 pub mod uv;
 
 pub mod intrinsics;
+pub mod wire;
+
+#[cfg(feature = "capi")]
+pub mod capi;
 
 pub use apply::*;
 pub use init::*;

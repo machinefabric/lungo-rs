@@ -1,6 +1,6 @@
 //! Differential conformance: every program runs through Lean's official native backend and
-//! through lungo's PureRust backend, and both must produce the same standard output,
-//! standard error, and exit status.
+//! through each of lungo's backends (Rust, and C on the runtime's C library), and each must
+//! produce the same standard output, standard error, and exit status as the native build.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -48,25 +48,27 @@ fn run_native(name: &str) -> Output {
     configure(&mut Command::new(&exe)).output().unwrap_or_else(|e| panic!("cannot run {}: {e}", exe.display()))
 }
 
-fn run_pure_rust(name: &str) -> Output {
+/// Runs the program `name` as compiled by lungo's `backend` (`rust` or `c`).
+fn run_lungo(backend: &str, name: &str) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_conformance"));
-    cmd.arg(name);
+    cmd.args([backend, name]);
     configure(&mut cmd).output().unwrap()
 }
 
-#[test]
-fn pure_rust_matches_the_native_lean_backend() {
+/// Every program compiled by `backend` produces exactly the standard output, standard error
+/// and exit status of Lean's native build.
+fn backend_matches_the_native_lean_backend(backend: &str) {
     let programs = programs();
     build_native(&programs);
     let mut failures = Vec::new();
     for name in programs {
         let native = run_native(&name);
-        let ours = run_pure_rust(&name);
+        let ours = run_lungo(backend, &name);
         let same =
             native.stdout == ours.stdout && native.stderr == ours.stderr && native.status.code() == ours.status.code();
         if !same {
             failures.push(format!(
-                "== {name}\n-- native (status {:?})\n{}\n-- stderr\n{}\n-- pure rust (status {:?})\n{}\n-- stderr\n{}",
+                "== {name}\n-- native (status {:?})\n{}\n-- stderr\n{}\n-- {backend} (status {:?})\n{}\n-- stderr\n{}",
                 native.status.code(),
                 String::from_utf8_lossy(&native.stdout),
                 String::from_utf8_lossy(&native.stderr),
@@ -77,4 +79,14 @@ fn pure_rust_matches_the_native_lean_backend() {
         }
     }
     assert!(failures.is_empty(), "{} programs differ:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
+fn rust_backend_matches_the_native_lean_backend() {
+    backend_matches_the_native_lean_backend("rust");
+}
+
+#[test]
+fn c_backend_matches_the_native_lean_backend() {
+    backend_matches_the_native_lean_backend("c");
 }

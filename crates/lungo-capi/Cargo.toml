@@ -1,0 +1,19 @@
+[package]
+name = "lungo-capi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The lungo runtime as a C library, with its header, for programs generated in C and the languages that bind them."
+publish = false
+
+[lib]
+# `liblungo.a`, `liblungo.dylib`/`liblungo.so`, `lungo.dll`: the runtime library `lungo.h` declares.
+name = "lungo"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+lungo-runtime = { workspace = true, features = ["capi"] }

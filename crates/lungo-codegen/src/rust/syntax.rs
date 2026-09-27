@@ -1,6 +1,6 @@
-//! Rust source emission utilities: identifier sanitization, literal escaping, and an indenting
-//! writer that produces stable formatting.
+//! Rust source syntax: keyword escaping of identifiers and literal escaping.
 
+use crate::core::names::{snake_case, upper_camel_case};
 use std::fmt::Write as _;
 
 /// Rust keywords (strict, reserved, and weak keywords that cannot be used as identifiers).
@@ -30,101 +30,14 @@ pub fn identifier(s: &str) -> String {
     }
 }
 
-/// Lean's fixed-width integer type names, which read as single words.
-const INTEGER_TYPE_WORDS: &[(&str, &str)] = &[("UInt", "Uint"), ("USize", "Usize"), ("ISize", "Isize")];
-
-/// Splits a Lean identifier component into words for case conversion.
-fn words(s: &str) -> Vec<String> {
-    let mut s = s.to_owned();
-    for (from, to) in INTEGER_TYPE_WORDS {
-        s = s.replace(from, to);
-    }
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let chars: Vec<char> = s.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if !c.is_alphanumeric() {
-            if !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-            }
-            continue;
-        }
-        let boundary = c.is_uppercase()
-            && !cur.is_empty()
-            && (chars[i - 1].is_lowercase()
-                || chars[i - 1].is_ascii_digit()
-                || chars.get(i + 1).is_some_and(|n| n.is_lowercase()));
-        if boundary {
-            out.push(std::mem::take(&mut cur));
-        }
-        cur.push(c);
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-/// Transliterates characters outside Rust's identifier alphabet (Lean allows Unicode letters,
-/// subscripts, `!`, `?`, `'`, ...) into ASCII.
-fn ascii_word(w: &str) -> String {
-    let mut out = String::new();
-    for c in w.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-        } else {
-            write!(out, "u{:x}", c as u32).unwrap();
-        }
-    }
-    out
-}
-
-fn symbol_suffix(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars() {
-        match c {
-            '!' => out.push_str("_bang"),
-            '?' => out.push_str("_opt"),
-            '\'' => out.push_str("_prime"),
-            _ => {}
-        }
-    }
-    out
-}
-
 /// Lean component → `snake_case` Rust identifier (for functions, modules, fields).
 pub fn snake(s: &str) -> String {
-    let base: Vec<String> = words(s).iter().map(|w| ascii_word(&w.to_lowercase())).collect();
-    let mut id = base.join("_");
-    id.push_str(&symbol_suffix(s));
-    if id.is_empty() {
-        id.push('_');
-    }
-    if id.starts_with(|c: char| c.is_ascii_digit()) {
-        id.insert(0, '_');
-    }
-    identifier(&id)
+    identifier(&snake_case(s))
 }
 
 /// Lean component → `UpperCamelCase` Rust identifier (for types and variants).
 pub fn camel(s: &str) -> String {
-    let mut id = String::new();
-    for w in words(s) {
-        let mut cs = w.chars();
-        if let Some(first) = cs.next() {
-            id.extend(first.to_uppercase());
-            id.push_str(cs.as_str());
-        }
-    }
-    let mut id = ascii_word(&id);
-    id.push_str(&symbol_suffix(s).replace('_', ""));
-    if id.is_empty() {
-        id.push('_');
-    }
-    if id.starts_with(|c: char| c.is_ascii_digit()) {
-        id.insert(0, '_');
-    }
-    identifier(&id)
+    identifier(&upper_camel_case(s))
 }
 
 /// A Rust byte-string literal for `bytes`.
@@ -148,50 +61,6 @@ pub fn byte_string(bytes: &[u8]) -> String {
 /// A Rust string literal for `s`.
 pub fn string(s: &str) -> String {
     format!("{s:?}")
-}
-
-/// An indenting source writer.
-#[derive(Default)]
-pub struct Writer {
-    out: String,
-    indent: usize,
-}
-
-impl Writer {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn line(&mut self, s: impl AsRef<str>) {
-        let s = s.as_ref();
-        if s.is_empty() {
-            self.out.push('\n');
-            return;
-        }
-        for _ in 0..self.indent {
-            self.out.push_str("    ");
-        }
-        self.out.push_str(s);
-        self.out.push('\n');
-    }
-
-    pub fn open(&mut self, s: impl AsRef<str>) {
-        self.line(s);
-        self.indent += 1;
-    }
-
-    pub fn close(&mut self, s: impl AsRef<str>) {
-        self.indent -= 1;
-        self.line(s);
-    }
-
-    pub fn dedent(&mut self) {
-        self.indent -= 1;
-    }
-
-    pub fn finish(self) -> String {
-        self.out
-    }
 }
 
 /// The byte offset `words * size_of::<usize>() + bytes` as a Rust expression, written without

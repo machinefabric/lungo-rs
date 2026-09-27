@@ -124,6 +124,20 @@ pub fn publish(
     if previous.exists() {
         fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
     }
+    // The output directory belongs to lungo: it is replaced as a whole. A directory lungo did
+    // not create is never replaced.
+    if out_dir.exists() && !out_dir.join(BUILD_INFO).is_file() {
+        let empty = fs::read_dir(out_dir)
+            .map_err(|e| Error::io(format!("cannot read {}", out_dir.display()), e))?
+            .next()
+            .is_none();
+        if !empty {
+            return Err(Error::Configuration(format!(
+                "refusing to replace {}: it is not a directory lungo generated (it has no {BUILD_INFO}); choose an empty or new output directory",
+                out_dir.display()
+            )));
+        }
+    }
     let parent = out_dir.parent().expect("the output directory has a parent");
     fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
     let had_previous = out_dir.exists();

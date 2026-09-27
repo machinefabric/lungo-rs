@@ -78,6 +78,20 @@ the same module, no `OUT_DIR` and no `out_dir` outside a build script, or a
 error[LNG0107]: field_attribute path `Geometry.Point.z` selects no field of a generated type
 ```
 
+### LNG0108
+
+**lungo runtime unavailable.** A language binding needs the prebuilt lungo runtime, and none
+is available: this `lungo` is a development build, which knows no release, and no local
+runtime distribution was given with `--runtime-dir`; or the release has no runtime for the
+requested target. See [the runtime](lungo-cli.md#runtime).
+
+### LNG0109
+
+**Runtime artifact checksum mismatch.** A runtime artifact downloaded by `lungo runtime fetch`
+(or found in the cache) does not have the SHA-256 digest recorded in this `lungo` release.
+The artifact is not used; the cached copy is removed. A persistent mismatch means the
+download was tampered with or corrupted in transit.
+
 ## Lean
 
 ### LNG0201
@@ -179,6 +193,13 @@ constant). Such externs can only be implemented in Lean or by the runtime.
 **Extern form unsupported in `LeanOracle` mode.** In `LeanOracle` mode, application functions
 can only implement externs declared `@[extern "symbol"]`.
 
+### LNG0408
+
+**Primitive unsupported on the target.** The program reaches a runtime primitive the target
+cannot provide. On WebAssembly (the TypeScript binding) there are no threads, child processes
+or sockets: `IO.asTask` and the other task primitives, `IO.Process`, and networking are
+unavailable. The message names the primitive and the declaration using it.
+
 ## Code generation
 
 ### LNG0501
@@ -196,6 +217,13 @@ not implement, such as IR struct or union types.
 
 **Internal code generator error.** An internal invariant of the code generator was violated.
 This indicates a lungo defect.
+
+### LNG0504
+
+**Generator plugin failed.** A generator plugin (`lungo-gen-<language>` on `PATH`, see
+[plugins](plugins.md)) could not be run, exited unsuccessfully, wrote a response that is not a
+valid `GenerateResponse`, or reported errors. The message contains its standard error or its
+errors.
 
 ## Trust policy
 
