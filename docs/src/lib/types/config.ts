@@ -45,11 +45,8 @@ export interface SiteConfig {
     /** The sections of the docs, in navigation order; every directory of `src/content` is one */
     sections: Section[];
 
-    /** Path to the main logo (light theme), in `static` */
+    /** Path to the logo, a black mark, in `static` (inverted in dark mode) */
     logo: string;
-
-    /** Path to the dark theme logo, in `static` */
-    logoDark: string;
 }
 export interface PromoConfig {
     title: string;

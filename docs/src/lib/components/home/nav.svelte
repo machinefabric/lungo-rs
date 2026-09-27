@@ -5,7 +5,8 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import DarkModeToggle from '../dark-mode-toggle.svelte';
 	import { navItems, siteConfig } from '$lib/config';
-	import { asset, resolve } from '$app/paths';
+	import { resolve } from '$app/paths';
+	import Logo from '../logo.svelte';
 	import { link } from '$lib/paths';
 	import SocialMedia from '../social-media.svelte';
 
@@ -21,8 +22,7 @@
 		<!-- Logo w/ Collapse Button -->
 		<div class="flex items-center justify-between">
 			<a href={resolve('/')}>
-				<img src={asset(siteConfig.logo)} alt={siteConfig.title} class="h-6 dark:hidden" />
-				<img src={asset(siteConfig.logoDark)} alt={siteConfig.title} class="hidden h-6 dark:block" />
+				<Logo />
 			</a>
 
 			<div class="flex items-center gap-2">

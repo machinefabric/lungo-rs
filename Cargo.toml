@@ -22,7 +22,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.54.2456"
+version = "0.55.2470"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -34,13 +34,13 @@ homepage = "https://github.com/machinefabric/lungo"
 # The lungo crates are released together and depend on each other's unstable internals (the
 # generated code, the Bridge IR, the worker protocol), so they require each other's exact
 # version.
-lungo = { path = "crates/lungo", version = "=0.54.2456" }
-lungo-bir = { path = "crates/lungo-bir", version = "=0.54.2456" }
-lungo-build = { path = "crates/lungo-build", version = "=0.54.2456" }
-lungo-codegen = { path = "crates/lungo-codegen", version = "=0.54.2456" }
-lungo-driver = { path = "crates/lungo-driver", version = "=0.54.2456" }
-lungo-protocol = { path = "crates/lungo-protocol", version = "=0.54.2456" }
-lungo-runtime = { path = "crates/lungo-runtime", version = "=0.54.2456" }
+lungo = { path = "crates/lungo", version = "=0.55.2470" }
+lungo-bir = { path = "crates/lungo-bir", version = "=0.55.2470" }
+lungo-build = { path = "crates/lungo-build", version = "=0.55.2470" }
+lungo-codegen = { path = "crates/lungo-codegen", version = "=0.55.2470" }
+lungo-driver = { path = "crates/lungo-driver", version = "=0.55.2470" }
+lungo-protocol = { path = "crates/lungo-protocol", version = "=0.55.2470" }
+lungo-runtime = { path = "crates/lungo-runtime", version = "=0.55.2470" }
 
 cc = "1.2"
 ciborium = "0.2.2"

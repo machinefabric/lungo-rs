@@ -34,7 +34,6 @@ export const siteConfig: SiteConfig = {
         { dir: 'explanation', title: 'Explanation' }
     ],
     logo: '/logo.svg',
-    logoDark: '/logo-white.svg',
 };
 
 

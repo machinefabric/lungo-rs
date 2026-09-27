@@ -1,6 +1,7 @@
 <script>
 	import { navItems, siteConfig } from '$lib/config';
-	import { asset, resolve } from '$app/paths';
+	import { resolve } from '$app/paths';
+	import Logo from '../logo.svelte';
 	import { link } from '$lib/paths';
 	import SocialMedia from '../social-media.svelte';
 </script>
@@ -9,8 +10,7 @@
 	<div class="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
 		<div>
 			<a href={resolve('/')}>
-				<img src={asset(siteConfig.logo)} alt={siteConfig.title} class="h-6 dark:hidden" />
-				<img src={asset(siteConfig.logoDark)} alt={siteConfig.title} class="hidden h-6 dark:block" />
+				<Logo />
 			</a>
 		</div>
 

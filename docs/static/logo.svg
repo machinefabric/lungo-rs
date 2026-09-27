@@ -1,5 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 32" height="32">
-  <rect width="32" height="32" rx="7" fill="#7c4a2d"/>
-  <path d="M11 7v15.5h10" fill="none" stroke="#f5e6d3" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="42" y="24" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="24" font-weight="700" fill="#1f2937">lungo</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="426" height="294" viewBox="-10 -10 142 98" fill="#000" role="img" aria-labelledby="title">
+<title id="title">Lungo study: suspension</title>
+<path d="M0 55H16V0H27V10C27 31 40 43 61 43S95 31 95 10V0H106V55H122V66H106V78H95V66H27V78H16V66H0ZM27 55H95V37C86 49 75 54 61 54S36 49 27 37Z" fill-rule="evenodd"/>
 </svg>
