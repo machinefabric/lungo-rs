@@ -251,6 +251,42 @@ pub fn hex(bytes: &[u8]) -> String {
 }
 
 /// The SHA-256 of a file.
+/// What a local distribution holds, as one digest: every file's path (relative, with `/`) and
+/// contents, in path order. A release is identified by its manifest, which names every
+/// archive's digest; a local distribution is rebuilt in place, so only its contents say whether
+/// the packages generated from it are still what it would generate. `None` for a release.
+pub fn distribution_digest(info: &RuntimeInfo) -> Result<Option<String>> {
+    let Distribution::Local { dir } = &info.distribution else {
+        return Ok(None);
+    };
+    let root = Path::new(dir);
+    let mut files = Vec::new();
+    collect_files(root, root, &mut files)?;
+    files.sort();
+    let mut h = Sha256::new();
+    for relative in files {
+        let digest = file_sha256(&root.join(&relative))?;
+        h.write_all(format!("{relative}\0{digest}\n").as_bytes()).expect("hashing cannot fail");
+    }
+    Ok(Some(hex(&h.finalize())))
+}
+
+fn collect_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+    let entries = fs::read_dir(dir).map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+        if kind.is_dir() {
+            collect_files(root, &path, out)?;
+        } else {
+            let relative = path.strip_prefix(root).expect("walked from the root");
+            out.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
 pub fn file_sha256(path: &Path) -> Result<String> {
     let mut f = fs::File::open(path).map_err(|e| Error::io(format!("cannot open {}", path.display()), e))?;
     let mut h = Sha256::new();
@@ -267,6 +303,44 @@ pub fn file_sha256(path: &Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_local_distribution_is_identified_by_what_it_holds() {
+        let root = std::env::temp_dir().join(format!("lungo-distribution-digest-{}", std::process::id()));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        struct Dir(PathBuf);
+        impl Dir {
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let dir = Dir(root);
+        std::fs::create_dir_all(dir.path().join("wasm/lib")).unwrap();
+        std::fs::write(dir.path().join("VERSION"), "1\n").unwrap();
+        std::fs::write(dir.path().join("wasm/lib/liblungo.a"), "one").unwrap();
+        let info = RuntimeInfo {
+            version: "1".into(),
+            abi_version: 1,
+            distribution: Distribution::Local { dir: dir.path().to_string_lossy().into_owned() },
+        };
+        let first = distribution_digest(&info).unwrap().unwrap();
+        assert_eq!(distribution_digest(&info).unwrap().unwrap(), first, "the same contents, the same digest");
+        std::fs::write(dir.path().join("wasm/lib/liblungo.a"), "two").unwrap();
+        let rebuilt = distribution_digest(&info).unwrap().unwrap();
+        assert_ne!(rebuilt, first, "a rebuilt runtime at the same path is another distribution");
+        // A file moved is a different distribution, though its bytes are the same.
+        std::fs::rename(dir.path().join("wasm/lib/liblungo.a"), dir.path().join("wasm/liblungo.a")).unwrap();
+        assert_ne!(distribution_digest(&info).unwrap().unwrap(), rebuilt);
+        let release = RuntimeInfo { distribution: Distribution::Release { artifacts: BTreeMap::new() }, ..info };
+        assert_eq!(distribution_digest(&release).unwrap(), None);
+    }
     use super::*;
 
     fn manifest_text(version: &str, sha: &str, url: &str) -> String {

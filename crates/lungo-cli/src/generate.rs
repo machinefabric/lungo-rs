@@ -77,6 +77,8 @@ struct KeyConfig<'a> {
     options: &'a BTreeMap<String, String>,
     extern_types: &'a BTreeMap<String, ExternType>,
     runtime: &'a RuntimeInfo,
+    /// A local distribution's contents: it is rebuilt in place, and its path says nothing.
+    distribution_digest: Option<&'a str>,
     host_externs: &'a std::collections::BTreeSet<String>,
     wasi_sdk: Option<&'a str>,
 }
@@ -164,6 +166,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         });
     }
     let runtime = runtime::select(s.runtime_dir.as_deref())?;
+    let distribution_digest = runtime::distribution_digest(&runtime)?;
     let ctx = s.lean.context(s.project, s.env)?;
     let wasm = wasm_env(s.env);
     for (o, generator) in s.outputs.iter().zip(&generators) {
@@ -180,6 +183,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             options: &o.options,
             extern_types: &o.extern_types,
             runtime: &runtime,
+            distribution_digest: distribution_digest.as_deref(),
             host_externs: &s.lean.host_externs,
             wasi_sdk: sdk_text.as_deref(),
         })

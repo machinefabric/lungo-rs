@@ -408,7 +408,8 @@ pub fn cli(platform: &str, manifest: &Path, out_dir: &Path) -> Result<()> {
     cmd.current_dir(repo())
         .env("CARGO_TARGET_DIR", &target_dir)
         .env("LUNGO_RUNTIME_MANIFEST", &manifest)
-        .env("MACOSX_DEPLOYMENT_TARGET", lungo_runtime::header::MACOS_DEPLOYMENT_TARGET);
+        .env("MACOSX_DEPLOYMENT_TARGET", lungo_runtime::header::MACOS_DEPLOYMENT_TARGET)
+        .env("CARGO_ENCODED_RUSTFLAGS", crate::remapped_paths().join("\u{1f}"));
     match linker {
         Linker::Host => cmd.args(["build", "--release", "-p", "lungo-cli", "--target", target]),
         Linker::Zig => {

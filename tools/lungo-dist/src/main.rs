@@ -219,11 +219,35 @@ fn cargo(target: &str) -> Command {
         .env("CARGO_TARGET_DIR", runtime_target_dir())
         .env("MACOSX_DEPLOYMENT_TARGET", lungo_runtime::header::MACOS_DEPLOYMENT_TARGET)
         .env("IPHONEOS_DEPLOYMENT_TARGET", lungo_runtime::header::IOS_DEPLOYMENT_TARGET);
+    let mut flags = remapped_paths();
     if target.contains("-windows-") {
-        let var = format!("CARGO_TARGET_{}_RUSTFLAGS", target.to_uppercase().replace('-', "_"));
-        cmd.env(var, "--cfg windows_raw_dylib");
+        flags.extend(["--cfg".to_owned(), "windows_raw_dylib".to_owned()]);
     }
+    // Encoded, so that no path is split on a space; it replaces every other RUSTFLAGS source.
+    cmd.env("CARGO_ENCODED_RUSTFLAGS", flags.join("\u{1f}"));
     cmd
+}
+
+/// `--remap-path-prefix` for every directory of the building machine a runtime could name: the
+/// toolchain's library sources, Cargo's home (the crates' sources) and the repository. A
+/// runtime names source paths in its panic locations, and a published one must name none of
+/// the machine it was built on — nor differ from a build of the same sources on another.
+fn remapped_paths() -> Vec<String> {
+    let sysroot = Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .expect("rustc prints its sysroot");
+    let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| {
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).expect("a home directory");
+        PathBuf::from(home).join(".cargo")
+    });
+    [(PathBuf::from(sysroot), "/rustc"), (cargo_home, "/cargo"), (repo(), "/lungo")]
+        .into_iter()
+        .map(|(from, to)| format!("--remap-path-prefix={}={to}", from.display()))
+        .collect()
 }
 
 /// The native libraries the static runtime needs, as `rustc` reports them.

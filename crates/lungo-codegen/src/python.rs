@@ -169,6 +169,12 @@ fn valid_package(p: &str) -> bool {
         && !PYTHON_KEYWORDS.contains(&p)
 }
 
+/// A component of an embedded module's dotted name: a package name, or one with a leading
+/// underscore — the spelling of a module private to the package holding it (`host._formal`).
+fn valid_module_component(p: &str) -> bool {
+    valid_package(p.strip_prefix('_').unwrap_or(p))
+}
+
 impl Generator for PythonGenerator {
     fn language(&self) -> &'static str {
         "python"
@@ -189,9 +195,9 @@ impl Generator for PythonGenerator {
                     "the Python option `{standalone}` names a package of its own, and `embed` a module of the host's"
                 ))]);
             }
-            if module.is_empty() || !module.split('.').all(valid_package) {
+            if module.is_empty() || !module.split('.').all(valid_module_component) {
                 return Err(vec![CodegenError::Configuration(format!(
-                    "`{module}` cannot name a Python module: dotted lowercase identifiers (option `embed`)"
+                    "`{module}` cannot name a Python module: dotted lowercase identifiers, each may start with `_` (option `embed`)"
                 ))]);
             }
             files.insert("__init__.py".to_owned(), e.module());
@@ -841,7 +847,20 @@ impl Emitter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::file_url;
+
+    #[test]
+    fn an_embedded_module_may_be_private_to_its_package() {
+        assert!(valid_module_component("_formal"));
+        assert!(valid_module_component("formal"));
+        assert!(!valid_module_component("__formal"), "one underscore marks it private");
+        assert!(!valid_module_component("_"));
+        assert!(!valid_module_component("_Formal"));
+        assert!(!valid_module_component("_class"), "still not a keyword");
+        // A package keeps the stricter spelling: it is what a user imports first.
+        assert!(!valid_package("_formal"));
+    }
+
+    use super::{file_url, valid_module_component, valid_package};
 
     #[test]
     fn file_urls_have_an_empty_host_and_escape_what_urls_cannot_hold() {

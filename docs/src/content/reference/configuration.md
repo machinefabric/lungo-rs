@@ -187,7 +187,7 @@ generator rejects options it does not know.
 | `python` | `package` | the program's C identifier, lowercased | The import name. |
 | `python` | `distribution` | `package` with `_` as `-` | The distribution (PyPI) name. |
 | `python` | `version` | `0.1.0` | The distribution's version. |
-| `python` | `embed` | absent | A dotted module of the host's package (`host.formal`): the output is that module, [embedded](generated-packages.md#embedded-packages), with no distribution of its own. Excludes `package`, `distribution` and `version`. |
+| `python` | `embed` | absent | A dotted module of the host's package (`host.formal`, or `host._formal` for one private to it): the output is that module, [embedded](generated-packages.md#embedded-packages), with no distribution of its own. Excludes `package`, `distribution` and `version`. |
 | `swift` | `module` | the program's name in UpperCamelCase | The Swift module; the C target is `<module>Program`. |
 | `swift` | `embed` | absent | `true`: the two targets for the host package to declare, with no `Package.swift` ([embedded](generated-packages.md#embedded-packages)). |
 | `ts` | `package` | the program's name, lowercased | The npm package name. |
