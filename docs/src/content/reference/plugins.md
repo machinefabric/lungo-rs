@@ -21,7 +21,7 @@ in Rust can use directly. See [how to write a generator plugin](../how-to/write-
 | `program` | `name` (the program's name), `lean_version`, `lean_githash`, `bir_version`, `root_modules`. |
 | `boundary` | The program's interface (below). |
 | `program_files` | The program as C: paths (under `program/`) to contents, including `lungo.h`. A package compiles every `.c` file with `program/` on its include path. |
-| `runtime` | `version` (the lungo release), `abi_version` (the C ABI), and `distribution`: `{"release": {"artifacts": {…}}}` (runtime archives by target triple and `xcframework`, each `{url, sha256}`), or `{"local": {"dir": …}}` (a [local distribution](lungo-cli.md#the-runtime)). |
+| `runtime` | `version` (the lungo release), `abi_version` (the C ABI), and `distribution`: `{"release": {"artifacts": {…}}}` (runtime archives by target triple and `xcframework`, each `{url, sha256}`), or `{"local": {"dir": …}}` (a [local distribution](lungo-cli.md#the-runtime): an absolute path with `/` separators, also on Windows). |
 | `options` | The generator's options (`--<language>_opt`, `options` of `[plugins.<language>]`), strings by key. A plugin rejects keys it does not know. |
 
 ### `boundary`
