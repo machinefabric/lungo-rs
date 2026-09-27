@@ -103,9 +103,9 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     let main = match &input.success.entry_point {
         Some(entry) => Some((
             entry,
-            program
-                .declaration(&entry.declaration)
-                .ok_or_else(|| vec![CodegenError::internal(format!("the entry point {} is not compiled", entry.declaration))])?,
+            program.declaration(&entry.declaration).ok_or_else(|| {
+                vec![CodegenError::internal(format!("the entry point {} is not compiled", entry.declaration))]
+            })?,
         )),
         None => None,
     };

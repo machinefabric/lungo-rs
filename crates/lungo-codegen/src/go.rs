@@ -24,14 +24,79 @@ pub struct GoGenerator;
 pub const SUPPORT_MODULE: &str = "github.com/jowharshamshiri/lungo-go";
 
 const GO_KEYWORDS: &[&str] = &[
-    "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough", "for", "func", "go", "goto",
-    "if", "import", "interface", "map", "package", "range", "return", "select", "struct", "switch", "type", "var",
+    "break",
+    "case",
+    "chan",
+    "const",
+    "continue",
+    "default",
+    "defer",
+    "else",
+    "fallthrough",
+    "for",
+    "func",
+    "go",
+    "goto",
+    "if",
+    "import",
+    "interface",
+    "map",
+    "package",
+    "range",
+    "return",
+    "select",
+    "struct",
+    "switch",
+    "type",
+    "var",
     // Predeclared identifiers a parameter would shadow.
-    "nil", "true", "false", "iota", "len", "cap", "make", "new", "append", "copy", "delete", "panic", "recover",
-    "print", "println", "string", "int", "bool", "byte", "rune", "error", "any", "complex", "real", "imag", "close",
-    "min", "max", "clear",
+    "nil",
+    "true",
+    "false",
+    "iota",
+    "len",
+    "cap",
+    "make",
+    "new",
+    "append",
+    "copy",
+    "delete",
+    "panic",
+    "recover",
+    "print",
+    "println",
+    "string",
+    "int",
+    "bool",
+    "byte",
+    "rune",
+    "error",
+    "any",
+    "complex",
+    "real",
+    "imag",
+    "close",
+    "min",
+    "max",
+    "clear",
     // Imported packages and the generated functions' locals.
-    "lungo", "big", "unsafe", "sync", "C", "w", "r", "v", "x", "c", "err", "status", "out", "result", "t", "h", "p",
+    "lungo",
+    "big",
+    "unsafe",
+    "sync",
+    "C",
+    "w",
+    "r",
+    "v",
+    "x",
+    "c",
+    "err",
+    "status",
+    "out",
+    "result",
+    "t",
+    "h",
+    "p",
 ];
 
 impl Generator for GoGenerator {
@@ -108,7 +173,8 @@ impl Names {
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
         let mut types = Vec::new();
         for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
-            let name = scope.claim(short.iter().map(|c| go_exported(c)).collect(), format!("type {}", named.lean_name))?;
+            let name =
+                scope.claim(short.iter().map(|c| go_exported(c)).collect(), format!("type {}", named.lean_name))?;
             let descriptor = scope.claim(format!("{name}Type"), format!("the descriptor of {}", named.lean_name))?;
             let mut ctors = Vec::new();
             for c in &decl.ctors {
@@ -146,7 +212,9 @@ impl Names {
         let host_methods = short_names(&host_names)
             .iter()
             .zip(&b.host_externs)
-            .map(|(s, h)| methods.claim(s.iter().map(|c| go_exported(c)).collect(), format!("host extern {}", h.declaration)))
+            .map(|(s, h)| {
+                methods.claim(s.iter().map(|c| go_exported(c)).collect(), format!("host extern {}", h.declaration))
+            })
             .collect::<Result<_, _>>()?;
         Ok(Names { types, functions, host_methods })
     }
@@ -155,7 +223,13 @@ impl Names {
 /// An exported struct field.
 fn go_field(name: &str, index: usize) -> String {
     let id = upper_camel_case(name);
-    if name.is_empty() || id.chars().all(|c| c == '_') { format!("F{index}") } else if id.starts_with('_') { format!("F{id}") } else { id }
+    if name.is_empty() || id.chars().all(|c| c == '_') {
+        format!("F{index}")
+    } else if id.starts_with('_') {
+        format!("F{id}")
+    } else {
+        id
+    }
 }
 
 /// A Go parameter name for a Lean binder.
@@ -273,7 +347,9 @@ impl Emitter<'_> {
             Type::Option(t) => format!("lungo.OptionType({})", self.descriptor(t, scoped)),
             Type::List(t) => format!("lungo.ListType({})", self.descriptor(t, scoped)),
             Type::Array(t) => format!("lungo.ArrayType({})", self.descriptor(t, scoped)),
-            Type::Prod(a, b) => format!("lungo.PairType({}, {})", self.descriptor(a, scoped), self.descriptor(b, scoped)),
+            Type::Prod(a, b) => {
+                format!("lungo.PairType({}, {})", self.descriptor(a, scoped), self.descriptor(b, scoped))
+            }
             Type::Except { error, value } => {
                 format!("lungo.ExceptType({}, {})", self.descriptor(error, scoped), self.descriptor(value, scoped))
             }
@@ -291,11 +367,7 @@ impl Emitter<'_> {
     }
 
     fn type_params(n: u32) -> String {
-        if n == 0 {
-            String::new()
-        } else {
-            format!("[{} any]", (0..n).map(param_name).collect::<Vec<_>>().join(", "))
-        }
+        if n == 0 { String::new() } else { format!("[{} any]", (0..n).map(param_name).collect::<Vec<_>>().join(", ")) }
     }
 
     fn type_args(n: u32) -> String {
@@ -335,7 +407,10 @@ impl Emitter<'_> {
         w.line("var theProgram *lungo.Program");
         w.line("");
         w.line("func program() *lungo.Program {");
-        w.line(format!("\tprogramOnce.Do(func() {{ theProgram = lungo.NewProgram(unsafe.Pointer(C.{}())) }})", b.types_symbol));
+        w.line(format!(
+            "\tprogramOnce.Do(func() {{ theProgram = lungo.NewProgram(unsafe.Pointer(C.{}())) }})",
+            b.types_symbol
+        ));
         w.line("\treturn theProgram");
         w.line("}");
         w.line("");
@@ -396,7 +471,12 @@ impl Emitter<'_> {
                 decl.ctors[0].fields.iter().zip(fields).map(|(f, n)| (n.clone(), self.go_type(&f.ty))).collect();
             Self::struct_type(w, &format!("type {}{tp}", tn.name), &fs);
         } else {
-            w.line(format!("// {} is Lean's {}: one of {}.", tn.name, named.lean_name, tn.ctors.iter().map(|c| c.0.as_str()).collect::<Vec<_>>().join(", ")));
+            w.line(format!(
+                "// {} is Lean's {}: one of {}.",
+                tn.name,
+                named.lean_name,
+                tn.ctors.iter().map(|c| c.0.as_str()).collect::<Vec<_>>().join(", ")
+            ));
             let marker_param = if n == 0 { String::new() } else { param_name(0) };
             w.line(format!("type {}{tp} interface{{ {}({marker_param}) }}", tn.name, tn.marker));
             for (c, (cname, fields)) in decl.ctors.iter().zip(&tn.ctors) {
@@ -415,7 +495,8 @@ impl Emitter<'_> {
             (0..n).map(|k| (format!("type{}", param_name(k)), format!("lungo.Type[{}]", param_name(k)))).collect();
         Self::struct_type(w, &format!("type {}{tp}", tn.impl_type), &fields);
         w.line("");
-        let params: Vec<String> = (0..n).map(|k| format!("type{} lungo.Type[{}]", param_name(k), param_name(k))).collect();
+        let params: Vec<String> =
+            (0..n).map(|k| format!("type{} lungo.Type[{}]", param_name(k), param_name(k))).collect();
         let args: Vec<String> = (0..n).map(|k| format!("type{}", param_name(k))).collect();
         w.line(format!("// {} describes {} for polymorphic functions.", tn.descriptor, named.lean_name));
         w.line(format!("func {}{tp}({}) lungo.Type[{value_type}] {{", tn.descriptor, params.join(", ")));
@@ -471,7 +552,10 @@ impl Emitter<'_> {
                 w.line(format!("\t\treturn {fail}, err"));
                 w.line("\t}");
                 w.line("\tif c != 0 {");
-                w.line(format!("\t\treturn {fail}, lungo.Malformed(\"constructor index %d of {}\", c)", named.lean_name));
+                w.line(format!(
+                    "\t\treturn {fail}, lungo.Malformed(\"constructor index %d of {}\", c)",
+                    named.lean_name
+                ));
                 w.line("\t}");
             }
             self.decode_fields(w, &c.fields, &tn.ctors[0].1, fail, "\t");
@@ -520,7 +604,14 @@ impl Emitter<'_> {
     }
 
     /// Decodes the fields of a constructor into `v`, returning `fail` on an error.
-    fn decode_fields(&self, w: &mut Writer, fields: &[lungo_runtime::wire::Field], names: &[String], fail: &str, indent: &str) {
+    fn decode_fields(
+        &self,
+        w: &mut Writer,
+        fields: &[lungo_runtime::wire::Field],
+        names: &[String],
+        fail: &str,
+        indent: &str,
+    ) {
         for (k, (f, fname)) in fields.iter().zip(names).enumerate() {
             w.line(format!("{indent}f{k}, err := {}.Decode(r)", self.descriptor(&f.ty, Scoped::Descriptor)));
             w.line(format!("{indent}if err != nil {{"));
@@ -542,7 +633,8 @@ impl Emitter<'_> {
         let n = f.type_params.len() as u32;
         let tp = Self::type_params(n);
         let locals = distinct_locals(f.params.iter().enumerate().map(|(i, p)| go_local(&p.name, i)).collect());
-        let mut params: Vec<String> = (0..n).map(|k| format!("type{} lungo.Type[{}]", param_name(k), param_name(k))).collect();
+        let mut params: Vec<String> =
+            (0..n).map(|k| format!("type{} lungo.Type[{}]", param_name(k), param_name(k))).collect();
         params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("{l} {}", self.go_type(&p.ty))));
         let result = self.result_type(&f.returns);
         let results = match &result {
@@ -561,8 +653,12 @@ impl Emitter<'_> {
         }
         w.line(format!("\tstatus, out := call(C.lungo_entry(C.{}), w.Bytes())", f.symbol));
         let decode = match &f.returns {
-            Returns::Value(t) => format!("lungo.DecodeValue(program(), status, out, {})", self.descriptor(t, Scoped::Function)),
-            Returns::Io(t) => format!("lungo.DecodeIO(program(), status, out, {})", self.descriptor(t, Scoped::Function)),
+            Returns::Value(t) => {
+                format!("lungo.DecodeValue(program(), status, out, {})", self.descriptor(t, Scoped::Function))
+            }
+            Returns::Io(t) => {
+                format!("lungo.DecodeIO(program(), status, out, {})", self.descriptor(t, Scoped::Function))
+            }
             Returns::Eio { error, value } => format!(
                 "lungo.DecodeEIO(program(), status, out, {}, {})",
                 self.descriptor(error, Scoped::Function),
@@ -588,7 +684,11 @@ impl Emitter<'_> {
         w.line("// thread; an error of a method whose Lean type is not IO or EIO terminates the program.");
         w.line("type Host interface {");
         for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-            w.line(format!("\t// {m} implements Lean's {} : {}", h.declaration, h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")));
+            w.line(format!(
+                "\t// {m} implements Lean's {} : {}",
+                h.declaration,
+                h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
+            ));
             w.line(format!("\t{}", self.host_signature(h, m)));
         }
         w.line("}");
@@ -614,7 +714,11 @@ impl Emitter<'_> {
                 Returns::Io(t) => (t, format!("lungo.WriteIO(w, {}, ", self.descriptor(t, Scoped::Function))),
                 Returns::Eio { error, value } => (
                     value,
-                    format!("lungo.WriteEIO(w, {}, {}, ", self.descriptor(error, Scoped::Function), self.descriptor(value, Scoped::Function)),
+                    format!(
+                        "lungo.WriteEIO(w, {}, {}, ",
+                        self.descriptor(error, Scoped::Function),
+                        self.descriptor(value, Scoped::Function)
+                    ),
                 ),
             };
             if is_unit(t) {
@@ -631,7 +735,8 @@ impl Emitter<'_> {
 
     fn host_signature(&self, h: &HostExtern, method: &str) -> String {
         let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| go_local(&p.name, i)).collect());
-        let params: Vec<String> = h.params.iter().zip(&locals).map(|(p, l)| format!("{l} {}", self.go_type(&p.ty))).collect();
+        let params: Vec<String> =
+            h.params.iter().zip(&locals).map(|(p, l)| format!("{l} {}", self.go_type(&p.ty))).collect();
         match self.result_type(&h.returns) {
             Some(t) => format!("{method}({}) ({t}, error)", params.join(", ")),
             None => format!("{method}({}) error", params.join(", ")),

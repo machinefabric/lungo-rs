@@ -43,18 +43,18 @@ pub struct InitBits {
     name: *const c_char,
 }
 
+/// The once-cells of the constants being evaluated, keyed by the cells' addresses.
+type Onces<T> = OnceLock<Mutex<HashMap<usize, Arc<OnceLock<T>>>>>;
+
 /// The once-cell of each constant being evaluated, keyed by the cell's address.
-fn once_of<T: Send + Sync + 'static>(
-    table: &'static OnceLock<Mutex<HashMap<usize, Arc<OnceLock<T>>>>>,
-    cell: usize,
-) -> Arc<OnceLock<T>> {
+fn once_of<T: Send + Sync + 'static>(table: &'static Onces<T>, cell: usize) -> Arc<OnceLock<T>> {
     let map = table.get_or_init(Default::default);
     let mut map = map.lock().unwrap_or_else(|p| p.into_inner());
     map.entry(cell).or_default().clone()
 }
 
-static OBJ_ONCES: OnceLock<Mutex<HashMap<usize, Arc<OnceLock<SendObj>>>>> = OnceLock::new();
-static BITS_ONCES: OnceLock<Mutex<HashMap<usize, Arc<OnceLock<u64>>>>> = OnceLock::new();
+static OBJ_ONCES: Onces<SendObj> = OnceLock::new();
+static BITS_ONCES: Onces<u64> = OnceLock::new();
 
 /// Evaluates the constant in `cell` with `init` unless it already is, and returns its value.
 #[unsafe(no_mangle)]

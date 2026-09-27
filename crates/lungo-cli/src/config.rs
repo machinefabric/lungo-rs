@@ -53,7 +53,8 @@ pub struct Language {
 impl ProjectFile {
     /// Reads a `lungo.toml`.
     pub fn load(path: &Path) -> Result<ProjectFile> {
-        let text = std::fs::read_to_string(path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
         let file: ProjectFile =
             toml::from_str(&text).map_err(|e| Error::Configuration(format!("{}: {e}", path.display())))?;
         for name in file.plugins.keys() {

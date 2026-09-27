@@ -96,16 +96,112 @@ fn local(name: &str, index: usize) -> String {
 /// C and C++ keywords (the header is also compiled as C++), and names of the C library a
 /// parameter would shadow in its macros.
 const C_KEYWORDS: &[&str] = &[
-    "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case", "catch", "char",
-    "char16_t", "char32_t", "char8_t", "class", "compl", "concept", "const", "const_cast", "consteval", "constexpr",
-    "constinit", "continue", "co_await", "co_return", "co_yield", "decltype", "default", "delete", "do", "double",
-    "dynamic_cast", "else", "enum", "explicit", "export", "extern", "false", "float", "for", "friend", "goto", "if",
-    "inline", "int", "long", "mutable", "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or",
-    "or_eq", "private", "protected", "public", "register", "reinterpret_cast", "requires", "restrict", "return",
-    "short", "signed", "sizeof", "static", "static_assert", "static_cast", "struct", "switch", "template", "this",
-    "thread_local", "throw", "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using", "virtual",
-    "void", "volatile", "wchar_t", "while", "xor", "xor_eq", "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex",
-    "_Generic", "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "NULL", "errno", "assert",
+    "alignas",
+    "alignof",
+    "and",
+    "and_eq",
+    "asm",
+    "auto",
+    "bitand",
+    "bitor",
+    "bool",
+    "break",
+    "case",
+    "catch",
+    "char",
+    "char16_t",
+    "char32_t",
+    "char8_t",
+    "class",
+    "compl",
+    "concept",
+    "const",
+    "const_cast",
+    "consteval",
+    "constexpr",
+    "constinit",
+    "continue",
+    "co_await",
+    "co_return",
+    "co_yield",
+    "decltype",
+    "default",
+    "delete",
+    "do",
+    "double",
+    "dynamic_cast",
+    "else",
+    "enum",
+    "explicit",
+    "export",
+    "extern",
+    "false",
+    "float",
+    "for",
+    "friend",
+    "goto",
+    "if",
+    "inline",
+    "int",
+    "long",
+    "mutable",
+    "namespace",
+    "new",
+    "noexcept",
+    "not",
+    "not_eq",
+    "nullptr",
+    "operator",
+    "or",
+    "or_eq",
+    "private",
+    "protected",
+    "public",
+    "register",
+    "reinterpret_cast",
+    "requires",
+    "restrict",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "static_assert",
+    "static_cast",
+    "struct",
+    "switch",
+    "template",
+    "this",
+    "thread_local",
+    "throw",
+    "true",
+    "try",
+    "typedef",
+    "typeid",
+    "typename",
+    "union",
+    "unsigned",
+    "using",
+    "virtual",
+    "void",
+    "volatile",
+    "wchar_t",
+    "while",
+    "xor",
+    "xor_eq",
+    "_Alignas",
+    "_Alignof",
+    "_Atomic",
+    "_Bool",
+    "_Complex",
+    "_Generic",
+    "_Imaginary",
+    "_Noreturn",
+    "_Static_assert",
+    "_Thread_local",
+    "NULL",
+    "errno",
+    "assert",
 ];
 
 impl Names {
@@ -130,7 +226,8 @@ impl Names {
                 let mut fields = Vec::new();
                 for (k, f) in c.fields.iter().enumerate() {
                     let fname = local(&f.name, k);
-                    let item = if single { format!("{id}_{base}_{fname}") } else { format!("{id}_{base}_{cname}_{fname}") };
+                    let item =
+                        if single { format!("{id}_{base}_{fname}") } else { format!("{id}_{base}_{cname}_{fname}") };
                     fields.push(scope.claim(item, format!("field {} of {}", f.name, c.name))?);
                 }
                 let params = distinct_locals(c.fields.iter().enumerate().map(|(k, f)| local(&f.name, k)).collect());
@@ -448,16 +545,24 @@ fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
             "elseif(CMAKE_SYSTEM_NAME STREQUAL \"Linux\")",
             "  set(_lungo_target ${_lungo_arch}-unknown-linux-gnu)",
             "else()",
-            &format!("  message(FATAL_ERROR \"No lungo runtime for ${{CMAKE_SYSTEM_NAME}}: set {upper}_LUNGO_TARGET\")"),
+            &format!(
+                "  message(FATAL_ERROR \"No lungo runtime for ${{CMAKE_SYSTEM_NAME}}: set {upper}_LUNGO_TARGET\")"
+            ),
             "endif()",
-            &format!("set({upper}_LUNGO_TARGET ${{_lungo_target}} CACHE STRING \"Target triple of the lungo runtime\")"),
+            &format!(
+                "set({upper}_LUNGO_TARGET ${{_lungo_target}} CACHE STRING \"Target triple of the lungo runtime\")"
+            ),
         ] {
             w.line(l);
         }
         w.close("endif()");
         let mut first = true;
         for (triple, artifact) in &artifacts {
-            w.line(format!("{}({upper}_LUNGO_TARGET STREQUAL {})", if first { "if" } else { "elseif" }, cmake_string(triple)));
+            w.line(format!(
+                "{}({upper}_LUNGO_TARGET STREQUAL {})",
+                if first { "if" } else { "elseif" },
+                cmake_string(triple)
+            ));
             w.line(format!("  set(_lungo_url {})", cmake_string(&artifact.url)));
             w.line(format!("  set(_lungo_sha256 {})", cmake_string(&artifact.sha256)));
             first = false;
@@ -483,7 +588,8 @@ fn cmake(request: &GenerateRequest) -> Result<String, CodegenError> {
     }
     w.close("endif()");
     w.line("");
-    let mut sources: Vec<&str> = request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
+    let mut sources: Vec<&str> =
+        request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
     sources.sort();
     let src = format!("src/{id}.c");
     w.line(format!("add_library({id}"));

@@ -855,7 +855,8 @@ pub unsafe extern "C" fn lungo_error_value(e: *const Error) -> *const Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lungo_error_io(msg: *const c_char) -> *mut Error {
     let what = "lungo_error_io";
-    let text = std::str::from_utf8(unsafe { c_text(msg, what) }).unwrap_or_else(|_| misuse(what, "the message is not UTF-8"));
+    let text =
+        std::str::from_utf8(unsafe { c_text(msg, what) }).unwrap_or_else(|_| misuse(what, "the message is not UTF-8"));
     give(Error { data: ErrorData::Io(0), message: message(text) })
 }
 
@@ -881,7 +882,8 @@ pub unsafe extern "C" fn lungo_error_clone(e: *const Error) -> *mut Error {
     let data = match &e.data {
         ErrorData::Io(0) => ErrorData::Io(0),
         ErrorData::Io(h) => ErrorData::Io(
-            wire::handle_clone(*h).unwrap_or_else(|err| misuse("lungo_error_clone", &format!("{err} (was the error freed?)"))),
+            wire::handle_clone(*h)
+                .unwrap_or_else(|err| misuse("lungo_error_clone", &format!("{err} (was the error freed?)"))),
         ),
         ErrorData::Value(v) => {
             let mut c = v.clone();
@@ -1105,7 +1107,15 @@ pub unsafe extern "C" fn lungo_value_call(
             Type::Function { params: params.to_vec(), result: Box::new(ret.clone()) }.encode(&mut ty);
             let mut out = Buffer::empty();
             let status = unsafe {
-                super::boundary::lungo_closure_call(table, *h, ty.as_ptr(), ty.len(), input.as_ptr(), input.len(), &mut out)
+                super::boundary::lungo_closure_call(
+                    table,
+                    *h,
+                    ty.as_ptr(),
+                    ty.len(),
+                    input.as_ptr(),
+                    input.len(),
+                    &mut out,
+                )
             };
             let bytes = out.take();
             match status {
@@ -1171,7 +1181,13 @@ fn install_host() {
 }
 
 /// Registers a host function with one reference, owned by the caller.
-fn host_register(table: &'static TypeTable, sig: Signature, f: CFunction, ctx: *mut c_void, drop: Option<CDrop>) -> u64 {
+fn host_register(
+    table: &'static TypeTable,
+    sig: Signature,
+    f: CFunction,
+    ctx: *mut c_void,
+    drop: Option<CDrop>,
+) -> u64 {
     install_host();
     let r = registry();
     let id = r.next.fetch_add(1, Ordering::Relaxed);
@@ -1297,7 +1313,8 @@ unsafe extern "C" fn c_dispatch(id: u64, input: *const u8, len: usize, out: *mut
         (Returns::Eio { error, .. }, Err(e)) => match e.data {
             ErrorData::Value(v) => {
                 bytes.push(result::ERROR);
-                let r = wv::encode(entry.table, error, &v, &mut bytes).map_err(|e| format!("returned a malformed error: {e}"));
+                let r = wv::encode(entry.table, error, &v, &mut bytes)
+                    .map_err(|e| format!("returned a malformed error: {e}"));
                 transfer(v);
                 r
             }
@@ -1541,9 +1558,10 @@ mod tests {
             let mut bytes = wire::handle_new(lean_error).to_le_bytes().to_vec();
             bytes.extend_from_slice(&9u32.to_le_bytes());
             bytes.extend_from_slice(b"from Lean");
-            let received = decode_result(empty_table(), &Returns::Io(Type::Unit), &[&[result::ERROR][..], &bytes].concat())
-                .unwrap()
-                .unwrap_err();
+            let received =
+                decode_result(empty_table(), &Returns::Io(Type::Unit), &[&[result::ERROR][..], &bytes].concat())
+                    .unwrap()
+                    .unwrap_err();
             let ErrorData::Io(h) = received.data else { unreachable!() };
             let received = give(received);
             let sig = Signature { type_params: 0, params: vec![Type::Unit], returns: Returns::Io(Type::Unit) };

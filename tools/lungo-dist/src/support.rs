@@ -196,9 +196,11 @@ pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
     io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
     io(
         "cannot copy the wire vectors",
-        fs::copy(repo.join("compiler-tests/wire/vectors.json"), out.join("Tests/LungoKitTests/vectors.json")).map(|_| ()),
+        fs::copy(repo.join("compiler-tests/wire/vectors.json"), out.join("Tests/LungoKitTests/vectors.json"))
+            .map(|_| ()),
     )?;
-    let template = io("cannot read Package.swift.in", fs::read_to_string(repo.join("runtimes/swift/Package.swift.in")))?;
+    let template =
+        io("cannot read Package.swift.in", fs::read_to_string(repo.join("runtimes/swift/Package.swift.in")))?;
     let linker = swift_linker_settings(runtime)?;
     let manifest = crate::fill(
         &template,
@@ -232,7 +234,10 @@ pub fn typescript(out: &Path) -> Result<()> {
     })?;
     let template =
         io("cannot read package.json.in", fs::read_to_string(repo.join("runtimes/typescript/package.json.in")))?;
-    io("cannot write package.json", fs::write(out.join("package.json"), crate::fill(&template, &[("VERSION", VERSION)])?))?;
+    io(
+        "cannot write package.json",
+        fs::write(out.join("package.json"), crate::fill(&template, &[("VERSION", VERSION)])?),
+    )?;
     io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
     io(
         "cannot copy the wire vectors",

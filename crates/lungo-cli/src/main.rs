@@ -176,9 +176,9 @@ fn split_language_flags(args: Vec<String>) -> Result<(Vec<String>, LanguageFlags
             flags.outs.push((language, PathBuf::from(value)));
         } else {
             for pair in value.split(',') {
-                let (k, v) = pair.split_once('=').ok_or_else(|| {
-                    Error::Configuration(format!("--{name} takes KEY=VALUE pairs, not `{pair}`"))
-                })?;
+                let (k, v) = pair
+                    .split_once('=')
+                    .ok_or_else(|| Error::Configuration(format!("--{name} takes KEY=VALUE pairs, not `{pair}`")))?;
                 flags.opts.push((language.clone(), k.to_owned(), v.to_owned()));
             }
         }
@@ -234,7 +234,9 @@ fn environment(base: &Path) -> Environment {
 fn run(cli: Cli, flags: LanguageFlags) -> Result<()> {
     let generating = matches!(cli.command, Command::Generate(_));
     if !generating && flags != LanguageFlags::default() {
-        return Err(Error::Configuration("--<language>_out and --<language>_opt are options of `lungo generate`".into()));
+        return Err(Error::Configuration(
+            "--<language>_out and --<language>_opt are options of `lungo generate`".into(),
+        ));
     }
     if let Command::Runtime { command } = &cli.command {
         return runtime_command(command);
@@ -412,8 +414,11 @@ fn setup(project: &Path, lean: LeanOptions, base: &Path, env: &Environment) -> R
     let lean = lean.toolchain_policy(lungo_build::ToolchainPolicy::Install);
     let project = if project.is_absolute() { project.to_path_buf() } else { base.join(project) };
     let pin = lungo_build::read_pin(&project)?;
-    let toolchain =
-        lungo_build::Toolchain::resolve_pin(&pin, lean.toolchain_dir.as_deref(), lungo_build::ToolchainPolicy::Install)?;
+    let toolchain = lungo_build::Toolchain::resolve_pin(
+        &pin,
+        lean.toolchain_dir.as_deref(),
+        lungo_build::ToolchainPolicy::Install,
+    )?;
     // Loading the workspace materializes the dependencies locked in the manifest.
     let status = std::process::Command::new(&toolchain.lake)
         .args(["env", "lean", "--version"])

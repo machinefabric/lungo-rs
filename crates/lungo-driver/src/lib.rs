@@ -225,7 +225,16 @@ impl LeanOptions {
         let package = canonical_path(&env.manifest_dir)
             .map_err(|e| Error::io(format!("cannot resolve the package {}", env.manifest_dir.display()), e))?;
         let local_prefix = relative_path(&package, &project);
-        Ok(Context { project, out_dir: env.out_dir.join(&name), work_dir, name, toolchain, cache, worker_identity, local_prefix })
+        Ok(Context {
+            project,
+            out_dir: env.out_dir.join(&name),
+            work_dir,
+            name,
+            toolchain,
+            cache,
+            worker_identity,
+            local_prefix,
+        })
     }
 
     /// Builds (or verifies) the worker for the project's toolchain.
@@ -376,7 +385,9 @@ fn validate_name(name: &str, from_package: bool) -> Result<()> {
             "the Lake package name {name:?} cannot name the generated program (letters, digits, `_` and `-`, not starting with a digit or `-`); choose one with the `name` setting"
         )
     } else {
-        format!("the program name {name:?} is invalid: use letters, digits, `_` and `-`, not starting with a digit or `-`")
+        format!(
+            "the program name {name:?} is invalid: use letters, digits, `_` and `-`, not starting with a digit or `-`"
+        )
     }))
 }
 

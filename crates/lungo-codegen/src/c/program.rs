@@ -86,7 +86,8 @@ impl<'a> Emitter<'a> {
         if takes_arg_array(decl) {
             return format!("{ret} {m}(lungo_obj *args)");
         }
-        let params: Vec<String> = c_params(&decl.params).iter().map(|p| format!("{} x_{}", c_type(p.ty), p.var)).collect();
+        let params: Vec<String> =
+            c_params(&decl.params).iter().map(|p| format!("{} x_{}", c_type(p.ty), p.var)).collect();
         if params.is_empty() { format!("{ret} {m}(void)") } else { format!("{ret} {m}({})", params.join(", ")) }
     }
 
@@ -473,9 +474,13 @@ impl<'e, 'a> FnCtx<'e, 'a> {
                         w.line(format!("(void)x_{var};"));
                     }
                 }
-                Stmt::Set { var, index, arg } => w.line(format!("lungo_ctor_set(x_{var}, {index}, {});", self.arg(arg))),
+                Stmt::Set { var, index, arg } => {
+                    w.line(format!("lungo_ctor_set(x_{var}, {index}, {});", self.arg(arg)))
+                }
                 Stmt::SetTag { var, tag } => w.line(format!("lungo_ctor_set_tag(x_{var}, {tag});")),
-                Stmt::Uset { var, index, value } => w.line(format!("lungo_ctor_set_usize(x_{var}, {index}, x_{value});")),
+                Stmt::Uset { var, index, value } => {
+                    w.line(format!("lungo_ctor_set_usize(x_{var}, {index}, x_{value});"))
+                }
                 Stmt::Sset { var, index, offset, value, ty } => {
                     let setter = scalar_accessor(*ty, "set")?;
                     w.line(format!("{setter}(x_{var}, {}, x_{value});", word_offset(*index, *offset)));
@@ -652,7 +657,10 @@ impl<'e, 'a> FnCtx<'e, 'a> {
             }
             Expr::Lit(Literal::Num(n)) => {
                 if !n.bytes().all(|b| b.is_ascii_digit()) || n.is_empty() {
-                    return Err(CodegenError::adapter(&self.decl.name, format!("numeric literal {n:?} is not a numeral")));
+                    return Err(CodegenError::adapter(
+                        &self.decl.name,
+                        format!("numeric literal {n:?} is not a numeral"),
+                    ));
                 }
                 if ty.is_scalar() {
                     let value = match ty {

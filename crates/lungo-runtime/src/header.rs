@@ -2,7 +2,7 @@
 //!
 //! Its hand-written part holds the inline fast paths over the object layout and the declarations
 //! of the C ABI; its generated part declares one function per runtime primitive, from the
-//! [`registry`](crate::registry), by [`primitive_declarations`]. `tests/header.rs` keeps the two
+//! [`registry`], by [`primitive_declarations`]. `tests/header.rs` keeps the two
 //! in sync.
 
 use crate::registry::{self, Ty};
@@ -33,7 +33,8 @@ pub const WASM_EXPORTS: &[&str] = &[
     "lungo_closure_call",
 ];
 
-pub const BEGIN_PRIMITIVES: &str = "/* BEGIN GENERATED: runtime primitives (do not edit; see lungo-runtime/tests/header.rs) */";
+pub const BEGIN_PRIMITIVES: &str =
+    "/* BEGIN GENERATED: runtime primitives (do not edit; see lungo-runtime/tests/header.rs) */";
 pub const END_PRIMITIVES: &str = "/* END GENERATED: runtime primitives */";
 
 /// The C type of a parameter or result representation.

@@ -20,12 +20,69 @@ use std::collections::BTreeMap;
 pub struct PythonGenerator;
 
 const PYTHON_KEYWORDS: &[&str] = &[
-    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
-    "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
-    "not", "or", "pass", "raise", "return", "try", "while", "with", "yield", "match", "case", "type",
+    "False",
+    "None",
+    "True",
+    "and",
+    "as",
+    "assert",
+    "async",
+    "await",
+    "break",
+    "class",
+    "continue",
+    "def",
+    "del",
+    "elif",
+    "else",
+    "except",
+    "finally",
+    "for",
+    "from",
+    "global",
+    "if",
+    "import",
+    "in",
+    "is",
+    "lambda",
+    "nonlocal",
+    "not",
+    "or",
+    "pass",
+    "raise",
+    "return",
+    "try",
+    "while",
+    "with",
+    "yield",
+    "match",
+    "case",
+    "type",
     // Names the generated module uses.
-    "lungo_py", "os", "sys", "isinstance", "len", "tuple", "list", "bytes", "str", "int", "float", "bool", "object",
-    "self", "w", "r", "v", "c", "host", "args", "Host", "set_host", "run_main", "dataclass",
+    "lungo_py",
+    "os",
+    "sys",
+    "isinstance",
+    "len",
+    "tuple",
+    "list",
+    "bytes",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "object",
+    "self",
+    "w",
+    "r",
+    "v",
+    "c",
+    "host",
+    "args",
+    "Host",
+    "set_host",
+    "run_main",
+    "dataclass",
 ];
 
 fn escape(id: String) -> String {
@@ -76,7 +133,8 @@ impl Names {
         let mut types = Vec::new();
         for ((named, decl), short) in b.types.iter().zip(&b.table.types).zip(short_names(&type_names)) {
             let class = scope.claim(py_class(&short), format!("type {}", named.lean_name))?;
-            let descriptor = scope.claim(format!("{}_type", py_snake(&short)), format!("the descriptor of {}", named.lean_name))?;
+            let descriptor =
+                scope.claim(format!("{}_type", py_snake(&short)), format!("the descriptor of {}", named.lean_name))?;
             let mut ctors = Vec::new();
             for c in &decl.ctors {
                 let cname = if decl.ctors.len() == 1 {
@@ -191,7 +249,8 @@ cmake.build-type = "Release"
 
 fn cmake(request: &GenerateRequest, package: &str) -> String {
     let b = &request.boundary;
-    let mut sources: Vec<&str> = request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
+    let mut sources: Vec<&str> =
+        request.program_files.keys().filter(|k| k.ends_with(".c")).map(String::as_str).collect();
     sources.sort();
     let mut w = Writer::new();
     w.line(format!(
@@ -225,7 +284,10 @@ fn cmake(request: &GenerateRequest, package: &str) -> String {
     w.line("elseif(APPLE)");
     w.line(format!("  target_link_options({}_lean PRIVATE -undefined dynamic_lookup)", b.id));
     w.line("endif()");
-    w.line(format!("install(TARGETS {id}_lean LIBRARY DESTINATION {package} RUNTIME DESTINATION {package})", id = b.id));
+    w.line(format!(
+        "install(TARGETS {id}_lean LIBRARY DESTINATION {package} RUNTIME DESTINATION {package})",
+        id = b.id
+    ));
     w.finish()
 }
 
@@ -265,7 +327,9 @@ impl Emitter<'_> {
     /// The type hint of `ty`.
     fn hint(&self, ty: &Type) -> String {
         match ty {
-            Type::Nat | Type::Int | Type::UInt8 | Type::UInt16 | Type::UInt32 | Type::UInt64 | Type::USize => "int".into(),
+            Type::Nat | Type::Int | Type::UInt8 | Type::UInt16 | Type::UInt32 | Type::UInt64 | Type::USize => {
+                "int".into()
+            }
             Type::Int8 | Type::Int16 | Type::Int32 | Type::Int64 | Type::ISize => "int".into(),
             Type::Bool => "bool".into(),
             Type::Float | Type::Float32 => "float".into(),
@@ -324,7 +388,9 @@ impl Emitter<'_> {
             Type::Option(t) => format!("lungo_py.option({})", self.descriptor(t, scoped)),
             Type::List(t) => format!("lungo_py.list_of({})", self.descriptor(t, scoped)),
             Type::Array(t) => format!("lungo_py.array_of({})", self.descriptor(t, scoped)),
-            Type::Prod(a, b) => format!("lungo_py.pair({}, {})", self.descriptor(a, scoped), self.descriptor(b, scoped)),
+            Type::Prod(a, b) => {
+                format!("lungo_py.pair({}, {})", self.descriptor(a, scoped), self.descriptor(b, scoped))
+            }
             Type::Except { error, value } => {
                 format!("lungo_py.except_({}, {})", self.descriptor(error, scoped), self.descriptor(value, scoped))
             }
@@ -377,7 +443,14 @@ impl Emitter<'_> {
         w.line("");
         w.line("");
         w.line(format!("_program = lungo_py.Program(_library(), {})", py_string(&b.types_symbol)));
-        let max_params = b.table.types.iter().map(|d| d.params).chain(b.functions.iter().map(|f| f.type_params.len() as u32)).max().unwrap_or(0);
+        let max_params = b
+            .table
+            .types
+            .iter()
+            .map(|d| d.params)
+            .chain(b.functions.iter().map(|f| f.type_params.len() as u32))
+            .max()
+            .unwrap_or(0);
         if max_params > 0 {
             w.line("");
             for i in 0..max_params {
@@ -429,11 +502,22 @@ impl Emitter<'_> {
             }
         };
         if decl.ctors.len() == 1 {
-            dataclass(w, &tn.class, &generic, &format!("Lean's {}.", named.lean_name), &decl.ctors[0].fields, &tn.ctors[0].1);
+            dataclass(
+                w,
+                &tn.class,
+                &generic,
+                &format!("Lean's {}.", named.lean_name),
+                &decl.ctors[0].fields,
+                &tn.ctors[0].1,
+            );
         } else {
             w.line("");
             w.line("");
-            w.line(format!("class {}{}:", tn.class, if generic.is_empty() { String::new() } else { format!("({generic})") }));
+            w.line(format!(
+                "class {}{}:",
+                tn.class,
+                if generic.is_empty() { String::new() } else { format!("({generic})") }
+            ));
             let ctor_list: Vec<&str> = tn.ctors.iter().map(|c| c.0.as_str()).collect();
             w.line(format!("    \"\"\"Lean's {}: one of {}.\"\"\"", named.lean_name, ctor_list.join(", ")));
             w.line("");
@@ -476,22 +560,33 @@ impl Emitter<'_> {
         w.line("    def decode(self, r):");
         if trivial {
             let (cname, _) = &tn.ctors[0];
-            let args: Vec<String> =
-                decl.ctors[0].fields.iter().map(|f| format!("{}.decode(r)", self.descriptor(&f.ty, Scoped::Descriptor))).collect();
+            let args: Vec<String> = decl.ctors[0]
+                .fields
+                .iter()
+                .map(|f| format!("{}.decode(r)", self.descriptor(&f.ty, Scoped::Descriptor)))
+                .collect();
             w.line(format!("        return {cname}({})", args.join(", ")));
         } else {
             w.line("        c = r.u32()");
             for (ci, (c, (cname, _))) in decl.ctors.iter().zip(&tn.ctors).enumerate() {
-                let args: Vec<String> =
-                    c.fields.iter().map(|f| format!("{}.decode(r)", self.descriptor(&f.ty, Scoped::Descriptor))).collect();
+                let args: Vec<String> = c
+                    .fields
+                    .iter()
+                    .map(|f| format!("{}.decode(r)", self.descriptor(&f.ty, Scoped::Descriptor)))
+                    .collect();
                 w.line(format!("        if c == {ci}:"));
                 w.line(format!("            return {cname}({})", args.join(", ")));
             }
-            w.line(format!("        raise lungo_py.MalformedError(f\"constructor index {{c}} of {}\")", named.lean_name));
+            w.line(format!(
+                "        raise lungo_py.MalformedError(f\"constructor index {{c}} of {}\")",
+                named.lean_name
+            ));
         }
         w.line("");
         w.line("");
-        let typed: Vec<String> = (0..n).map(|k| format!("type_{}: lungo_py.Type[{}]", param_name(k).to_lowercase(), param_name(k))).collect();
+        let typed: Vec<String> = (0..n)
+            .map(|k| format!("type_{}: lungo_py.Type[{}]", param_name(k).to_lowercase(), param_name(k)))
+            .collect();
         w.line(format!("def {}({}) -> lungo_py.Type[{applied}]:", tn.descriptor, typed.join(", ")));
         w.line(format!("    \"\"\"Describes {} for polymorphic functions.\"\"\"", named.lean_name));
         w.line(format!("    return {}({})", tn.impl_class, params.join(", ")));
@@ -518,13 +613,18 @@ impl Emitter<'_> {
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
         let n = f.type_params.len() as u32;
         let locals = distinct_locals(f.params.iter().enumerate().map(|(i, p)| py_local(&p.name, i)).collect());
-        let mut params: Vec<String> =
-            (0..n).map(|k| format!("type_{}: lungo_py.Type[{}]", param_name(k).to_lowercase(), param_name(k))).collect();
+        let mut params: Vec<String> = (0..n)
+            .map(|k| format!("type_{}: lungo_py.Type[{}]", param_name(k).to_lowercase(), param_name(k)))
+            .collect();
         params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))));
         w.line("");
         w.line("");
         w.line(format!("def {name}({}) -> {}:", params.join(", "), self.result_hint(&f.returns)));
-        w.line(format!("    \"\"\"Lean's {} : {}\"\"\"", f.lean_name, f.lean_type.replace('\n', " ").replace("\"\"\"", "\\\"\\\"\\\"")));
+        w.line(format!(
+            "    \"\"\"Lean's {} : {}\"\"\"",
+            f.lean_name,
+            f.lean_type.replace('\n', " ").replace("\"\"\"", "\\\"\\\"\\\"")
+        ));
         let type_args: Vec<String> = (0..n).map(|k| format!("type_{},", param_name(k).to_lowercase())).collect();
         let args: Vec<String> = f
             .params
@@ -553,7 +653,8 @@ impl Emitter<'_> {
         w.line("    exception of a method whose Lean type is not IO or EIO terminates the program.\"\"\"");
         for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
             let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| py_local(&p.name, i)).collect());
-            let params: Vec<String> = h.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))).collect();
+            let params: Vec<String> =
+                h.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))).collect();
             w.line("");
             let sep = if params.is_empty() { "" } else { ", " };
             w.line(format!("    def {m}(self{sep}{}) -> {}:", params.join(", "), self.result_hint(&h.returns)));
@@ -570,7 +671,8 @@ impl Emitter<'_> {
         w.line("    \"\"\"Installs the implementation of the program's externs; the program's first call");
         w.line("    requires it.\"\"\"");
         for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-            let params: Vec<String> = h.params.iter().map(|p| format!("{},", self.descriptor(&p.ty, Scoped::Function))).collect();
+            let params: Vec<String> =
+                h.params.iter().map(|p| format!("{},", self.descriptor(&p.ty, Scoped::Function))).collect();
             w.line(format!(
                 "    _program.set_host_extern({}, {}, ({}), {}, host.{m})",
                 py_string(&b.set_host_extern),

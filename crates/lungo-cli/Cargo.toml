@@ -14,6 +14,14 @@ categories = ["development-tools", "development-tools::ffi", "compilers"]
 [[bin]]
 name = "lungo"
 path = "src/main.rs"
+# A command: its documentation is the command reference (and the `lungo` crate's would be
+# overwritten).
+doc = false
+
+# The test program is also the plugin it runs (see the file).
+[[test]]
+name = "plugin"
+harness = false
 
 [dependencies]
 clap.workspace = true

@@ -14,6 +14,9 @@ publish = false
 # `liblungo.a`, `liblungo.dylib`/`liblungo.so`, `lungo.dll`: the runtime library `lungo.h` declares.
 name = "lungo"
 crate-type = ["staticlib", "cdylib"]
+# A C library: its interface is documented by `lungo.h` (and the `lungo` crate's documentation
+# would otherwise be overwritten).
+doc = false
 
 [dependencies]
 lungo-runtime = { workspace = true, features = ["capi"] }

@@ -169,7 +169,8 @@ fn swift_binding() {
     }
     std::fs::create_dir_all(tests.join("Tests/PolyglotTests")).unwrap();
     std::fs::create_dir_all(tests.join("Tests/PolyglotCAPITests")).unwrap();
-    std::fs::copy(fixture("swift").join("PolyglotTests.swift"), tests.join("Tests/PolyglotTests/PolyglotTests.swift")).unwrap();
+    std::fs::copy(fixture("swift").join("PolyglotTests.swift"), tests.join("Tests/PolyglotTests/PolyglotTests.swift"))
+        .unwrap();
     std::fs::copy(fixture("swift").join("CAPITests.m"), tests.join("Tests/PolyglotCAPITests/CAPITests.m")).unwrap();
     std::fs::write(
         tests.join("Package.swift"),
@@ -204,4 +205,59 @@ let package = Package(
     assert!(!text.contains("warning:"), "the generated package builds with warnings:\n{text}");
     assert!(text.contains("Executed 10 tests, with 0 failures"), "the Swift tests ran:\n{text}");
     assert!(text.contains("Executed 3 tests, with 0 failures"), "the Objective-C tests ran:\n{text}");
+}
+
+#[test]
+fn ts_binding() {
+    let dist = distribution(&["ts"]);
+    let package = generate("ts", &["ts"]);
+    assert!(package.join("program.wasm").is_file(), "the WebAssembly module is linked");
+    let project = root().join("ts-project");
+    if project.exists() {
+        std::fs::remove_dir_all(&project).unwrap();
+    }
+    std::fs::create_dir_all(&project).unwrap();
+    for f in ["polyglot.test.js", "typecheck.ts"] {
+        std::fs::copy(fixture("ts").join(f), project.join(f)).unwrap();
+    }
+    std::fs::write(
+        project.join("package.json"),
+        format!(
+            r#"{{"name": "polyglot-e2e", "private": true, "type": "module", "dependencies": {{"polyglot": "file:{}", "lungo-ts": "file:{}"}}, "devDependencies": {{"typescript": "5.9.3"}}}}"#,
+            package.display(),
+            dist.join("ts").display()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("tsconfig.json"),
+        r#"{"compilerOptions": {"target": "es2022", "module": "nodenext", "moduleResolution": "nodenext", "strict": true, "noEmit": true, "skipLibCheck": false}, "files": ["typecheck.ts"]}"#,
+    )
+    .unwrap();
+    let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
+    run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&project));
+    run(Command::new("node").args(["node_modules/typescript/bin/tsc", "-p", "."]).current_dir(&project));
+    let out = run(Command::new("node").args(["--test", "polyglot.test.js"]).current_dir(&project));
+    assert!(out.contains("# pass 10") && out.contains("# fail 0"), "{out}");
+}
+
+/// WebAssembly has no child processes: a program spawning one cannot be generated for it.
+#[test]
+fn webassembly_rejects_primitives_it_lacks() {
+    let dist = distribution(&["ts"]);
+    let out = root().join("ts-process");
+    let result = Command::new(env!("CARGO_BIN_EXE_lungo"))
+        .arg("--project")
+        .arg(repo().join("compiler-tests/conformance"))
+        .args(["--root", "Conformance.Process", "--name", "process", "generate"])
+        .arg(format!("--ts_out={}", out.display()))
+        .arg("--runtime-dir")
+        .arg(&dist)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(!result.status.success());
+    assert!(stderr.contains("error[LNG0408]") && stderr.contains("lean_io_process_spawn"), "{stderr}");
+    assert!(stderr.contains("WebAssembly has no child processes"), "{stderr}");
+    assert!(!out.exists(), "nothing is published");
 }

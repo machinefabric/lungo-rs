@@ -79,7 +79,10 @@ struct KeyConfig<'a> {
 enum Generator {
     Builtin(&'static dyn lungo_build::codegen::plugin::Generator),
     /// A plugin program, identified by its digest in build keys.
-    Plugin { program: PathBuf, digest: String },
+    Plugin {
+        program: PathBuf,
+        digest: String,
+    },
 }
 
 /// Runs the generation; one report line per output.
@@ -143,7 +146,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             continue;
         }
         let analysis = analyses.get(&ctx, env)?;
-        let dir = std::path::absolute(&o.dir).map_err(|e| Error::io(format!("cannot resolve {}", o.dir.display()), e))?;
+        let dir =
+            std::path::absolute(&o.dir).map_err(|e| Error::io(format!("cannot resolve {}", o.dir.display()), e))?;
         let local_prefix = lungo_build::relative_path(&dir, &ctx.project);
         let program = generate_program(&ProgramInput {
             success: &analysis.success,

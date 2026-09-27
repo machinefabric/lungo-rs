@@ -20,7 +20,9 @@ use crate::core::exports::runtime_exports;
 use crate::core::externs::{ApplicationExterns, ExternPlan, Resolution, resolution_key};
 use crate::core::names::{mangle, module_file_stem};
 use crate::core::writer::Writer;
-use crate::{CodegenError, ErrorCode, GENERATOR_VERSION, NameRecord, SourceIndex, describe_source, display_path, to_json};
+use crate::{
+    CodegenError, ErrorCode, GENERATOR_VERSION, NameRecord, SourceIndex, describe_source, display_path, to_json,
+};
 use compiler::Emitter;
 use facade::{Facade, FnSpec, ModuleTree, Naming};
 use lungo_bir::{Body, Declaration, Initializer, IrType};
@@ -67,13 +69,13 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     let sources = SourceIndex::new(&input.success.source_metadata, input.local_prefix);
     let requirements: HashMap<&str, &ExternRequirement> =
         input.success.extern_requirements.iter().map(|r| (r.declaration.as_str(), r)).collect();
-    let hint = |key: &str| format!("Provide a Rust mapping with Builder::rust_extern({key:?}, \"crate::path::to::function\")");
+    let hint =
+        |key: &str| format!("Provide a Rust mapping with Builder::rust_extern({key:?}, \"crate::path::to::function\")");
     let application =
         ApplicationExterns { implementations: input.rust_externs, setting: "Builder::rust_extern", hint: &hint };
-    let externs =
-        ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
-            describe_source(&r.source, input.local_prefix)
-        })?;
+    let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
+        describe_source(&r.source, input.local_prefix)
+    })?;
     let mut init_values = HashMap::new();
     for m in &program.modules {
         for init in &m.initializers {
@@ -130,7 +132,8 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
         .collect();
     let selector = shaping::Selector::new(input.shaping);
     let is_extern = |n: &str| input.shaping.extern_types.contains_key(n);
-    let reachable = crate::core::interface::reachable_types(&interface.types, &interface.exports, &user_externs, &is_extern);
+    let reachable =
+        crate::core::interface::reachable_types(&interface.types, &interface.exports, &user_externs, &is_extern);
     let types: Vec<lungo_protocol::TypeDecl> =
         interface.types.iter().filter(|t| reachable.contains(t.name.as_str())).cloned().collect();
     let mut naming = Naming::new(input.facade_namespace);
@@ -284,7 +287,6 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     Ok(Generated { files })
 }
 
-
 fn emit_initialize(w: &mut Writer, input: &GenInput, emitter: &Emitter) {
     let program = &input.success.bir;
     w.line("/// Initializes the Lean program: runs every module initializer once, in import order.");
@@ -306,7 +308,11 @@ fn emit_initialize(w: &mut Writer, input: &GenInput, emitter: &Emitter) {
         for init in &m.initializers {
             match init {
                 Initializer::Io(decl) => {
-                    w.line(format!("rt::lean_dec(rt::check_initializer({}, {}()));", syntax::string(decl), mangle(decl)));
+                    w.line(format!(
+                        "rt::lean_dec(rt::check_initializer({}, {}()));",
+                        syntax::string(decl),
+                        mangle(decl)
+                    ));
                 }
                 Initializer::Value { decl, init_fn } => {
                     let d = emitter.decls[decl.as_str()];
@@ -589,4 +595,3 @@ fn manifest_report(input: &GenInput, naming: &Naming) -> ManifestReport {
         exports,
     }
 }
-

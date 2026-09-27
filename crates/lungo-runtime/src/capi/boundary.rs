@@ -43,7 +43,8 @@ unsafe fn table(types: *const TypeTable) -> &'static TypeTable {
 /// A type expression of generated code; a malformed one is an internal error of the generator.
 unsafe fn generated_type(bytes: *const u8, len: usize) -> Type {
     let bytes = unsafe { std::slice::from_raw_parts(bytes, len) };
-    wire::parse_type(bytes).unwrap_or_else(|e| lean_internal_panic(&format!("a generated type expression is invalid: {e}")))
+    wire::parse_type(bytes)
+        .unwrap_or_else(|e| lean_internal_panic(&format!("a generated type expression is invalid: {e}")))
 }
 
 /// The type arguments at the start of an input: a count and that many type expressions, each
@@ -365,8 +366,12 @@ pub unsafe extern "C" fn lungo_hostcall_finish_eio(
         .unwrap_or_else(|msg| host_failure(&call, &format!("failed: {msg}")));
     let mut r = Reader::new(&bytes);
     let decoded = r.u8().and_then(|tag| match tag {
-        result::OK => wire::decode(call.table, &value, &mut r, Handles::Take).map(|v| unsafe { lean_io_result_mk_ok(v) }),
-        result::ERROR => wire::decode(call.table, &error, &mut r, Handles::Take).map(|e| unsafe { lean_io_result_mk_error(e) }),
+        result::OK => {
+            wire::decode(call.table, &value, &mut r, Handles::Take).map(|v| unsafe { lean_io_result_mk_ok(v) })
+        }
+        result::ERROR => {
+            wire::decode(call.table, &error, &mut r, Handles::Take).map(|e| unsafe { lean_io_result_mk_error(e) })
+        }
         t => Err(WireError(format!("invalid EIO result tag {t}"))),
     });
     match decoded.and_then(|v| r.finish().map(|_| v)) {

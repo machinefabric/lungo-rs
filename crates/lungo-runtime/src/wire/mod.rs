@@ -138,12 +138,21 @@ pub enum Type {
     List(Box<Type>),
     Array(Box<Type>),
     Prod(Box<Type>, Box<Type>),
-    Except { error: Box<Type>, value: Box<Type> },
-    Function { params: Vec<Type>, result: Box<Type> },
+    Except {
+        error: Box<Type>,
+        value: Box<Type>,
+    },
+    Function {
+        params: Vec<Type>,
+        result: Box<Type>,
+    },
     /// The type parameter at this index of the enclosing type or signature.
     Param(u32),
     /// The type at this index of the program's type table, applied to arguments.
-    Inductive { index: u32, args: Vec<Type> },
+    Inductive {
+        index: u32,
+        args: Vec<Type>,
+    },
     Opaque,
 }
 
@@ -239,10 +248,9 @@ impl Type {
                 params: params.iter().map(|p| p.substitute(args)).collect::<Result<_, _>>()?,
                 result: Box::new(result.substitute(args)?),
             },
-            Type::Inductive { index, args: a } => Type::Inductive {
-                index: *index,
-                args: a.iter().map(|t| t.substitute(args)).collect::<Result<_, _>>()?,
-            },
+            Type::Inductive { index, args: a } => {
+                Type::Inductive { index: *index, args: a.iter().map(|t| t.substitute(args)).collect::<Result<_, _>>()? }
+            }
             other => other.clone(),
         })
     }
@@ -781,7 +789,8 @@ pub fn parse_type(bytes: &[u8]) -> Result<Type, WireError> {
 }
 
 fn put_len(out: &mut Vec<u8>, n: usize) {
-    let n = u32::try_from(n).unwrap_or_else(|_| lean_internal_panic("a value exceeds the wire format's 2^32 length limit"));
+    let n =
+        u32::try_from(n).unwrap_or_else(|_| lean_internal_panic("a value exceeds the wire format's 2^32 length limit"));
     put_u32(out, n);
 }
 
@@ -952,10 +961,9 @@ unsafe fn call_host_closure(ctx: Obj, args: &[Obj]) -> Obj {
     let bytes = call_host(c.callback, &input)
         .unwrap_or_else(|msg| lean_internal_panic(&format!("a host function passed to Lean failed: {msg}")));
     let mut r = Reader::new(&bytes);
-    let v = decode(c.table, &c.result, &mut r, Handles::Take).and_then(|v| r.finish().map(|_| v)).unwrap_or_else(|e| {
+    decode(c.table, &c.result, &mut r, Handles::Take).and_then(|v| r.finish().map(|_| v)).unwrap_or_else(|e| {
         lean_internal_panic(&format!("a host function passed to Lean returned malformed data: {e}"))
-    });
-    v
+    })
 }
 
 macro_rules! host_trampolines {
@@ -1262,7 +1270,9 @@ unsafe fn decode_inductive(
                         Repr::UInt64 => lean_ctor_set_uint64(o, at, lean_unbox_uint64(v)),
                         Repr::Float => lean_ctor_set_float(o, at, lean_unbox_float(v)),
                         Repr::Float32 => lean_ctor_set_float32(o, at, lean_unbox_float32(v)),
-                        Repr::USize | Repr::Object => lean_internal_panic("a scalar field of non-scalar representation"),
+                        Repr::USize | Repr::Object => {
+                            lean_internal_panic("a scalar field of non-scalar representation")
+                        }
                     }
                     lean_dec(v);
                 }
@@ -1420,7 +1430,9 @@ unsafe fn encode_inductive(table: &'static TypeTable, index: u32, args: &[Type],
                         Repr::UInt64 => lean_box_uint64(lean_ctor_get_uint64(o, at)),
                         Repr::Float => lean_box_float(lean_ctor_get_float(o, at)),
                         Repr::Float32 => lean_box_float32(lean_ctor_get_float32(o, at)),
-                        Repr::USize | Repr::Object => lean_internal_panic("a scalar field of non-scalar representation"),
+                        Repr::USize | Repr::Object => {
+                            lean_internal_panic("a scalar field of non-scalar representation")
+                        }
                     };
                     encode(table, &ty, v, out);
                     lean_dec(v);
@@ -1482,7 +1494,11 @@ mod tests {
                         usize: 0,
                         ssize: 1,
                         fields: vec![
-                            Field { name: "x".into(), kind: FieldKind::Scalar { offset: 0, repr: Repr::UInt8 }, ty: Type::UInt8 },
+                            Field {
+                                name: "x".into(),
+                                kind: FieldKind::Scalar { offset: 0, repr: Repr::UInt8 },
+                                ty: Type::UInt8,
+                            },
                             Field { name: "n".into(), kind: FieldKind::Object(0), ty: Type::Nat },
                         ],
                     }],
@@ -1501,9 +1517,17 @@ mod tests {
                             usize: 0,
                             ssize: 0,
                             fields: vec![
-                                Field { name: "l".into(), kind: FieldKind::Object(0), ty: Type::Inductive { index: 1, args: vec![] } },
+                                Field {
+                                    name: "l".into(),
+                                    kind: FieldKind::Object(0),
+                                    ty: Type::Inductive { index: 1, args: vec![] },
+                                },
                                 Field { name: "v".into(), kind: FieldKind::Object(1), ty: Type::Nat },
-                                Field { name: "r".into(), kind: FieldKind::Object(2), ty: Type::Inductive { index: 1, args: vec![] } },
+                                Field {
+                                    name: "r".into(),
+                                    kind: FieldKind::Object(2),
+                                    ty: Type::Inductive { index: 1, args: vec![] },
+                                },
                             ],
                         },
                     ],
@@ -1542,12 +1566,9 @@ mod tests {
     fn malformed_data_is_rejected_not_misread() {
         let reject = |ty: Type, bytes: &[u8]| {
             let mut r = Reader::new(bytes);
-            match decode(table(), &ty, &mut r, Handles::Borrow) {
-                Ok(o) => {
-                    unsafe { lean_dec(o) };
-                    assert!(r.finish().is_err(), "{ty:?} accepted {bytes:?}");
-                }
-                Err(_) => {}
+            if let Ok(o) = decode(table(), &ty, &mut r, Handles::Borrow) {
+                unsafe { lean_dec(o) };
+                assert!(r.finish().is_err(), "{ty:?} accepted {bytes:?}");
             }
         };
         reject(Type::Bool, &[2]);

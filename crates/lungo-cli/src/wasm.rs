@@ -70,7 +70,13 @@ fn exports(boundary: &Boundary) -> Vec<String> {
 
 /// Compiles the program's C (`program_files`, paths under `program/`) and links it with the
 /// `wasm32-wasip1` runtime package `runtime` into a WebAssembly reactor module.
-pub fn link(program_files: &BTreeMap<String, String>, boundary: &Boundary, runtime: &Path, sdk: &Path, work: &Path) -> Result<Vec<u8>> {
+pub fn link(
+    program_files: &BTreeMap<String, String>,
+    boundary: &Boundary,
+    runtime: &Path,
+    sdk: &Path,
+    work: &Path,
+) -> Result<Vec<u8>> {
     let src = work.join("wasm-src");
     if src.exists() {
         std::fs::remove_dir_all(&src).map_err(|e| Error::io(format!("cannot clear {}", src.display()), e))?;

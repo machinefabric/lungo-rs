@@ -10,9 +10,10 @@
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
-    ".": { "types": "./index.d.ts", "default": "./index.js" }
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./wasi.js": { "types": "./wasi.d.ts", "default": "./wasi.js" }
   },
-  "files": ["index.js", "index.d.ts", "wasi.js", "LICENSE", "README.md"],
+  "files": ["index.js", "index.d.ts", "wasi.js", "wasi.d.ts", "LICENSE", "README.md"],
   "engines": { "node": ">=20" },
   "scripts": { "test": "node --test" }
 }

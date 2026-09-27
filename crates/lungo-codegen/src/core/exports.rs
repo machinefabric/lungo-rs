@@ -47,7 +47,10 @@ pub fn runtime_exports(success: &Success) -> Result<Vec<RuntimeExport<'_>>, Code
         if !matches {
             return Err(CodegenError::adapter(
                 &decl.name,
-                format!("the Lean definition exported as `{}` does not have the signature the runtime calls", spec.symbol),
+                format!(
+                    "the Lean definition exported as `{}` does not have the signature the runtime calls",
+                    spec.symbol
+                ),
             ));
         }
         out.push(RuntimeExport {

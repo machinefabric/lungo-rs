@@ -326,11 +326,11 @@ export const STRING = simple(
   (r) => r.text(),
 );
 
-/** `Unit`, as `null`. */
+/** `Unit`, as `null` (`undefined`, the result of a `void` function, is accepted too). */
 export const UNIT = simple(
   TAG.unit,
   (_w, v) => {
-    if (v !== null) throw malformed(`${String(v)} is not Unit (null)`);
+    if (v !== null && v !== undefined) throw malformed(`${String(v)} is not Unit (null)`);
   },
   () => null,
   true,

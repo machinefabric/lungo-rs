@@ -47,7 +47,10 @@ pub enum Value {
     Opaque(u64),
     /// A value of an inductive type: the constructor's index in the type table and its fields,
     /// in order. A single-constructor type represented by one field is encoded as that field.
-    Ctor { index: u32, fields: Vec<Value> },
+    Ctor {
+        index: u32,
+        fields: Vec<Value>,
+    },
 }
 
 fn mismatch<T>(ty: &Type, v: &Value) -> Result<T, WireError> {

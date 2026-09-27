@@ -36,16 +36,20 @@ pub fn run(program: &PathBuf, request: &GenerateRequest) -> Result<BTreeMap<Stri
         .map_err(|e| Error::Plugin(format!("cannot run the generator plugin {shown}: {e}")))?;
     let input = serde_json::to_vec(request).expect("requests serialize");
     let mut stdin = child.stdin.take().expect("stdin is piped");
-    // A plugin that exits without reading its input is reported by its status below.
-    let written = stdin.write_all(&input);
-    drop(stdin);
-    let out = child
-        .wait_with_output()
-        .map_err(|e| Error::Plugin(format!("cannot run the generator plugin {shown}: {e}")))?;
+    // The request is written while the response is read, so that neither pipe can fill up and
+    // block both processes. A plugin that exits without reading it is reported by its status.
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let out =
+        child.wait_with_output().map_err(|e| Error::Plugin(format!("cannot run the generator plugin {shown}: {e}")))?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        return Err(Error::Plugin(format!("the generator plugin {shown} failed ({}):\n{}", out.status, stderr.trim_end())));
+        return Err(Error::Plugin(format!(
+            "the generator plugin {shown} failed ({}):\n{}",
+            out.status,
+            stderr.trim_end()
+        )));
     }
+    let written = writer.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic));
     if let Err(e) = written {
         return Err(Error::Plugin(format!("the generator plugin {shown} did not read its request: {e}")));
     }

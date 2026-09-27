@@ -24,12 +24,70 @@ pub struct SwiftGenerator;
 pub const SUPPORT_REPOSITORY: &str = "https://github.com/jowharshamshiri/lungo-swift";
 
 const SWIFT_KEYWORDS: &[&str] = &[
-    "associatedtype", "class", "deinit", "enum", "extension", "fileprivate", "func", "import", "init", "inout",
-    "internal", "let", "open", "operator", "private", "precedencegroup", "protocol", "public", "rethrows", "static",
-    "struct", "subscript", "typealias", "var", "break", "case", "catch", "continue", "default", "defer", "do", "else",
-    "fallthrough", "for", "guard", "if", "in", "repeat", "return", "throw", "switch", "where", "while", "Any", "as",
-    "await", "false", "is", "nil", "self", "Self", "super", "throws", "true", "try", "some", "any", "Type",
-    "Protocol", "consume", "copy", "borrowing", "consuming", "package",
+    "associatedtype",
+    "class",
+    "deinit",
+    "enum",
+    "extension",
+    "fileprivate",
+    "func",
+    "import",
+    "init",
+    "inout",
+    "internal",
+    "let",
+    "open",
+    "operator",
+    "private",
+    "precedencegroup",
+    "protocol",
+    "public",
+    "rethrows",
+    "static",
+    "struct",
+    "subscript",
+    "typealias",
+    "var",
+    "break",
+    "case",
+    "catch",
+    "continue",
+    "default",
+    "defer",
+    "do",
+    "else",
+    "fallthrough",
+    "for",
+    "guard",
+    "if",
+    "in",
+    "repeat",
+    "return",
+    "throw",
+    "switch",
+    "where",
+    "while",
+    "Any",
+    "as",
+    "await",
+    "false",
+    "is",
+    "nil",
+    "self",
+    "Self",
+    "super",
+    "throws",
+    "true",
+    "try",
+    "some",
+    "any",
+    "Type",
+    "Protocol",
+    "consume",
+    "copy",
+    "borrowing",
+    "consuming",
+    "package",
 ];
 
 fn escape(id: String) -> String {
@@ -82,7 +140,14 @@ struct Names {
 impl Names {
     fn new(b: &Boundary, module: &str) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Swift");
-        for reserved in [format!("{module}Host"), "setHost".into(), "runMain".into(), "program".into(), "entry".into(), module.into()] {
+        for reserved in [
+            format!("{module}Host"),
+            "setHost".into(),
+            "runMain".into(),
+            "program".into(),
+            "entry".into(),
+            module.into(),
+        ] {
             scope.claim(reserved, "a generated declaration")?;
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
@@ -218,7 +283,11 @@ fn swift_string(s: &str) -> String {
 fn package_manifest(request: &GenerateRequest, module: &str, program_target: &str) -> String {
     let dependency = match &request.runtime.distribution {
         Distribution::Release { .. } => {
-            format!(".package(url: {}, exact: {})", swift_string(SUPPORT_REPOSITORY), swift_string(&request.runtime.version))
+            format!(
+                ".package(url: {}, exact: {})",
+                swift_string(SUPPORT_REPOSITORY),
+                swift_string(&request.runtime.version)
+            )
         }
         Distribution::Local { dir } => {
             format!(".package(path: {})", swift_string(&format!("{}/lungo-swift", dir.trim_end_matches('/'))))
@@ -316,7 +385,9 @@ impl Emitter<'_> {
             Type::Option(t) => format!("{}?", self.swift_type_atom(t)),
             Type::List(t) | Type::Array(t) => format!("[{}]", self.swift_type(t)),
             Type::Prod(a, b) => format!("({}, {})", self.swift_type(a), self.swift_type(b)),
-            Type::Except { error, value } => format!("LungoExcept<{}, {}>", self.swift_type(error), self.swift_type(value)),
+            Type::Except { error, value } => {
+                format!("LungoExcept<{}, {}>", self.swift_type(error), self.swift_type(value))
+            }
             Type::Function { params, result } => {
                 let ps: Vec<String> = params.iter().map(|p| self.swift_type(p)).collect();
                 format!("({}) throws -> {}", ps.join(", "), self.swift_type(result))
@@ -442,11 +513,8 @@ impl Emitter<'_> {
         let decl = &b.table.types[i];
         let tn = &self.names.types[i];
         let n = decl.params;
-        let generics = if n == 0 {
-            String::new()
-        } else {
-            format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", "))
-        };
+        let generics =
+            if n == 0 { String::new() } else { format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", ")) };
         let applied = format!("{}{generics}", tn.name);
         let eq = self.equatable[i];
         let conformance = |w: &mut Writer| {
@@ -503,8 +571,12 @@ impl Emitter<'_> {
                 if c.fields.is_empty() {
                     w.line(format!("    case {case}"));
                 } else {
-                    let fs: Vec<String> =
-                        c.fields.iter().zip(fields).map(|(f, fname)| format!("{fname}: {}", self.swift_type(&f.ty))).collect();
+                    let fs: Vec<String> = c
+                        .fields
+                        .iter()
+                        .zip(fields)
+                        .map(|(f, fname)| format!("{fname}: {}", self.swift_type(&f.ty)))
+                        .collect();
                     w.line(format!("    case {case}({})", fs.join(", ")));
                 }
             }
@@ -517,7 +589,8 @@ impl Emitter<'_> {
         // The descriptor.
         w.line("");
         w.line(format!("extension {} {{", tn.name));
-        let params: Vec<String> = (0..n).map(|k| format!("_ {}: LungoType<{}>", param_name(k).to_lowercase(), param_name(k))).collect();
+        let params: Vec<String> =
+            (0..n).map(|k| format!("_ {}: LungoType<{}>", param_name(k).to_lowercase(), param_name(k))).collect();
         let exprs: Vec<String> = (0..n).map(|k| format!(", {}.expr", param_name(k).to_lowercase())).collect();
         w.line(format!("    /// Describes {} for polymorphic functions.", named.lean_name));
         if n == 0 {
@@ -535,7 +608,10 @@ impl Emitter<'_> {
                 w.line("                w.u32(0)");
             }
             for (f, fname) in c.fields.iter().zip(&tn.ctors[0].1) {
-                w.line(format!("                try {}.encode(&w, v.{fname})", self.descriptor(&f.ty, Scoped::Descriptor)));
+                w.line(format!(
+                    "                try {}.encode(&w, v.{fname})",
+                    self.descriptor(&f.ty, Scoped::Descriptor)
+                ));
             }
         } else {
             w.line("                switch v {");
@@ -548,7 +624,10 @@ impl Emitter<'_> {
                 }
                 w.line(format!("                    w.u32({ci})"));
                 for (f, fname) in c.fields.iter().zip(fields) {
-                    w.line(format!("                    try {}.encode(&w, {fname})", self.descriptor(&f.ty, Scoped::Descriptor)));
+                    w.line(format!(
+                        "                    try {}.encode(&w, {fname})",
+                        self.descriptor(&f.ty, Scoped::Descriptor)
+                    ));
                 }
             }
             w.line("                }");
@@ -562,7 +641,11 @@ impl Emitter<'_> {
                 .zip(fields)
                 .map(|(f, fname)| format!("{fname}: try {}.decode(&r)", self.descriptor(&f.ty, Scoped::Descriptor)))
                 .collect();
-            if args.is_empty() && call.starts_with('.') { call.to_owned() } else { format!("{call}({})", args.join(", ")) }
+            if args.is_empty() && call.starts_with('.') {
+                call.to_owned()
+            } else {
+                format!("{call}({})", args.join(", "))
+            }
         };
         if decl.ctors.len() == 1 {
             let c = &decl.ctors[0];
@@ -577,7 +660,10 @@ impl Emitter<'_> {
         } else {
             w.line("                switch try r.u32() {");
             for (ci, (c, (case, fields))) in decl.ctors.iter().zip(&tn.ctors).enumerate() {
-                w.line(format!("                case {ci}: return {}", construct(c, fields, &format!(".{}", case.trim_matches('`')))));
+                w.line(format!(
+                    "                case {ci}: return {}",
+                    construct(c, fields, &format!(".{}", case.trim_matches('`')))
+                ));
             }
             w.line(format!(
                 "                case let c: throw LungoMalformed(\"constructor index \\(c) of {}\")",
@@ -595,7 +681,11 @@ impl Emitter<'_> {
             Returns::Value(t) => format!(".value({})", self.descriptor(t, Scoped::Function)),
             Returns::Io(t) => format!(".io({})", self.descriptor(t, Scoped::Function)),
             Returns::Eio { error, value } => {
-                format!(".eio({}, {})", self.descriptor(error, Scoped::Function), self.descriptor(value, Scoped::Function))
+                format!(
+                    ".eio({}, {})",
+                    self.descriptor(error, Scoped::Function),
+                    self.descriptor(value, Scoped::Function)
+                )
             }
         }
     }
@@ -609,13 +699,11 @@ impl Emitter<'_> {
 
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
         let n = f.type_params.len() as u32;
-        let generics = if n == 0 {
-            String::new()
-        } else {
-            format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", "))
-        };
+        let generics =
+            if n == 0 { String::new() } else { format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", ")) };
         let locals = distinct_locals(f.params.iter().enumerate().map(|(i, p)| swift_local(&p.name, i)).collect());
-        let mut params: Vec<String> = (0..n).map(|k| format!("_ type{}: LungoType<{}>", param_name(k), param_name(k))).collect();
+        let mut params: Vec<String> =
+            (0..n).map(|k| format!("_ type{}: LungoType<{}>", param_name(k), param_name(k))).collect();
         params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("_ {l}: {}", self.param_type(&p.ty))));
         let result = self.result_type(&f.returns);
         w.line("");
@@ -657,7 +745,11 @@ impl Emitter<'_> {
             let params: Vec<String> =
                 h.params.iter().zip(&locals).map(|(p, l)| format!("_ {l}: {}", self.param_type(&p.ty))).collect();
             let result = self.result_type(&h.returns);
-            w.line(format!("    /// Lean's {} : {}", h.declaration, h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")));
+            w.line(format!(
+                "    /// Lean's {} : {}",
+                h.declaration,
+                h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
+            ));
             w.line(format!(
                 "    func {m}({}) throws{}",
                 params.join(", "),
@@ -670,7 +762,12 @@ impl Emitter<'_> {
         w.line("/// Installs the implementation of the program's externs; the program's first call requires it.");
         w.line(format!("public func setHost(_ host: {}Host) {{", self.module));
         for ((h, m), has_result) in b.host_externs.iter().zip(&self.names.host_methods).zip(signatures) {
-            w.line(format!("    program.hostExtern({}, index: {}, returns: {}) {{ r in", b.set_host_extern, h.index, self.returns(&h.returns)));
+            w.line(format!(
+                "    program.hostExtern({}, index: {}, returns: {}) {{ r in",
+                b.set_host_extern,
+                h.index,
+                self.returns(&h.returns)
+            ));
             let args: Vec<String> = (0..h.params.len()).map(|k| format!("a{k}")).collect();
             for (p, a) in h.params.iter().zip(&args) {
                 w.line(format!("        let {a} = try {}.decode(&r)", self.descriptor(&p.ty, Scoped::Function)));

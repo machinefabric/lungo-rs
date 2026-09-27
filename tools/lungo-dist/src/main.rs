@@ -38,10 +38,7 @@ enum Cli {
         components: Vec<String>,
     },
     /// Write a reproducible `.tar.gz` of a directory, whose entries are under its name.
-    Archive {
-        dir: PathBuf,
-        out: PathBuf,
-    },
+    Archive { dir: PathBuf, out: PathBuf },
     /// Assemble the Go module `lungo-go` with runtime packages (`--runtime TARGET=DIR`).
     Go {
         #[arg(long = "runtime", value_parser = target_dir_pair)]
@@ -61,7 +58,7 @@ enum Cli {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Write `runtime-manifest.json` and `SHA256SUMS` for release artifacts.
+    /// Write the release's `runtime-manifest.json`.
     Manifest {
         /// The directory holding the artifacts (`lungo-runtime-<version>-<target>.tar.gz`,
         /// `LungoRuntime.xcframework.zip`).
@@ -70,6 +67,33 @@ enum Cli {
         /// The URL the artifacts are downloaded from.
         #[arg(long)]
         base_url: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Write `SHA256SUMS` of every file of a directory.
+    Sums {
+        dir: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Build `LungoRuntime.xcframework` from static runtime libraries (one per Apple platform
+    /// variant; each may be universal).
+    Xcframework {
+        #[arg(long = "library", required = true)]
+        libraries: Vec<PathBuf>,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Assemble the Swift package `lungo-swift` of a release, whose runtime is the XCFramework
+    /// at `url` with SwiftPM checksum `checksum`.
+    Swift {
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        checksum: String,
+        /// A macOS runtime package (for the native libraries to link).
+        #[arg(long)]
+        runtime: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
@@ -94,6 +118,17 @@ fn main() -> ExitCode {
         Cli::Python { runtime, out } => support::python(&runtime, &out),
         Cli::Ts { out } => support::typescript(&out),
         Cli::Manifest { artifacts, base_url, out } => manifest(&artifacts, &base_url, &out),
+        Cli::Sums { dir, out } => sums(&dir, &out),
+        Cli::Xcframework { libraries, out } => support::xcframework(&libraries, &out),
+        Cli::Swift { url, checksum, runtime, out } => {
+            let target = format!(
+                ".binaryTarget(name: \"LungoRuntime\", url: {}, checksum: {})",
+                serde_json::to_string(&url).expect("JSON"),
+                serde_json::to_string(&checksum).expect("JSON")
+            );
+            io(format!("cannot create {}", out.display()), fs::create_dir_all(&out))?;
+            support::swift(&target, &runtime, &out)
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -117,10 +152,7 @@ pub fn target_dir() -> PathBuf {
 fn host() -> String {
     let out = Command::new("rustc").arg("-vV").output().expect("rustc runs");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.lines()
-        .find_map(|l| l.strip_prefix("host: "))
-        .expect("rustc reports its host")
-        .to_owned()
+    text.lines().find_map(|l| l.strip_prefix("host: ")).expect("rustc reports its host").to_owned()
 }
 
 pub fn io<T>(what: impl std::fmt::Display, r: std::io::Result<T>) -> Result<T> {
@@ -211,7 +243,8 @@ fn native_libraries(target: &str) -> Result<Vec<String>> {
         .find_map(|l| l.split("native-static-libs:").nth(1))
         .ok_or("rustc did not report the native libraries of the runtime")?;
     // The C library every C toolchain links by default is left to it (listing it again makes
-    // linkers warn); `-framework X` is one item for CMake.
+    // linkers warn; MSVC's `/defaultlib:msvcrt` is the default runtime of CMake's and every
+    // other MSVC build); `-framework X` is one item for CMake.
     let implicit: &[&str] = if target.contains("-apple-") {
         &["-lSystem", "-lc", "-lm"]
     } else if target.contains("-linux-") {
@@ -224,7 +257,7 @@ fn native_libraries(target: &str) -> Result<Vec<String>> {
     while let Some(t) = tokens.next() {
         if t == "-framework" {
             items.push(format!("-framework {}", tokens.next().ok_or("`-framework` without a name")?));
-        } else if !implicit.contains(&t) && !items.iter().any(|i| i == t) {
+        } else if !implicit.contains(&t) && !t.starts_with("/defaultlib:") && !items.iter().any(|i| i == t) {
             items.push(t.to_owned());
         }
     }
@@ -331,14 +364,23 @@ fn local(out: &Path, components: &[String]) -> Result<()> {
     if wanted("runtime") || wanted("go") || wanted("python") || wanted("swift") {
         runtime(&host, &out.join("runtime"))?;
     }
-    if wanted("wasm") {
+    // The TypeScript binding links the WebAssembly runtime into its packages.
+    if wanted("wasm") || wanted("ts") {
         runtime("wasm32-wasip1", &out.join("wasm"))?;
     }
     if wanted("ts") {
         support::typescript(&out.join("ts"))?;
     }
     if wanted("go") {
-        support::go(&[(host.clone(), out.join("runtime"))], &out.join("go"))?;
+        // cgo links with MinGW on Windows: the Go module carries the GNU runtime.
+        let go_target = host.replace("-pc-windows-msvc", "-pc-windows-gnu");
+        let go_runtime = if go_target == host {
+            out.join("runtime")
+        } else {
+            runtime(&go_target, &out.join("go-runtime"))?;
+            out.join("go-runtime")
+        };
+        support::go(&[(go_target, go_runtime)], &out.join("go"))?;
     }
     if wanted("python") {
         support::python(&out.join("runtime"), &out.join("python"))?;
@@ -420,17 +462,12 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// `runtime-manifest.json` and `SHA256SUMS` of the release artifacts in `dir`.
+/// `runtime-manifest.json` of the release artifacts in `dir`: the runtime archives and the
+/// XCFramework, with their SHA-256 digests.
 fn manifest(dir: &Path, base_url: &str, out: &Path) -> Result<()> {
     let prefix = format!("lungo-runtime-{VERSION}-");
     let mut artifacts = BTreeMap::new();
-    let mut sums = String::new();
-    let mut names: Vec<String> = io(format!("cannot read {}", dir.display()), fs::read_dir(dir))?
-        .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
-        .collect::<std::io::Result<_>>()
-        .map_err(|e| e.to_string())?;
-    names.sort();
-    for name in names {
+    for name in file_names(dir)? {
         let key = if let Some(target) = name.strip_prefix(&prefix).and_then(|n| n.strip_suffix(".tar.gz")) {
             target.to_owned()
         } else if name == "LungoRuntime.xcframework.zip" {
@@ -439,7 +476,6 @@ fn manifest(dir: &Path, base_url: &str, out: &Path) -> Result<()> {
             continue;
         };
         let sha = sha256_file(&dir.join(&name))?;
-        sums.push_str(&format!("{sha}  {name}\n"));
         artifacts.insert(
             key,
             serde_json::json!({ "url": format!("{}/{name}", base_url.trim_end_matches('/')), "sha256": sha }),
@@ -453,9 +489,29 @@ fn manifest(dir: &Path, base_url: &str, out: &Path) -> Result<()> {
         "abi_version": lungo_runtime::ABI_VERSION,
         "artifacts": artifacts,
     });
-    io("cannot create the output", fs::create_dir_all(out))?;
-    let mut f = io("cannot write the manifest", fs::File::create(out.join("runtime-manifest.json")))?;
+    let mut f = io("cannot write the manifest", fs::File::create(out))?;
     io("cannot write the manifest", writeln!(f, "{}", serde_json::to_string_pretty(&manifest).expect("JSON")))?;
-    io("cannot write SHA256SUMS", fs::write(out.join("SHA256SUMS"), sums))?;
     Ok(())
+}
+
+/// `SHA256SUMS` of every file in `dir`, in `sha256sum` format.
+fn sums(dir: &Path, out: &Path) -> Result<()> {
+    let mut text = String::new();
+    for name in file_names(dir)? {
+        text.push_str(&format!("{}  {name}\n", sha256_file(&dir.join(&name))?));
+    }
+    io("cannot write SHA256SUMS", fs::write(out, text))
+}
+
+/// The names of the files in `dir`, sorted.
+fn file_names(dir: &Path) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for e in io(format!("cannot read {}", dir.display()), fs::read_dir(dir))? {
+        let e = io("cannot read a directory entry", e)?;
+        if e.path().is_file() {
+            names.push(e.file_name().to_string_lossy().into_owned());
+        }
+    }
+    names.sort();
+    Ok(names)
 }

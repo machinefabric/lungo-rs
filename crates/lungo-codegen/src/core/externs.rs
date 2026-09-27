@@ -201,7 +201,8 @@ impl ExternPlan {
             }
         }
         for key in user.keys() {
-            let used = plan.resolutions.values().any(|r| matches!(r, Resolution::Application { key: k, .. } if k == key));
+            let used =
+                plan.resolutions.values().any(|r| matches!(r, Resolution::Application { key: k, .. } if k == key));
             if !used {
                 errors.push(CodegenError::external(ErrorCode::UnusedExternMapping, format!(
                     "{} provides `{key}`, but no extern declaration reachable from the root modules uses that symbol",

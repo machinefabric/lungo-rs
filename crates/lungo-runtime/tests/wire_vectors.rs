@@ -115,11 +115,7 @@ fn valid() -> Vec<(&'static str, Type, Value)> {
         ("option none", Type::Option(b(Type::Nat)), Value::Option(None)),
         ("option some", Type::Option(b(Type::Nat)), Value::Option(Some(bv(nat("5"))))),
         ("list empty", Type::List(b(Type::UInt8)), Value::List(vec![])),
-        (
-            "list",
-            Type::List(b(Type::UInt8)),
-            Value::List(vec![Value::UInt8(1), Value::UInt8(2), Value::UInt8(3)]),
-        ),
+        ("list", Type::List(b(Type::UInt8)), Value::List(vec![Value::UInt8(1), Value::UInt8(2), Value::UInt8(3)])),
         (
             "array of strings",
             Type::Array(b(Type::String)),
@@ -135,11 +131,7 @@ fn valid() -> Vec<(&'static str, Type, Value)> {
             Type::Except { error: b(Type::String), value: b(Type::Nat) },
             Value::Except(Err(bv(Value::String("bad".into())))),
         ),
-        (
-            "except ok",
-            Type::Except { error: b(Type::String), value: b(Type::Nat) },
-            Value::Except(Ok(bv(nat("42")))),
-        ),
+        ("except ok", Type::Except { error: b(Type::String), value: b(Type::Nat) }, Value::Except(Ok(bv(nat("42"))))),
         (
             "nested",
             Type::Option(b(Type::List(b(Type::Int)))),
@@ -172,7 +164,11 @@ fn invalid() -> Vec<(&'static str, Type, Vec<u8>)> {
         ("int invalid sign", Type::Int, vec![2, 1, 0, 0, 0, 1]),
         ("option invalid tag", Type::Option(b(Type::Nat)), vec![2]),
         ("except invalid tag", Type::Except { error: b(Type::Nat), value: b(Type::Nat) }, vec![2, 0, 0, 0, 0]),
-        ("function invalid kind", Type::Function { params: vec![Type::Nat], result: b(Type::Nat) }, vec![2, 0, 0, 0, 0, 0, 0, 0, 0]),
+        (
+            "function invalid kind",
+            Type::Function { params: vec![Type::Nat], result: b(Type::Nat) },
+            vec![2, 0, 0, 0, 0, 0, 0, 0, 0],
+        ),
         ("trailing bytes", Type::Unit, vec![0]),
         ("truncated", Type::UInt32, vec![1, 2, 3]),
         ("list longer than data", Type::List(b(Type::UInt8)), vec![5, 0, 0, 0, 1]),
@@ -225,7 +221,10 @@ fn vectors_file_is_the_reference_encoding() {
         return;
     }
     let committed = std::fs::read_to_string(path()).expect("compiler-tests/wire/vectors.json exists");
-    assert!(committed == text, "vectors.json is out of date; run `LUNGO_BLESS=1 cargo test -p lungo-runtime --test wire_vectors`");
+    assert!(
+        committed == text,
+        "vectors.json is out of date; run `LUNGO_BLESS=1 cargo test -p lungo-runtime --test wire_vectors`"
+    );
 }
 
 #[test]
@@ -240,7 +239,8 @@ fn valid_encodings_round_trip_through_lean_objects() {
         }
         let bytes = unhex(v["bytes"].as_str().unwrap());
         let mut r = Reader::new(&bytes);
-        let o = wire::decode(table(), &ty, &mut r, wire::Handles::Borrow).unwrap_or_else(|e| panic!("{}: {e}", v["name"]));
+        let o =
+            wire::decode(table(), &ty, &mut r, wire::Handles::Borrow).unwrap_or_else(|e| panic!("{}: {e}", v["name"]));
         r.finish().unwrap_or_else(|e| panic!("{}: {e}", v["name"]));
         let mut again = Vec::new();
         unsafe {
@@ -261,12 +261,9 @@ fn invalid_encodings_are_rejected_by_both_codecs() {
         let host = value::decode(table(), &ty, &mut r).and_then(|_| r.finish());
         assert!(host.is_err(), "the reference codec accepts {}", v["name"]);
         let mut r = Reader::new(&bytes);
-        match wire::decode(table(), &ty, &mut r, wire::Handles::Borrow) {
-            Ok(o) => {
-                unsafe { lean_dec(o) };
-                assert!(r.finish().is_err(), "the Lean codec accepts {}", v["name"]);
-            }
-            Err(_) => {}
+        if let Ok(o) = wire::decode(table(), &ty, &mut r, wire::Handles::Borrow) {
+            unsafe { lean_dec(o) };
+            assert!(r.finish().is_err(), "the Lean codec accepts {}", v["name"]);
         }
     }
 }

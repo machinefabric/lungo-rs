@@ -12,6 +12,7 @@ pub mod plugin;
 pub mod python;
 pub mod rust;
 pub mod swift;
+pub mod ts;
 
 pub use crate::core::codes::ErrorCode;
 pub use crate::core::externs::{Resolution, resolution_key};

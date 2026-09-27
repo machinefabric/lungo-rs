@@ -405,11 +405,20 @@ pub(crate) unsafe fn decode_uv_error(errnum: i32, fname: Option<Obj>) -> Obj {
 /// standard library: the `errno` itself on Unix, the C runtime's translation (`_dosmaperr`) of
 /// the Win32 error code on Windows.
 pub(crate) fn errno_of(e: &std::io::Error) -> i32 {
-    #[cfg(any(unix, target_os = "wasi"))]
+    #[cfg(unix)]
     {
         match e.raw_os_error() {
             Some(n) => n,
             None => lean_internal_panic(&format!("I/O error without an OS error code: {e}")),
+        }
+    }
+    // Rust's standard library reports the operations WASI lacks as `Unsupported`.
+    #[cfg(target_os = "wasi")]
+    {
+        match (e.raw_os_error(), e.kind()) {
+            (Some(n), _) => n,
+            (None, std::io::ErrorKind::Unsupported) => libc::ENOTSUP,
+            (None, _) => lean_internal_panic(&format!("I/O error without an OS error code: {e}")),
         }
     }
     #[cfg(windows)]
@@ -1672,7 +1681,7 @@ pub mod externs {
             if nbytes == 0 {
                 return lean_io_result_mk_ok(lean_alloc_sarray(1, 0, 0));
             }
-            #[cfg(any(unix, target_os = "wasi"))]
+            #[cfg(unix)]
             let mut urandom = match File::open("/dev/urandom") {
                 Ok(f) => f,
                 Err(e) => {
@@ -1687,7 +1696,7 @@ pub mod externs {
             }
             let res = lean_alloc_sarray(1, 0, nbytes);
             let out = std::slice::from_raw_parts_mut(lean_sarray_cptr(res), nbytes);
-            #[cfg(any(unix, target_os = "wasi"))]
+            #[cfg(unix)]
             {
                 let mut n = 0;
                 while n < nbytes {
@@ -1706,6 +1715,17 @@ pub mod externs {
                 if getrandom::fill(out).is_err() {
                     lean_dec(res);
                     return io_result_mk_user_error("BCryptGenRandom failed");
+                }
+            }
+            // WASI's `random_get`.
+            #[cfg(target_os = "wasi")]
+            {
+                if let Err(e) = getrandom::fill(out) {
+                    lean_dec(res);
+                    return match e.raw_os_error() {
+                        Some(errnum) => lean_io_result_mk_error(decode_io_error(errnum, None)),
+                        None => io_result_mk_user_error(&format!("random_get failed: {e}")),
+                    };
                 }
             }
             lean_sarray_set_size(res, nbytes);
@@ -1770,7 +1790,23 @@ pub mod externs {
                 lean_dec(filename);
                 return r;
             };
-            #[cfg(any(unix, target_os = "wasi"))]
+            // WASI has no `realpath`: its failure is reported as it is.
+            #[cfg(target_os = "wasi")]
+            {
+                match std::fs::canonicalize(path) {
+                    Ok(p) => {
+                        let s = lean_mk_string_from_bytes(&os_str_bytes(p.as_os_str()));
+                        lean_dec(filename);
+                        lean_io_result_mk_ok(s)
+                    }
+                    Err(e) => {
+                        let r = io_error_result(&e, Some(filename));
+                        lean_dec(filename);
+                        r
+                    }
+                }
+            }
+            #[cfg(unix)]
             {
                 match std::fs::canonicalize(path) {
                     Ok(p) => {

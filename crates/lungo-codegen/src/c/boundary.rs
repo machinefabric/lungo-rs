@@ -90,7 +90,11 @@ impl Function {
 impl HostExtern {
     /// The signature of the host's implementation.
     pub fn signature(&self) -> Signature {
-        Signature { type_params: 0, params: self.params.iter().map(|p| p.ty.clone()).collect(), returns: self.returns.clone() }
+        Signature {
+            type_params: 0,
+            params: self.params.iter().map(|p| p.ty.clone()).collect(),
+            returns: self.returns.clone(),
+        }
     }
 }
 
@@ -351,9 +355,12 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
             _ => None,
         })
         .map(|(d, key)| {
-            let decl = input.program.declaration(d).ok_or_else(|| CodegenError::internal(format!("extern {d} missing")))?;
-            let req =
-                requirements.get(d).copied().ok_or_else(|| CodegenError::internal(format!("no extern requirement for {d}")))?;
+            let decl =
+                input.program.declaration(d).ok_or_else(|| CodegenError::internal(format!("extern {d} missing")))?;
+            let req = requirements
+                .get(d)
+                .copied()
+                .ok_or_else(|| CodegenError::internal(format!("no extern requirement for {d}")))?;
             Ok((decl, req, key))
         })
         .collect::<Result<_, CodegenError>>()
@@ -400,13 +407,12 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     }
     w.line(format!("static lungo_lazy_bits {prefix}types_cell;"));
     w.open(format!("static uint64_t {prefix}types_load(void) {{"));
-    w.line(format!(
-        "return (uint64_t)(uintptr_t)lungo_types_load({prefix}type_table, {});",
-        table_bytes.len()
-    ));
+    w.line(format!("return (uint64_t)(uintptr_t)lungo_types_load({prefix}type_table, {});", table_bytes.len()));
     w.close("}");
     w.open(format!("const lungo_types *{prefix}types(void) {{"));
-    w.line(format!("return (const lungo_types *)(uintptr_t)lungo_lazy_bits_get(&{prefix}types_cell, {prefix}types_load);"));
+    w.line(format!(
+        "return (const lungo_types *)(uintptr_t)lungo_lazy_bits_get(&{prefix}types_cell, {prefix}types_load);"
+    ));
     w.close("}");
     w.line("");
     let n = host_externs.len();
@@ -581,7 +587,9 @@ fn opaque_params(ty: Type) -> Type {
             params: params.into_iter().map(opaque_params).collect(),
             result: Box::new(opaque_params(*result)),
         },
-        Type::Inductive { index, args } => Type::Inductive { index, args: args.into_iter().map(opaque_params).collect() },
+        Type::Inductive { index, args } => {
+            Type::Inductive { index, args: args.into_iter().map(opaque_params).collect() }
+        }
         other => other,
     }
 }

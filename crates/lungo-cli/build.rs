@@ -16,8 +16,8 @@ fn main() {
             println!("cargo::rerun-if-changed={}", path.display());
             let text = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("cannot read LUNGO_RUNTIME_MANIFEST {}: {e}", path.display()));
-            let manifest: serde_json::Value = serde_json::from_str(&text)
-                .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", path.display()));
+            let manifest: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", path.display()));
             // The manifest must describe this very version; the command validates the rest when
             // it loads the manifest.
             let version = env!("CARGO_PKG_VERSION");

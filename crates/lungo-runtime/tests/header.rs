@@ -8,7 +8,8 @@ use std::path::Path;
 fn header_declares_every_primitive_of_the_registry() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("include/lungo.h");
     let current = std::fs::read_to_string(&path).unwrap();
-    let expected = lungo_runtime::header::with_primitives(&current, &lungo_runtime::header::primitive_declarations()).unwrap();
+    let expected =
+        lungo_runtime::header::with_primitives(&current, &lungo_runtime::header::primitive_declarations()).unwrap();
     if std::env::var_os("LUNGO_BLESS").is_some() {
         std::fs::write(&path, &expected).unwrap();
         return;
