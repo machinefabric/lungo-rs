@@ -92,6 +92,14 @@ enum Generator {
     },
 }
 
+/// Whether `rel` is written by a language's runtime into a generated package it imports in
+/// place — Python's bytecode caches — rather than by any generator. An editable install
+/// imports the package from its output directory, so these appear beside generated code
+/// that is exactly what the project generates.
+fn runtime_cache(rel: &str) -> bool {
+    rel.split(['/', '\\']).any(|component| component == "__pycache__")
+}
+
 /// How the output directory `dir` differs from what the project generates now (`expected`).
 fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<String, Vec<u8>>) -> Option<String> {
     let mut lines = Vec::new();
@@ -102,7 +110,12 @@ fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<Str
             Some(_) => {}
         }
     }
-    lines.extend(actual.keys().filter(|rel| !expected.contains_key(*rel)).map(|rel| format!("  extra:   {rel}")));
+    lines.extend(
+        actual
+            .keys()
+            .filter(|rel| !expected.contains_key(*rel) && !runtime_cache(rel))
+            .map(|rel| format!("  extra:   {rel}")),
+    );
     (!lines.is_empty())
         .then(|| format!("{} is not what the project generates now:\n{}", dir.display(), lines.join("\n")))
 }
@@ -278,5 +291,25 @@ fn codegen_error(analysis: &Analysis, errors: Vec<lungo_build::CodegenError>) ->
         toolchain: format!("v{}", analysis.toolchain.lean_version),
         bir_version: analysis.success.bir.bir_version,
         errors,
+    }
+}
+
+#[cfg(test)]
+mod drift_tests {
+    use super::*;
+
+    /// A bytecode cache Python wrote into a generated package is not drift; a file
+    /// nobody generated is, even one whose name looks compiled.
+    #[test]
+    fn a_runtime_cache_is_not_drift_and_a_stray_file_is() {
+        let expected: BTreeMap<String, Vec<u8>> = [("__init__.py".to_string(), b"x".to_vec())].into();
+        let mut actual = expected.clone();
+        actual.insert("__pycache__/__init__.cpython-311.pyc".into(), b"c".to_vec());
+        actual.insert("sub/__pycache__/m.cpython-312.pyc".into(), b"c".to_vec());
+        assert_eq!(drift(Path::new("out"), &expected, &actual), None);
+
+        actual.insert("stray.pyc".into(), b"c".to_vec());
+        let report = drift(Path::new("out"), &expected, &actual).expect("a stray file is drift");
+        assert!(report.contains("extra:   stray.pyc") && !report.contains("__pycache__"), "{report}");
     }
 }

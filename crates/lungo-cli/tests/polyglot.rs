@@ -159,10 +159,19 @@ fn python_binding() {
     }
     std::fs::create_dir_all(&tests).unwrap();
     std::fs::copy(fixture("python").join("test_polyglot.py"), tests.join("test_polyglot.py")).unwrap();
-    let out = Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
-    let text = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "{text}");
-    assert!(text.contains("Ran 10 tests") && text.trim_end().ends_with("OK"), "{text}");
+    let unittest = |label: &str| {
+        let out = Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{label}: {text}");
+        assert!(text.contains("Ran 10 tests") && text.trim_end().ends_with("OK"), "{label}: {text}");
+    };
+    unittest("installed");
+    // Installed editable, the sources are imported from the package's own directory
+    // while the compiled program is installed in site-packages: the package finds its
+    // program through its `__path__`, which names both.
+    run(Command::new(&py).args(["-m", "pip", "uninstall", "--yes", "--quiet", "polyglot"]));
+    run(Command::new(&py).args(["-m", "pip", "install", "--quiet", "--editable"]).arg(&package));
+    unittest("editable");
 }
 
 #[cfg(target_os = "macos")]

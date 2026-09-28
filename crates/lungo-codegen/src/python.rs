@@ -488,10 +488,15 @@ impl Emitter<'_> {
             "    name = {{\"win32\": \"{id}_lean.dll\", \"darwin\": \"lib{id}_lean.dylib\"}}.get(_sys.platform, \"lib{id}_lean.so\")",
             id = b.id
         ));
-        w.line("    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), name)");
-        w.line("    if not _os.path.isfile(path):");
-        w.line("        raise ImportError(f\"the compiled program {path} is missing: install the package with pip\")");
-        w.line("    return path");
+        // Looked for in every directory of the package's `__path__`, not only beside
+        // `__file__`: an editable install imports the sources from the project while the
+        // compiled program is installed beside the package in site-packages, and the
+        // import system names both. An ordinary install has one directory, this one.
+        w.line("    for directory in __path__:");
+        w.line("        path = _os.path.join(directory, name)");
+        w.line("        if _os.path.isfile(path):");
+        w.line("            return path");
+        w.line("    raise ImportError(f\"the compiled program {name} is in none of {list(__path__)}: install the package with pip\")");
         w.line("");
         w.line("");
         w.line(format!("_program = lungo_py.Program(_library(), {})", py_string(&b.types_symbol)));
