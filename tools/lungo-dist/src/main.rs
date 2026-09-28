@@ -190,7 +190,10 @@ fn libraries(target: &str) -> Libraries {
             built_import: Some("liblungo.dll.a"),
             shared_dest: Some("bin/lungo.dll"),
         }
-    } else if target.contains("-apple-ios") || target.starts_with("wasm32-") {
+    } else if target.contains("-apple-ios") || target.starts_with("wasm32-") || target.ends_with("-linux-musl") {
+        // No shared runtime: iOS and WebAssembly link statically, and musl targets build with
+        // `crt-static`, under which Rust produces no shared library — a musl program is linked
+        // whole, the runtime with it.
         Libraries { built_static: "liblungo.a", built_shared: None, built_import: None, shared_dest: None }
     } else if target.contains("-apple-") {
         Libraries {
@@ -336,7 +339,7 @@ pub fn runtime(target: &str, out: &Path, linker: Linker) -> Result<()> {
     match linker {
         Linker::Host => run(cargo(target).args(["build", "-p", "lungo-capi", "--release", "--target", target]))?,
         Linker::Zig => {
-            release::check_zig()?;
+            release::check_zig(target)?;
             let zig_target =
                 if target.ends_with("-linux-gnu") { format!("{target}.{}", release::GLIBC) } else { target.to_owned() };
             run(cargo(target).args(["zigbuild", "-p", "lungo-capi", "--release", "--target", &zig_target]))?
@@ -521,4 +524,23 @@ fn collect(dir: &Path, rel: &Path, out: &mut Vec<(PathBuf, PathBuf)>) -> Result<
 pub fn sha256_file(path: &Path) -> Result<String> {
     let bytes = io(format!("cannot read {}", path.display()), fs::read(path))?;
     Ok(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A musl runtime is static only: musl targets build with `crt-static`, under which Rust
+    /// makes no shared library, so a package that expected one could not be assembled.
+    #[test]
+    fn a_musl_runtime_is_static_only() {
+        for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
+            let libs = libraries(target);
+            assert_eq!(libs.built_static, "liblungo.a");
+            assert!(libs.built_shared.is_none() && libs.shared_dest.is_none(), "{target}");
+        }
+        // The GNU targets keep theirs: a Python wheel loads it.
+        let gnu = libraries("x86_64-unknown-linux-gnu");
+        assert_eq!(gnu.shared_dest, Some("lib/liblungo.so"));
+    }
 }

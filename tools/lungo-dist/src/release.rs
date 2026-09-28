@@ -100,8 +100,9 @@ pub fn targets() -> Result<()> {
     Ok(())
 }
 
-/// Checks that `cargo zigbuild` and the pinned zig are installed.
-pub fn check_zig() -> Result<()> {
+/// Checks that `cargo zigbuild` and the pinned zig are installed, and for a Windows GNU `target`
+/// MinGW-w64's `dlltool`, which Rust runs for the raw-dylib imports of the Windows API bindings.
+pub fn check_zig(target: &str) -> Result<()> {
     let zig = Command::new("zig").arg("version").output().map_err(|e| {
         format!("zig {ZIG_VERSION} links the Linux and Windows GNU runtimes, and is not installed ({e})")
     })?;
@@ -109,9 +110,20 @@ pub fn check_zig() -> Result<()> {
     if found != ZIG_VERSION {
         return Err(format!("the runtimes are linked with zig {ZIG_VERSION}, and the zig on PATH is {found}"));
     }
-    let zigbuild = Command::new("cargo").args(["zigbuild", "--version"]).output();
+    // The binary, not the cargo subcommand: `cargo zigbuild` passes its arguments to the build,
+    // and since 0.23 refuses `--version` there.
+    let zigbuild = Command::new("cargo-zigbuild").arg("--version").output();
     if !zigbuild.is_ok_and(|o| o.status.success()) {
         return Err("`cargo zigbuild` is not installed: `cargo install --locked cargo-zigbuild`".into());
+    }
+    if let Some(arch) = target.strip_suffix("-pc-windows-gnu") {
+        let dlltool = format!("{arch}-w64-mingw32-dlltool");
+        if !Command::new(&dlltool).arg("--version").output().is_ok_and(|o| o.status.success()) {
+            return Err(format!(
+                "{target} is linked with MinGW-w64's `{dlltool}` for its Windows imports, and it is not on PATH \
+                 (MinGW-w64: `brew install mingw-w64`, or your system's package)"
+            ));
+        }
     }
     Ok(())
 }
@@ -413,7 +425,7 @@ pub fn cli(platform: &str, manifest: &Path, out_dir: &Path) -> Result<()> {
     match linker {
         Linker::Host => cmd.args(["build", "--release", "-p", "lungo-cli", "--target", target]),
         Linker::Zig => {
-            check_zig()?;
+            check_zig(target)?;
             cmd.args(["zigbuild", "--release", "-p", "lungo-cli", "--target", target])
         }
     };
