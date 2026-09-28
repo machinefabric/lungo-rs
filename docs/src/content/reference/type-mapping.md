@@ -75,7 +75,7 @@ With the `serde` feature of the `lungo` crate, the facade types implement `serde
 
 ```toml
 [dependencies]
-lungo = { version = "1.71.2897", features = ["serde"] }
+lungo = { version = "1.72.2908", features = ["serde"] }
 ```
 
 | Rust | Serialized as |
