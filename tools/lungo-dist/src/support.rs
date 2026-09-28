@@ -335,7 +335,7 @@ mod tests {
         write(&lib.join("src/pkg/mod.py"), "");
         write(&lib.join("src/pkg/mod.pyc"), "");
         write(&lib.join("build/out.o"), "");
-        write(&lib.join(".sdx/disposable/logs/run.log"), "");
+        write(&lib.join(".tool-state/logs/run.log"), "");
         write(&lib.join("version.txt"), "1.0.0");
         write(&lib.join("src/version.txt"), "kept: only the root one is the workspace's");
         write(&lib.join("notes/skipped.md"), "");
