@@ -51,32 +51,30 @@ fn library(name: &str) -> Result<PathBuf> {
 /// Copies a support library's files into `to`, except those `skip` rejects (by path relative to
 /// the library).
 ///
-/// Its files are what its repository holds — tracked, or new and not ignored — as git lists
-/// them: never what a checkout collects beside them (the repository itself, build output, the
-/// tools' state, caches), whatever those are called.
+/// Its files are what its repository holds: everything its own `.gitignore` files do not
+/// ignore, and nothing hidden. Never what a checkout collects beside them (the repository
+/// itself, build output, the tools' state, caches), whatever those are called. Read from the
+/// files themselves rather than asked of git, because a copy of the tree — a build machine's —
+/// has no repository to ask; and only the library's own rules, so a tree it is copied into
+/// changes nothing.
 fn copy_library(dir: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<()> {
-    let listed = io(
-        format!("cannot run git in {}", dir.display()),
-        std::process::Command::new("git")
-            .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
-            .current_dir(dir)
-            .output(),
-    )?;
-    if !listed.status.success() {
-        return Err(format!(
-            "git cannot list the files of {}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&listed.stderr).trim()
-        ));
-    }
     io(format!("cannot create {}", to.display()), fs::create_dir_all(to))?;
-    for rel in listed.stdout.split(|b| *b == 0).filter(|r| !r.is_empty()) {
-        let rel = Path::new(std::str::from_utf8(rel).map_err(|_| format!("{} lists a path that is not UTF-8", dir.display()))?);
-        let path = dir.join(rel);
-        // Tracked, and deleted in the checkout: not a file of it now. And `version.txt` at its
-        // root is the workspace's record of the repository's own version, not the lungo
-        // version a release of it carries.
-        if skip(rel) || !path.is_file() || rel == Path::new("version.txt") {
+    let walk = ignore::WalkBuilder::new(dir)
+        .hidden(true)
+        .parents(false)
+        .require_git(false)
+        .git_global(false)
+        .git_exclude(false)
+        .ignore(false)
+        .sort_by_file_path(|a, b| a.cmp(b))
+        .build();
+    for entry in walk {
+        let entry = entry.map_err(|e| format!("cannot list the files of {}: {e}", dir.display()))?;
+        let path = entry.path();
+        let rel = path.strip_prefix(dir).expect("walked paths are under the root");
+        // `version.txt` at its root is the workspace's record of the repository's own version,
+        // not the lungo version a release of it carries.
+        if !entry.file_type().is_some_and(|t| t.is_file()) || skip(rel) || rel == Path::new("version.txt") {
             continue;
         }
         let dest = to.join(rel);
@@ -293,4 +291,59 @@ pub fn typescript(out: &Path) -> Result<()> {
         fs::copy(repo.join("compiler-tests/wire/vectors.json"), out.join("test/vectors.json")).map(|_| ()),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(path: &Path, text: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    /// Every file under `dir`, relative to it.
+    fn files(dir: &Path) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    out.push(p.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// A library copied without its repository — as a build machine's copy of the tree has
+    /// none — is still exactly its files: what its `.gitignore` ignores, its hidden state, its
+    /// `version.txt` and whatever the caller skips are not, and rules outside it do not apply.
+    #[test]
+    fn a_library_is_its_files_without_a_repository_to_ask() {
+        let root = std::env::temp_dir().join(format!("lungo-dist-copy-library-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // An ignore rule in the tree the library sits in is not the library's.
+        write(&root.join(".gitignore"), "*.go\n");
+        let lib = root.join("lib");
+        write(&lib.join(".gitignore"), "build/\n*.pyc\n");
+        write(&lib.join("runtime.go"), "package lungo");
+        write(&lib.join("src/pkg/mod.py"), "");
+        write(&lib.join("src/pkg/mod.pyc"), "");
+        write(&lib.join("build/out.o"), "");
+        write(&lib.join(".sdx/disposable/logs/run.log"), "");
+        write(&lib.join("version.txt"), "1.0.0");
+        write(&lib.join("src/version.txt"), "kept: only the root one is the workspace's");
+        write(&lib.join("notes/skipped.md"), "");
+        assert!(!lib.join(".git").exists());
+
+        let out = root.join("out");
+        copy_library(&lib, &out, &|rel| rel.starts_with("notes")).unwrap();
+        assert_eq!(files(&out), ["runtime.go", "src/pkg/mod.py", "src/version.txt"]);
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
