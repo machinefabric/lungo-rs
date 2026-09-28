@@ -1,4 +1,5 @@
-//! Every error code is documented in `docs/src/content/reference/errors.md`, and the reference documents
+//! Every error code is documented in `docs/src/content/reference/errors.md` — in the lungo
+//! repository, whose documentation site it is, beside this one — and the reference documents
 //! no code that does not exist.
 
 use lungo_driver::ErrorCode;
@@ -6,8 +7,10 @@ use std::collections::BTreeSet;
 
 #[test]
 fn error_reference_matches_the_codes() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/src/content/reference/errors.md");
-    let text = std::fs::read_to_string(path).unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/src/content/reference/errors.md");
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!("cannot read {path} ({e}): lungo-rs is checked out inside the lungo repository, beside its docs")
+    });
     let documented: BTreeSet<&str> = text.lines().filter_map(|l| l.strip_prefix("### ")).map(str::trim).collect();
     let defined: BTreeSet<&str> = ErrorCode::ALL.iter().map(|c| c.as_str()).collect();
     let undocumented: Vec<_> = defined.difference(&documented).collect();

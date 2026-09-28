@@ -250,18 +250,27 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The SHA-256 of a file.
-/// What a local distribution holds, as one digest: every file's path (relative, with `/`) and
-/// contents, in path order. A release is identified by its manifest, which names every
-/// archive's digest; a local distribution is rebuilt in place, so only its contents say whether
-/// the packages generated from it are still what it would generate. `None` for a release.
+/// The parts of a local distribution that generation reads: the runtime packages a program is
+/// compiled against (the host's and WebAssembly's). The support libraries are only named by
+/// path in what is generated, and are read by the tools that build it afterwards.
+const GENERATION_READS: [&str; 2] = ["runtime", "wasm"];
+
+/// What a local distribution holds for generation, as one digest: every file's path (relative,
+/// with `/`) and contents under [`GENERATION_READS`], in path order. A release is identified by
+/// its manifest, which names every archive's digest; a local distribution is rebuilt in place,
+/// so only its contents say whether the packages generated from it are still what it would
+/// generate. `None` for a release.
 pub fn distribution_digest(info: &RuntimeInfo) -> Result<Option<String>> {
     let Distribution::Local { dir } = &info.distribution else {
         return Ok(None);
     };
     let root = Path::new(dir);
     let mut files = Vec::new();
-    collect_files(root, root, &mut files)?;
+    for part in GENERATION_READS {
+        if root.join(part).is_dir() {
+            collect_files(root, &root.join(part), &mut files)?;
+        }
+    }
     files.sort();
     let mut h = Sha256::new();
     for relative in files {
@@ -338,6 +347,12 @@ mod tests {
         // A file moved is a different distribution, though its bytes are the same.
         std::fs::rename(dir.path().join("wasm/lib/liblungo.a"), dir.path().join("wasm/liblungo.a")).unwrap();
         assert_ne!(distribution_digest(&info).unwrap().unwrap(), rebuilt);
+        // A support library is not what generation reads: rebuilding one leaves the digest alone.
+        std::fs::create_dir_all(dir.path().join("go")).unwrap();
+        std::fs::write(dir.path().join("go/version.go"), "one").unwrap();
+        let moved = distribution_digest(&info).unwrap().unwrap();
+        std::fs::write(dir.path().join("go/version.go"), "two").unwrap();
+        assert_eq!(distribution_digest(&info).unwrap().unwrap(), moved, "a support library is not in the digest");
         let release = RuntimeInfo { distribution: Distribution::Release { artifacts: BTreeMap::new() }, ..info };
         assert_eq!(distribution_digest(&release).unwrap(), None);
     }

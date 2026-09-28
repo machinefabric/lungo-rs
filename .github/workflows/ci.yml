@@ -50,13 +50,36 @@ jobs:
             exclude: --exclude facade-runner
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: lungo-rs
     steps:
+      # The support libraries are repositories of their own, beside this one in the lungo
+      # repository; the bindings' end-to-end tests assemble them with the runtime.
       - uses: actions/checkout@v4
+        with:
+          path: lungo-rs
+      - uses: actions/checkout@v4
+        with:
+          repository: machinefabric/lungo-go
+          path: lungo-go
+      - uses: actions/checkout@v4
+        with:
+          repository: machinefabric/lungo-py
+          path: lungo-py
+      - uses: actions/checkout@v4
+        with:
+          repository: machinefabric/lungo-ts
+          path: lungo-ts
+      - uses: actions/checkout@v4
+        with:
+          repository: machinefabric/lungo-swift
+          path: lungo-swift
       - uses: dtolnay/rust-toolchain@stable
         with:
           # The TypeScript binding's WebAssembly runtime; on Windows, the runtime cgo links.
           targets: ${{ runner.os == 'Windows' && 'wasm32-wasip1,x86_64-pc-windows-gnu' || 'wasm32-wasip1' }}
-      - uses: ./.github/actions/setup-lean
+      - uses: ./lungo-rs/.github/actions/setup-lean
       # The toolchains of the language bindings' end-to-end tests (crates/lungo-cli/tests).
       - uses: actions/setup-go@v5
         with:
@@ -73,10 +96,12 @@ jobs:
         shell: bash
         run: echo 'C:\mingw64\bin' >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lungo-rs
       - uses: actions/cache@v4
         with:
           path: ${{ env.LUNGO_CACHE_DIR }}
-          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('crates/lungo-driver/worker/**') }}
+          key: lungo-workers-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('lungo-rs/crates/lungo-driver/worker/**') }}
       - name: Build
         run: cargo build --workspace --all-targets --all-features ${{ matrix.exclude }}
       - name: Test

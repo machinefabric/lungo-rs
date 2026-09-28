@@ -30,6 +30,64 @@ pub fn copy_tree(from: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result
     walk(from, from, to, skip)
 }
 
+/// A support library's sources: its own repository, beside this one in the lungo repository
+/// (whose submodules they all are).
+fn library(name: &str) -> Result<PathBuf> {
+    let root = repo();
+    let dir = root
+        .parent()
+        .ok_or_else(|| format!("{} has no parent to find {name} beside", root.display()))?
+        .join(name);
+    if !dir.is_dir() {
+        return Err(format!(
+            "{name} is not checked out at {}: the support libraries are submodules of the lungo \
+             repository, beside lungo-rs; clone it with --recurse-submodules",
+            dir.display()
+        ));
+    }
+    Ok(dir)
+}
+
+/// Copies a support library's files into `to`, except those `skip` rejects (by path relative to
+/// the library).
+///
+/// Its files are what its repository holds — tracked, or new and not ignored — as git lists
+/// them: never what a checkout collects beside them (the repository itself, build output, the
+/// tools' state, caches), whatever those are called.
+fn copy_library(dir: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<()> {
+    let listed = io(
+        format!("cannot run git in {}", dir.display()),
+        std::process::Command::new("git")
+            .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+            .current_dir(dir)
+            .output(),
+    )?;
+    if !listed.status.success() {
+        return Err(format!(
+            "git cannot list the files of {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&listed.stderr).trim()
+        ));
+    }
+    io(format!("cannot create {}", to.display()), fs::create_dir_all(to))?;
+    for rel in listed.stdout.split(|b| *b == 0).filter(|r| !r.is_empty()) {
+        let rel = Path::new(std::str::from_utf8(rel).map_err(|_| format!("{} lists a path that is not UTF-8", dir.display()))?);
+        let path = dir.join(rel);
+        // Tracked, and deleted in the checkout: not a file of it now. And `version.txt` at its
+        // root is the workspace's record of the repository's own version, not the lungo
+        // version a release of it carries.
+        if skip(rel) || !path.is_file() || rel == Path::new("version.txt") {
+            continue;
+        }
+        let dest = to.join(rel);
+        if let Some(parent) = dest.parent() {
+            io(format!("cannot create {}", parent.display()), fs::create_dir_all(parent))?;
+        }
+        io(format!("cannot copy {}", path.display()), fs::copy(&path, &dest).map(|_| ()))?;
+    }
+    Ok(())
+}
+
 /// The native libraries of a runtime package, from its `lungo.pc`.
 fn native_libraries(runtime: &Path) -> Result<String> {
     let pc = runtime.join("lib/pkgconfig/lungo.pc");
@@ -59,7 +117,7 @@ pub fn go(runtimes: &[(String, PathBuf)], out: &Path) -> Result<()> {
         io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
     }
     let repo = repo();
-    copy_tree(&repo.join("runtimes/go"), out, &|_| false)?;
+    copy_library(&library("lungo-go")?, out, &|_| false)?;
     io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
     io("cannot create include/", fs::create_dir_all(out.join("include")))?;
     io("cannot write lungo.h", fs::write(out.join("include/lungo.h"), lungo_runtime::header::HEADER))?;
@@ -112,9 +170,7 @@ pub fn python(runtime: &Path, out: &Path) -> Result<()> {
         io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
     }
     let repo = repo();
-    copy_tree(&repo.join("runtimes/python"), out, &|rel| {
-        rel.components().any(|c| c.as_os_str() == "__pycache__" || c.as_os_str() == ".venv")
-    })?;
+    copy_library(&library("lungo-py")?, out, &|_| false)?;
     io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
     io(
         "cannot write _version.py",
@@ -183,9 +239,8 @@ fn swift_linker_settings(runtime: &Path) -> Result<String> {
 /// `runtime`.
 pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
     let repo = repo();
-    copy_tree(&repo.join("runtimes/swift"), out, &|rel| {
-        rel == Path::new("Package.swift.in") || rel.starts_with(".build") || rel.starts_with(".swiftpm")
-    })?;
+    let swift = library("lungo-swift")?;
+    copy_library(&swift, out, &|rel| rel == Path::new("Package.swift.in"))?;
     io("cannot copy LICENSE", fs::copy(repo.join("LICENSE"), out.join("LICENSE")).map(|_| ()))?;
     io(
         "cannot copy the wire vectors",
@@ -193,7 +248,7 @@ pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
             .map(|_| ()),
     )?;
     let template =
-        io("cannot read Package.swift.in", fs::read_to_string(repo.join("runtimes/swift/Package.swift.in")))?;
+        io("cannot read Package.swift.in", fs::read_to_string(swift.join("Package.swift.in")))?;
     let linker = swift_linker_settings(runtime)?;
     let manifest = crate::fill(
         &template,
@@ -225,11 +280,9 @@ pub fn typescript(out: &Path) -> Result<()> {
         io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
     }
     let repo = repo();
-    copy_tree(&repo.join("runtimes/typescript"), out, &|rel| {
-        rel == Path::new("package.json.in") || rel.starts_with("node_modules")
-    })?;
-    let template =
-        io("cannot read package.json.in", fs::read_to_string(repo.join("runtimes/typescript/package.json.in")))?;
+    let typescript = library("lungo-ts")?;
+    copy_library(&typescript, out, &|rel| rel == Path::new("package.json.in"))?;
+    let template = io("cannot read package.json.in", fs::read_to_string(typescript.join("package.json.in")))?;
     io(
         "cannot write package.json",
         fs::write(out.join("package.json"), crate::fill(&template, &[("VERSION", VERSION)])?),
