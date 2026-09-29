@@ -21,8 +21,10 @@ class Lungo < Formula
   end
 
   def install
-    # The archive extracts to @{bundle_dir}/{@{package},LICENSE,README.md}.
-    libexec.install Dir["@{bundle_dir}/*"]
+    # The archive extracts to @{bundle_dir}/{@{package},LICENSE,README.md}, and Homebrew runs
+    # this from inside that single top-level directory: what is here is its contents.
+    # `Dir["@{bundle_dir}/*"]` matched nothing, and the install left no command behind.
+    libexec.install Dir["*"]
     bin.install_symlink libexec/"@{package}"
   end
 
