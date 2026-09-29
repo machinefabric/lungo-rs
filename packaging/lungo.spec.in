@@ -6,9 +6,11 @@
 # There is no compile step here: the command is the published release's, verified against the
 # release manifest before it is repackaged.
 
-# Prebuilt, statically linked binary: no debuginfo extraction, no generated dependencies.
+# Prebuilt, statically linked binary: no debuginfo extraction, no generated dependencies, and
+# none of rpm's post-install processing. That processing strips every binary in the payload,
+# so the package would carry a command that differs from the published one it was verified as.
 %global debug_package %{nil}
-%global __brp_check_rpaths %{nil}
+%global __os_install_post %{nil}
 AutoReqProv: no
 
 Name:           lungo
