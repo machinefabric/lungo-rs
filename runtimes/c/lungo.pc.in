@@ -5,7 +5,7 @@ libdir=${prefix}/lib
 Name: lungo
 Description: The lungo runtime (@TARGET@), which lungo's generated programs link against
 Version: @VERSION@
-URL: https://github.com/machinefabric/lungo
+URL: https://machinefabric.com/lungo/
 Cflags: -I${includedir}
 Libs: -L${libdir} -llungo
 Libs.private: @NATIVE_LIBRARIES_PC@

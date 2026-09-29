@@ -4,7 +4,7 @@ Architecture: @{arch}
 Maintainer: MachineFabric <support@machinefabric.com>
 Section: devel
 Priority: optional
-Homepage: https://lungo.machinefabric.com
+Homepage: https://machinefabric.com/lungo
 Description: @{package} — generate code in many languages from proved Lean programs
  Builds a Lake project with Lean, which checks its proofs, and generates the program as a
  Rust crate or as a package in C, Go, Python, Swift or TypeScript, running on the lungo

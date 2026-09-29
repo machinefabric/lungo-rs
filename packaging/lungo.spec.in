@@ -16,7 +16,7 @@ Version:        @VERSION@
 Release:        1%{?dist}
 Summary:        Generate Rust, C, Go, Python, Swift and TypeScript from proved Lean programs
 License:        Apache-2.0
-URL:            https://lungo.machinefabric.com
+URL:            https://machinefabric.com/lungo
 
 %description
 lungo builds a Lake project with Lean, which checks its proofs, and generates the program as a
