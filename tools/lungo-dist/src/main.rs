@@ -447,7 +447,7 @@ fn local(out: &Path, components: &[String], python: Option<&Path>) -> Result<()>
         if wheels.exists() {
             io(format!("cannot replace {}", wheels.display()), fs::remove_dir_all(&wheels))?;
         }
-        release::wheel(&host, python, &wheels)?;
+        release::local_wheel(&host, python, &wheels)?;
     }
     if wanted("swift") {
         if !apple {

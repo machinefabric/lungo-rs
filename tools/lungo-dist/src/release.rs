@@ -480,14 +480,42 @@ fn zip_dir(dir: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The platform tag of the wheel a release publishes for `target`.
+fn release_wheel_tag(target: &str) -> Result<&'static str> {
+    WHEELS.iter().find(|(t, _)| *t == target).map(|(_, tag)| *tag).ok_or_else(|| {
+        let known: Vec<&str> = WHEELS.iter().map(|(t, _)| *t).collect();
+        format!("lungo-py has no wheel for {target} (wheels: {})", known.join(", "))
+    })
+}
+
+/// The platform tag of a wheel built on this machine for this machine alone.
+///
+/// A Linux one is linked by the host's toolchain against the host's glibc, so it is tagged for
+/// this Linux and no other (`linux_x86_64`): the `manylinux` tag is a claim about every system
+/// at that glibc, which only the runtime zig links against [`GLIBC`] can make. Elsewhere the
+/// host's toolchain is what a release links with too, and the tag is the release's.
+fn local_wheel_tag(target: &str) -> Result<String> {
+    let release = release_wheel_tag(target)?;
+    Ok(match target.strip_suffix("-unknown-linux-gnu") {
+        Some(arch) => format!("linux_{arch}"),
+        None => release.to_owned(),
+    })
+}
+
 /// `lungo-py`'s wheel of `target` in `out_dir`: the package with the target's shared runtime,
 /// tagged for the target's platform (the wheel holds no extension, so one serves every Python 3).
 pub fn wheel(target: &str, python: &Path, out_dir: &Path) -> Result<()> {
-    let tag = WHEELS.iter().find(|(t, _)| *t == target).map(|(_, tag)| *tag).ok_or_else(|| {
-        let known: Vec<&str> = WHEELS.iter().map(|(t, _)| *t).collect();
-        format!("lungo-py has no wheel for {target} (wheels: {})", known.join(", "))
-    })?;
-    let linker = linker_for(target)?;
+    build_wheel(target, release_wheel_tag(target)?, linker_for(target)?, python, out_dir)
+}
+
+/// Builds `lungo-py`'s wheel for this machine into `out_dir`: the runtime linked by the host's
+/// toolchain, as the rest of a local distribution is, and tagged for this machine. A local
+/// distribution needs none of what a release links with.
+pub fn local_wheel(target: &str, python: &Path, out_dir: &Path) -> Result<()> {
+    build_wheel(target, &local_wheel_tag(target)?, Linker::Host, python, out_dir)
+}
+
+fn build_wheel(target: &str, tag: &str, linker: Linker, python: &Path, out_dir: &Path) -> Result<()> {
     let work = work_dir(&format!("wheel-{target}"))?;
     let package = work.join("runtime");
     runtime(target, &package, linker)?;
@@ -580,6 +608,38 @@ mod tests {
         let mut renamed = complete();
         renamed[0].1 = "lungo-runtime-0.0.0-x.tar.gz".into();
         assert!(runtime_manifest(&release_manifest(&renamed), "release").unwrap_err().contains(RUNTIME_TARGETS[0]));
+    }
+
+    /// A local distribution's wheel is linked by this machine's toolchain and says so: on Linux
+    /// it is tagged for this Linux, never `manylinux`, which is a claim only the zig-linked
+    /// release runtime can make. `local` used to build its wheel the way a release does, so a
+    /// Linux machine with no zig could not build a local distribution at all.
+    #[test]
+    fn a_local_wheel_is_tagged_for_this_machine_and_linked_by_it() {
+        assert_eq!(local_wheel_tag("x86_64-unknown-linux-gnu").unwrap(), "linux_x86_64");
+        assert_eq!(local_wheel_tag("aarch64-unknown-linux-gnu").unwrap(), "linux_aarch64");
+        assert_eq!(release_wheel_tag("x86_64-unknown-linux-gnu").unwrap(), "manylinux_2_28_x86_64");
+        for (target, tag) in WHEELS {
+            let local = local_wheel_tag(target).unwrap();
+            if target.contains("-linux-") {
+                assert!(!local.contains("manylinux"), "{target}: a host-linked wheel is tagged {local}");
+            } else {
+                assert_eq!(local, *tag, "{target}");
+            }
+        }
+        assert!(local_wheel_tag("wasm32-wasip1").is_err());
+
+        // `local` builds through this, pinned by source: it runs cargo and Python, so it cannot
+        // be called here, and a correct function nobody calls is the defect this replaces.
+        let main = include_str!("main.rs");
+        let local = &main[main.find("fn local(").expect("local")..];
+        let local = &local[..local.find("\n}\n").expect("local ends")];
+        assert!(local.contains("release::local_wheel("), "a local distribution's wheel is not the local one");
+        assert!(!local.contains("release::wheel("), "a local distribution builds a release wheel");
+        let source = include_str!("release.rs");
+        let wheel = &source[source.find("pub fn local_wheel(").expect("local_wheel")..];
+        let wheel = &wheel[..wheel.find("\n}\n").expect("local_wheel ends")];
+        assert!(wheel.contains("Linker::Host"), "a local wheel is not linked by the host's toolchain");
     }
 
     #[test]
