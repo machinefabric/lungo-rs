@@ -44,6 +44,12 @@ class PolyglotTest(unittest.TestCase):
         with self.assertRaises(lungo_py.MalformedError):
             P.move_by(P.Point(1.0, 2.0, "p", 256), 0.0, 0.0)
 
+    def test_a_function_named_like_its_type(self):
+        # `Lookup` the type and `Registry.lookup` the function: `Lookup` and `lookup`.
+        self.assertEqual(P.lookup(3, 1), P.LookupFound(1))
+        self.assertIsInstance(P.lookup(3, 5), P.LookupMissing)
+        self.assertIsInstance(P.lookup(3, 5), P.Lookup)
+
     def test_scalars_and_containers(self):
         self.assertEqual(P.mix(2**64 - 1, -5, "λ", True), "18446744073709551615/-5/λ/true")
         self.assertEqual(P.reverse_bytes(b"\x01\x02\x03"), b"\x03\x02\x01")

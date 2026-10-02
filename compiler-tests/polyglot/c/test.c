@@ -122,6 +122,19 @@ int main(void) {
     lungo_value_free(neg);
     lungo_value_free(big);
 
+    /* A function named like its type: `polyglot_lookup` beside `polyglot_lookup_type` and the
+       constructors `polyglot_lookup_found` and `polyglot_lookup_missing`. */
+    lungo_value *registry_size = lungo_value_nat(3), *slot = lungo_value_nat(1), *beyond = lungo_value_nat(5);
+    lungo_value *hit = OK(polyglot_lookup(registry_size, slot, &result_, &error_));
+    CHECK(lungo_value_ctor_index(hit) == POLYGLOT_LOOKUP_FOUND);
+    lungo_value_free(hit);
+    lungo_value *miss = OK(polyglot_lookup(registry_size, beyond, &result_, &error_));
+    CHECK(lungo_value_ctor_index(miss) == POLYGLOT_LOOKUP_MISSING);
+    lungo_value_free(miss);
+    lungo_value_free(beyond);
+    lungo_value_free(slot);
+    lungo_value_free(registry_size);
+
     /* Structures and inductives. */
     lungo_value *p = point(1.5, -2.0, "p", 7);
     lungo_value *dx = lungo_value_float(1.0), *dy = lungo_value_float(0.5);

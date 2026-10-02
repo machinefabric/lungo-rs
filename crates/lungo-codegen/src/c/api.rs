@@ -259,7 +259,7 @@ impl Names {
         let functions = short_names(&fn_names)
             .iter()
             .zip(&b.functions)
-            .map(|(short, f)| scope.claim(format!("{id}_{}", snake(short)), format!("function {}", f.lean_name)))
+            .map(|(short, f)| scope.claim_function(&f.lean_name, short, |suffix| format!("{id}_{}", snake(suffix))))
             .collect::<Result<_, _>>()?;
         let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
         let host_externs = short_names(&host_names)

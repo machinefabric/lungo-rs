@@ -34,6 +34,12 @@ test("structures and inductives", () => {
   assert.throws(() => p.moveBy({ ...pt, tag: 256 }, 0, 0), L.MalformedError);
 });
 
+// `Lookup` the type and `Registry.lookup` the function: `Lookup` and `lookup`.
+test("a function named like its type", () => {
+  assert.deepEqual(p.lookup(3n, 1n), { kind: "found", slot: 1n });
+  assert.deepEqual(p.lookup(3n, 5n), { kind: "missing" });
+});
+
 test("scalars and containers", () => {
   assert.equal(p.mix(2n ** 64n - 1n, -5, "λ", true), "18446744073709551615/-5/λ/true");
   assert.deepEqual(p.reverseBytes(Uint8Array.of(1, 2, 3)), Uint8Array.of(3, 2, 1));

@@ -53,6 +53,12 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(try area(.empty), 0)
     }
 
+    /// `Lookup` the type and `Registry.lookup` the function: `Lookup` and `lookup`.
+    func testAFunctionNamedLikeItsType() throws {
+        XCTAssertEqual(try lookup(3, 1), Lookup.found(slot: 1))
+        XCTAssertEqual(try lookup(3, 5), Lookup.missing)
+    }
+
     func testScalarsAndContainers() throws {
         XCTAssertEqual(try mix(.max, -5, "λ", true), "18446744073709551615/-5/λ/true")
         XCTAssertEqual(try reverseBytes([1, 2, 3]), [3, 2, 1])

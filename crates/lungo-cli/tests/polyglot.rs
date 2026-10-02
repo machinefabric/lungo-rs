@@ -163,7 +163,7 @@ fn python_binding() {
         let out = Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
         let text = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{label}: {text}");
-        assert!(text.contains("Ran 10 tests") && text.trim_end().ends_with("OK"), "{label}: {text}");
+        assert!(text.contains("Ran 11 tests") && text.trim_end().ends_with("OK"), "{label}: {text}");
     };
     unittest("installed");
     // Installed editable, the sources are imported from the package's own directory
@@ -219,7 +219,7 @@ let package = Package(
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert!(out.status.success(), "{text}");
     assert!(!text.contains("warning:"), "the generated package builds with warnings:\n{text}");
-    assert!(text.contains("Executed 10 tests, with 0 failures"), "the Swift tests ran:\n{text}");
+    assert!(text.contains("Executed 11 tests, with 0 failures"), "the Swift tests ran:\n{text}");
     assert!(text.contains("Executed 3 tests, with 0 failures"), "the Objective-C tests ran:\n{text}");
 }
 
@@ -256,7 +256,7 @@ fn ts_binding() {
     run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&project));
     run(Command::new("node").args(["node_modules/typescript/bin/tsc", "-p", "."]).current_dir(&project));
     let out = run(Command::new("node").args(["--test", "polyglot.test.js"]).current_dir(&project));
-    assert!(out.contains("# pass 10") && out.contains("# fail 0"), "{out}");
+    assert!(out.contains("# pass 11") && out.contains("# fail 0"), "{out}");
 }
 
 /// WebAssembly has no child processes: a program spawning one cannot be generated for it.

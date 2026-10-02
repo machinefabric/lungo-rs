@@ -17,6 +17,12 @@ def area : Shape → Float
   | .rect _ w h => w * h
   | .empty => 0
 
+/-- A registry of `size` slots: the slot asked for is found when there is one. Named like the
+type it returns (`Lookup`); where a language writes functions and types in one case, the
+function keeps one more component (`RegistryLookup` in Go). -/
+def Registry.lookup (size slot : Nat) : Lookup :=
+  if slot < size then .found slot else .missing
+
 def moveBy (p : Point) (dx dy : Float) : Point := { p with x := p.x + dx, y := p.y + dy }
 
 def describe (p : Point) : String := s!"{p.label}#{p.tag} at ({p.x}, {p.y})"

@@ -280,7 +280,9 @@ impl Names {
         let functions = short_names(&fn_names)
             .iter()
             .zip(&b.functions)
-            .map(|(s, f)| scope.claim(s.iter().map(|c| go_exported(c)).collect(), format!("function {}", f.lean_name)))
+            .map(|(s, f)| {
+                scope.claim_function(&f.lean_name, s, |suffix| suffix.iter().map(|c| go_exported(c)).collect())
+            })
             .collect::<Result<_, _>>()?;
         let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
         let mut methods = Scope::new("Go");

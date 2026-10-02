@@ -86,6 +86,19 @@ func TestStructuresAndInductives(t *testing.T) {
 	}
 }
 
+// The Lean type `Lookup` and the function `Registry.lookup` are both `Lookup` in Go's one
+// case: the type keeps the name and the function is `RegistryLookup`.
+func TestAFunctionNamedLikeItsType(t *testing.T) {
+	found := must(polyglot.RegistryLookup(big.NewInt(3), big.NewInt(1)))(t)
+	if hit, ok := found.(polyglot.LookupFound); !ok || hit.Slot.Int64() != 1 {
+		t.Errorf("lookup of a slot there is = %+v", found)
+	}
+	var answer polyglot.Lookup = must(polyglot.RegistryLookup(big.NewInt(3), big.NewInt(5)))(t)
+	if _, ok := answer.(polyglot.LookupMissing); !ok {
+		t.Errorf("lookup of a slot there is not = %+v", answer)
+	}
+}
+
 func TestScalarsAndContainers(t *testing.T) {
 	if s := must(polyglot.Mix(^uint64(0), -5, 'λ', true))(t); s != "18446744073709551615/-5/λ/true" {
 		t.Errorf("mix = %q", s)

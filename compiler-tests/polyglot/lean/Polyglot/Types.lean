@@ -17,6 +17,13 @@ inductive Shape where
   | empty
 deriving Repr
 
+/-- What looking a slot up answers. Named after the operation that returns it, as Lean code
+is written: the type and the function are two names in every binding. -/
+inductive Lookup where
+  | found (slot : Nat)
+  | missing
+deriving Repr
+
 inductive Tree (α : Type) where
   | leaf
   | node (left : Tree α) (value : α) (right : Tree α)

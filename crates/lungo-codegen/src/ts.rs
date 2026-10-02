@@ -222,7 +222,9 @@ impl Names {
         let functions = short_names(&fn_names)
             .iter()
             .zip(&b.functions)
-            .map(|(s, f)| methods.claim(camel(s).trim_end_matches('_').to_owned(), format!("function {}", f.lean_name)))
+            .map(|(s, f)| {
+                methods.claim_function(&f.lean_name, s, |suffix| camel(suffix).trim_end_matches('_').to_owned())
+            })
             .collect::<Result<_, _>>()?;
         let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
         let mut host = Scope::new("TypeScript");
