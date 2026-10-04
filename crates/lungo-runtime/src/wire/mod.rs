@@ -1586,8 +1586,9 @@ mod tests {
         })
     }
 
+    /// TEST0235: opaque types cross as handles and are declared without a layout
     #[test]
-    fn opaque_types_cross_as_handles_and_are_declared_without_a_layout() {
+    fn test0235_opaque_types_cross_as_handles_and_are_declared_without_a_layout() {
         let w = Type::Inductive { index: 2, args: vec![] };
         let o = lean_mk_string("a proof-carrying value");
         let mut out = Vec::new();
@@ -1633,8 +1634,9 @@ mod tests {
         assert_eq!(out, bytes, "{ty:?}");
     }
 
+    /// TEST0236: values round trip through lean objects
     #[test]
-    fn values_round_trip_through_lean_objects() {
+    fn test0236_values_round_trip_through_lean_objects() {
         round_trip(&Type::Nat, &[0, 0, 0, 0]);
         // 2^64: beyond the scalar range of `Nat`.
         round_trip(&Type::Nat, &[9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
@@ -1647,8 +1649,9 @@ mod tests {
         round_trip(&Type::Except { error: Box::new(Type::String), value: Box::new(Type::Unit) }, &[1]);
     }
 
+    /// TEST0237: malformed data is rejected not misread
     #[test]
-    fn malformed_data_is_rejected_not_misread() {
+    fn test0237_malformed_data_is_rejected_not_misread() {
         let reject = |ty: Type, bytes: &[u8]| {
             let mut r = Reader::new(bytes);
             if let Ok(o) = decode(table(), &ty, &mut r, Handles::Borrow) {
@@ -1667,8 +1670,9 @@ mod tests {
         reject(Type::Unit, &[0]);
     }
 
+    /// TEST0238: handles name live objects until released
     #[test]
-    fn handles_name_live_objects_until_released() {
+    fn test0238_handles_name_live_objects_until_released() {
         let o = lean_mk_string("held");
         let mut out = Vec::new();
         unsafe { encode(table(), &Type::Opaque, o, &mut out) };
@@ -1694,8 +1698,9 @@ mod tests {
         }
     }
 
+    /// TEST0239: signatures round trip and instantiate
     #[test]
-    fn signatures_round_trip_and_instantiate() {
+    fn test0239_signatures_round_trip_and_instantiate() {
         let sig = Signature {
             type_params: 1,
             params: vec![Type::List(Box::new(Type::Param(0))), Type::Inductive { index: 0, args: vec![] }],
@@ -1714,8 +1719,9 @@ mod tests {
         assert!(unbound.check(table()).is_err(), "a parameter the signature does not bind");
     }
 
+    /// TEST0240: type tables round trip and are validated
     #[test]
-    fn type_tables_round_trip_and_are_validated() {
+    fn test0240_type_tables_round_trip_and_are_validated() {
         let bytes = table().encode();
         assert_eq!(&TypeTable::decode(&bytes).unwrap(), table());
         let mut bad = table().clone();

@@ -599,8 +599,9 @@ mod tests {
         )
     }
 
+    /// TEST0142: crashing worker is an error
     #[test]
-    fn crashing_worker_is_an_error() {
+    fn test0142_crashing_worker_is_an_error() {
         let s = setup("crash");
         let err = run_fake(&s, "echo 'about to crash' >&2\nkill -SEGV $$", None).unwrap_err();
         match err {
@@ -612,15 +613,17 @@ mod tests {
         }
     }
 
+    /// TEST0143: worker exiting without a response is an error
     #[test]
-    fn worker_exiting_without_a_response_is_an_error() {
+    fn test0143_worker_exiting_without_a_response_is_an_error() {
         let s = setup("silent");
         assert!(matches!(run_fake(&s, "exit 0", None), Err(Error::WorkerCrashed { .. })));
         assert!(matches!(run_fake(&s, "exit 3", None), Err(Error::WorkerCrashed { .. })));
     }
 
+    /// TEST0144: malformed responses are protocol errors
     #[test]
-    fn malformed_responses_are_protocol_errors() {
+    fn test0144_malformed_responses_are_protocol_errors() {
         let s = setup("garbage");
         let err = run_fake(&s, "printf 'not a frame' > \"$2\"", None).unwrap_err();
         assert!(matches!(err, Error::Protocol(_)), "{err:?}");
@@ -634,8 +637,9 @@ mod tests {
         assert!(matches!(err, Error::Protocol(_)), "{err:?}");
     }
 
+    /// TEST0145: hung worker is killed at the timeout
     #[test]
-    fn hung_worker_is_killed_at_the_timeout() {
+    fn test0145_hung_worker_is_killed_at_the_timeout() {
         let s = setup("hang");
         let start = Instant::now();
         let err = run_fake(&s, "echo started >&2\nsleep 60", Some(Duration::from_secs(1))).unwrap_err();
@@ -650,8 +654,9 @@ mod tests {
         assert!(elapsed < Duration::from_secs(20), "the timeout took {elapsed:?}: the worker was not killed");
     }
 
+    /// TEST0146: cpu limit stops a spinning worker
     #[test]
-    fn cpu_limit_stops_a_spinning_worker() {
+    fn test0146_cpu_limit_stops_a_spinning_worker() {
         let s = setup("cpu");
         let limits = Limits { cpu: Some(Duration::from_secs(1)), memory: None };
         let start = Instant::now();
@@ -660,9 +665,10 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(30), "the limit took {:?}", start.elapsed());
     }
 
+    /// TEST0147: memory limit bounds the worker
     #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
-    fn memory_limit_bounds_the_worker() {
+    fn test0147_memory_limit_bounds_the_worker() {
         let s = setup("memory");
         let limits = Limits { cpu: None, memory: Some(512 << 20) };
         // Allocating 2 GiB fails under a 512 MiB address-space limit (and succeeds without it).
@@ -677,9 +683,10 @@ mod tests {
         }
     }
 
+    /// TEST0148: unenforceable memory limits are rejected
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[test]
-    fn unenforceable_memory_limits_are_rejected() {
+    fn test0148_unenforceable_memory_limits_are_rejected() {
         let s = setup("no-memory-limit");
         let limits = Limits { cpu: None, memory: Some(1 << 30) };
         let err = run_limited(&s, "exit 0", None, limits).unwrap_err();
@@ -709,8 +716,9 @@ mod sources {
         }
     }
 
+    /// TEST0149: the embedded worker is the whole worker project
     #[test]
-    fn the_embedded_worker_is_the_whole_worker_project() {
+    fn test0149_the_embedded_worker_is_the_whole_worker_project() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("worker");
         let mut on_disk = BTreeSet::new();
         files(&root, &root, &mut on_disk);

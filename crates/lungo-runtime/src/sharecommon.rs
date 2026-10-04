@@ -523,8 +523,9 @@ mod tests {
         }
     }
 
+    /// TEST0201: quick sharing deduplicates equal subterms
     #[test]
-    fn quick_sharing_deduplicates_equal_subterms() {
+    fn test0201_quick_sharing_deduplicates_equal_subterms() {
         unsafe {
             // (("ab", 1), ("ab", 1)) built from distinct but equal objects.
             let x = pair(lean_mk_string("ab"), lean_box(1));
@@ -546,8 +547,9 @@ mod tests {
         }
     }
 
+    /// TEST0202: structural equality distinguishes scalars and tags
     #[test]
-    fn structural_equality_distinguishes_scalars_and_tags() {
+    fn test0202_structural_equality_distinguishes_scalars_and_tags() {
         unsafe {
             let a = pair(lean_box(1), lean_box(2));
             let b = pair(lean_box(1), lean_box(3));

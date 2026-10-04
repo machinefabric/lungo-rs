@@ -126,8 +126,9 @@ mod tests {
     use super::externs::*;
     use crate::object::*;
 
+    /// TEST0203: get set swap take
     #[test]
-    fn get_set_swap_take() {
+    fn test0203_get_set_swap_take() {
         unsafe {
             let r = lean_st_mk_ref(lean_mk_string("a"));
             let v = lean_st_ref_get(r);
@@ -149,8 +150,9 @@ mod tests {
         }
     }
 
+    /// TEST0204: values stored in shared references become shared
     #[test]
-    fn values_stored_in_shared_references_become_shared() {
+    fn test0204_values_stored_in_shared_references_become_shared() {
         unsafe {
             let r = lean_st_mk_ref(lean_box(0));
             lean_mark_mt(r);

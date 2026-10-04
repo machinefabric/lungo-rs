@@ -37,13 +37,15 @@ final class PolyglotTests: XCTestCase {
         _ = host
     }
 
-    func testNumbers() throws {
+    // TEST0048: numbers
+    func test0048_Numbers() throws {
         XCTAssertEqual(try factorial(25).description, "15511210043330985984000000")
         let big = LungoInt("-123456789012345678901234567890")!
         XCTAssertEqual(try negate(big).description, "123456789012345678901234567890")
     }
 
-    func testStructuresAndInductives() throws {
+    // TEST0049: structures And Inductives
+    func test0049_StructuresAndInductives() throws {
         let p = Point(x: 1.5, y: -2, label: "p", tag: 7)
         let moved = try moveBy(p, 1, 0.5)
         XCTAssertEqual(moved, Point(x: 2.5, y: -1.5, label: "p", tag: 7))
@@ -53,13 +55,14 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(try area(.empty), 0)
     }
 
-    /// `Lookup` the type and `Registry.lookup` the function: `Lookup` and `lookup`.
-    func testAFunctionNamedLikeItsType() throws {
+    /// TEST0050: `Lookup` the type and `Registry.lookup` the function: `Lookup` and `lookup`.
+    func test0050_AFunctionNamedLikeItsType() throws {
         XCTAssertEqual(try lookup(3, 1), Lookup.found(slot: 1))
         XCTAssertEqual(try lookup(3, 5), Lookup.missing)
     }
 
-    func testScalarsAndContainers() throws {
+    // TEST0051: scalars And Containers
+    func test0051_ScalarsAndContainers() throws {
         XCTAssertEqual(try mix(.max, -5, "λ", true), "18446744073709551615/-5/λ/true")
         XCTAssertEqual(try reverseBytes([1, 2, 3]), [3, 2, 1])
         XCTAssertEqual(try sumFloats([0.5, 0.25, 2]), 2.75)
@@ -73,7 +76,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(try divide(10, 3), .ok(3))
     }
 
-    func testErrors() throws {
+    // TEST0052: errors
+    func test0052_Errors() throws {
         XCTAssertThrowsError(try checkedDiv(10, 0)) { e in
             XCTAssertEqual((e as? LungoIOError)?.message, "checkedDiv: division by zero")
         }
@@ -83,7 +87,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(try parseDigit("7"), 7)
     }
 
-    func testPolymorphism() throws {
+    // TEST0053: polymorphism
+    func test0053_Polymorphism() throws {
         let tree = try ofList(Lungo.nat, [1, 2, 3])
         XCTAssertEqual(try size(Lungo.nat, tree), 3)
         let mirrored = try mirror(Lungo.nat, tree)
@@ -94,7 +99,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(tree, try ofList(Lungo.nat, [1, 2, 3]))
     }
 
-    func testFunctions() throws {
+    // TEST0054: functions
+    func test0054_Functions() throws {
         var calls: [LungoNat] = []
         let twice = try applyTwice({ x in
             calls.append(x)
@@ -105,7 +111,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(try adder(5, 3), 8)
     }
 
-    func testOpaqueValues() throws {
+    // TEST0055: opaque Values
+    func test0055_OpaqueValues() throws {
         let counter = try newCounter(10)
         XCTAssertEqual(try bump(counter), 11)
         XCTAssertEqual(try bump(counter), 12)
@@ -113,7 +120,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertThrowsError(try bump(counter)) { XCTAssert($0 is LungoMalformed) }
     }
 
-    func testHostExterns() throws {
+    // TEST0056: host Externs
+    func test0056_HostExterns() throws {
         XCTAssertEqual(try scaledSum([1, 2, 3]), 60)
         host.clear()
         XCTAssertEqual(try recordAll(["a", "b"]), 2)
@@ -123,7 +131,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertEqual(host.lines, ["a", "b", "c"])
     }
 
-    func testConcurrentCalls() throws {
+    // TEST0057: concurrent Calls
+    func test0057_ConcurrentCalls() throws {
         let results = UnsafeMutableBufferPointer<UInt64>.allocate(capacity: 16)
         defer { results.deallocate() }
         DispatchQueue.concurrentPerform(iterations: 16) { i in
@@ -133,7 +142,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssert(results.allSatisfy { $0 > 0 })
     }
 
-    func testRunMain() throws {
+    // TEST0058: run Main
+    func test0058_RunMain() throws {
         XCTAssertEqual(try runMain(["one", "two"]), 2)
     }
 }

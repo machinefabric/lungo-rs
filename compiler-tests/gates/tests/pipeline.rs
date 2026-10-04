@@ -93,8 +93,9 @@ impl Scratch {
     }
 }
 
+/// TEST0029: changing an imported file rebuilds
 #[test]
-fn changing_an_imported_file_rebuilds() {
+fn test0029_changing_an_imported_file_rebuilds() {
     let s = Scratch::new("imports", "rebuild");
     let cfg = imports_config();
     let first = s.build(&cfg, "out").unwrap();
@@ -130,8 +131,9 @@ fn changing_an_imported_file_rebuilds() {
     assert!(base_rs.contains("Howdy"), "the new string literal is compiled");
 }
 
+/// TEST0030: invalid lean fails with source diagnostics
 #[test]
-fn invalid_lean_fails_with_source_diagnostics() {
+fn test0030_invalid_lean_fails_with_source_diagnostics() {
     let s = Scratch::new("type-error", "type-error");
     let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
@@ -143,8 +145,9 @@ fn invalid_lean_fails_with_source_diagnostics() {
     assert!(!s.package.join("out").exists(), "no output is published for a failed build");
 }
 
+/// TEST0031: proofs are checked during the build
 #[test]
-fn proofs_are_checked_during_the_build() {
+fn test0031_proofs_are_checked_during_the_build() {
     let s = Scratch::new("false-proof", "false-proof");
     let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
@@ -154,8 +157,9 @@ fn proofs_are_checked_during_the_build() {
     assert!(text.contains("decide"), "{text}");
 }
 
+/// TEST0032: toolchain mismatch is detected before compilation
 #[test]
-fn toolchain_mismatch_is_detected_before_compilation() {
+fn test0032_toolchain_mismatch_is_detected_before_compilation() {
     let s = Scratch::new("imports", "toolchain-mismatch");
     for pin in ["leanprover/lean4:v4.35.0", "leanprover/lean4:stable", "leanprover/lean4:nightly-2026-01-01"] {
         s.write("lean-toolchain", &format!("{pin}\n"));
@@ -167,8 +171,9 @@ fn toolchain_mismatch_is_detected_before_compilation() {
     assert!(!s.project().join(".lake").exists(), "nothing was compiled");
 }
 
+/// TEST0033: unknown extern symbols are hard errors
 #[test]
-fn unknown_extern_symbols_are_hard_errors() {
+fn test0033_unknown_extern_symbols_are_hard_errors() {
     let s = Scratch::new("unknown-extern", "unknown-extern");
     let err = s.build(&configure(), "out").unwrap_err();
     let text = err.to_string();
@@ -181,16 +186,18 @@ fn unknown_extern_symbols_are_hard_errors() {
     assert!(!s.package.join("out").exists(), "no output is published for a failed build");
 }
 
+/// TEST0034: unused rust extern mappings are rejected
 #[test]
-fn unused_rust_extern_mappings_are_rejected() {
+fn test0034_unused_rust_extern_mappings_are_rejected() {
     let s = Scratch::new("imports", "unused-mapping");
     let err = s.build(&imports_config().rust_extern("never_declared", "crate::f"), "out").unwrap_err();
     assert!(err.to_string().contains("never_declared"), "{err}");
     assert_eq!(err.code(), ErrorCode::UnusedExternMapping);
 }
 
+/// TEST0035: builds are deterministic and location independent
 #[test]
-fn builds_are_deterministic_and_location_independent() {
+fn test0035_builds_are_deterministic_and_location_independent() {
     // Two copies of the same project at different locations, built independently.
     let a = Scratch::new("imports", "determinism-a");
     let b = Scratch::new("imports", "determinism-b");
@@ -220,8 +227,9 @@ fn builds_are_deterministic_and_location_independent() {
     });
 }
 
+/// TEST0036: generated artifacts contain no machine specific paths
 #[test]
-fn generated_artifacts_contain_no_machine_specific_paths() {
+fn test0036_generated_artifacts_contain_no_machine_specific_paths() {
     let s = Scratch::new("imports", "no-abs-paths");
     s.build(&imports_config().embed_sources(true), "out").unwrap();
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap();
@@ -242,8 +250,9 @@ fn generated_artifacts_contain_no_machine_specific_paths() {
     }
 }
 
+/// TEST0037: builds never rewrite the lean project
 #[test]
-fn builds_never_rewrite_the_lean_project() {
+fn test0037_builds_never_rewrite_the_lean_project() {
     let s = Scratch::new("imports", "no-rewrite");
     let before = snapshot(&s.project(), &[".lake"]);
     s.build(&imports_config(), "out").unwrap();
@@ -258,8 +267,9 @@ fn lean_names(module: &Path) -> Vec<String> {
     records.iter().map(|r| r["lean_name"].as_str().unwrap().to_owned()).collect()
 }
 
+/// TEST0038: default targets of a lakefile lean are the roots
 #[test]
-fn default_targets_of_a_lakefile_lean_are_the_roots() {
+fn test0038_default_targets_of_a_lakefile_lean_are_the_roots() {
     let s = Scratch::new("targets", "default-targets");
     let outcome = s.build(&configure(), "out").unwrap();
     assert_eq!(outcome.name, "targets");
@@ -272,8 +282,9 @@ fn default_targets_of_a_lakefile_lean_are_the_roots() {
     assert!(aggregate.contains("pub fn __lean_main()"), "the executable's root defines `main`");
 }
 
+/// TEST0039: a package without default targets needs explicit roots
 #[test]
-fn a_package_without_default_targets_needs_explicit_roots() {
+fn test0039_a_package_without_default_targets_needs_explicit_roots() {
     let s = Scratch::new("imports", "no-default-targets");
     s.write("lakefile.toml", "name = \"imports\"\nversion = \"0.1.0\"\n\n[[lean_lib]]\nname = \"Imports\"\n");
     let err = s.build(&configure(), "out").unwrap_err();
@@ -283,8 +294,9 @@ fn a_package_without_default_targets_needs_explicit_roots() {
     assert!(lean_names(&s.module("out", explicit.name.as_str())).iter().any(|n| n == "Imports.scaled"));
 }
 
+/// TEST0040: two projects cannot generate the same module
 #[test]
-fn two_projects_cannot_generate_the_same_module() {
+fn test0040_two_projects_cannot_generate_the_same_module() {
     let a = Scratch::new("imports", "same-name-a");
     let b = Scratch::new("imports", "same-name-b");
     let env = a.env("out");
@@ -297,8 +309,9 @@ fn two_projects_cannot_generate_the_same_module() {
     assert!(a.module("out", "imports_b").join("imports_b.rs").is_file());
 }
 
+/// TEST0041: shaping paths that select nothing are rejected
 #[test]
-fn shaping_paths_that_select_nothing_are_rejected() {
+fn test0041_shaping_paths_that_select_nothing_are_rejected() {
     let s = Scratch::new("imports", "unmatched-paths");
     let cfg = configure()
         .type_attribute("Imports.Missing", "#[derive(Default)]")

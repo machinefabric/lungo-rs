@@ -123,8 +123,9 @@ fn extern_tables(language: &str, package: &str, pos: &str, pair: &str) -> String
     )
 }
 
+/// TEST0105: go programs share values and refuse another layout
 #[test]
-fn go_programs_share_values_and_refuse_another_layout() {
+fn test0105_go_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("go"));
     let dist = distribution(&["go"]);
     let module = fresh(&work.join("module"));
@@ -167,8 +168,9 @@ fn go_programs_share_values_and_refuse_another_layout() {
     );
 }
 
+/// TEST0106: python programs share values and refuse another layout
 #[test]
-fn python_programs_share_values_and_refuse_another_layout() {
+fn test0106_python_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("python"));
     let dist = distribution(&["python"]);
     let provider_pkg = work.join("provider");
@@ -227,8 +229,9 @@ fn python_programs_share_values_and_refuse_another_layout() {
     assert!(text(&refused).contains("of provider has another layout"), "{}", text(&refused));
 }
 
+/// TEST0107: typescript programs share data but not handles
 #[test]
-fn typescript_programs_share_data_but_not_handles() {
+fn test0107_typescript_programs_share_data_but_not_handles() {
     let work = fresh(&root().join("ts"));
     let dist = distribution(&["ts"]);
     let provider_pkg = work.join("provider");
@@ -291,9 +294,10 @@ fn typescript_programs_share_data_but_not_handles() {
     assert!(text(&refused).contains("Provider.Pair of provider has another layout"), "{}", text(&refused));
 }
 
+/// TEST0108: swift programs share values and refuse another layout
 #[cfg(target_os = "macos")]
 #[test]
-fn swift_programs_share_values_and_refuse_another_layout() {
+fn test0108_swift_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("swift"));
     let dist = distribution(&["swift"]);
     let provider_pkg = work.join("provider-swift");
@@ -367,8 +371,9 @@ let package = Package(
     assert!(text(&refused).contains("Provider.Pos of Provider has another layout"), "{}", text(&refused));
 }
 
+/// TEST0109: c programs share values and refuse another layout
 #[test]
-fn c_programs_share_values_and_refuse_another_layout() {
+fn test0109_c_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("c"));
     let dist = distribution(&["runtime"]);
     let provider_pkg = work.join("provider");
@@ -416,8 +421,9 @@ fn c_programs_share_values_and_refuse_another_layout() {
     assert!(text(&refused).contains("Provider.Pos of provider.h has another layout"), "{}", text(&refused));
 }
 
+/// TEST0110: rust modules share values and refuse another layout when compiled
 #[test]
-fn rust_modules_share_values_and_refuse_another_layout_when_compiled() {
+fn test0110_rust_modules_share_values_and_refuse_another_layout_when_compiled() {
     let work = fresh(&root().join("rust"));
     let krate = fresh(&work.join("host"));
     let generated_dir = krate.join("gen");

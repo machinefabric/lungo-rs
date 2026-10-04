@@ -8,8 +8,8 @@ import (
 	"example.com/ext/provider"
 )
 
-// A value made by one program is used by the other: both run on the one runtime.
-func TestValuesPassBetweenPrograms(t *testing.T) {
+// TEST0005: A value made by one program is used by the other: both run on the one runtime.
+func Test0005_ValuesPassBetweenPrograms(t *testing.T) {
 	p, err := provider.MkPos(big.NewInt(3))
 	if err != nil || !p.Valid {
 		t.Fatalf("mkPos 3 = %v, %v", p, err)

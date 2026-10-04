@@ -1387,8 +1387,9 @@ mod tests {
         t
     }
 
+    /// TEST0163: invalid data is rejected at construction
     #[test]
-    fn invalid_data_is_rejected_at_construction() {
+    fn test0163_invalid_data_is_rejected_at_construction() {
         unsafe {
             assert!(lungo_value_nat_parse(c"12a".as_ptr()).is_null());
             assert!(lungo_value_nat_parse(c"".as_ptr()).is_null());
@@ -1419,8 +1420,9 @@ mod tests {
         }
     }
 
+    /// TEST0164: values own their handles
     #[test]
-    fn values_own_their_handles() {
+    fn test0164_values_own_their_handles() {
         unsafe {
             let h = wire::handle_new(lean_mk_string("owned"));
             let v = give(Value::Opaque(h));
@@ -1474,8 +1476,9 @@ mod tests {
         ctx.dropped.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// TEST0165: host functions live while referenced by values or lean
     #[test]
-    fn host_functions_live_while_referenced_by_values_or_lean() {
+    fn test0165_host_functions_live_while_referenced_by_values_or_lean() {
         unsafe {
             let ty = nat_to_nat();
             static DROPPED: AtomicUsize = AtomicUsize::new(0);
@@ -1517,8 +1520,9 @@ mod tests {
         }
     }
 
+    /// TEST0166: a host function in a result gives its reference to lean
     #[test]
-    fn a_host_function_in_a_result_gives_its_reference_to_lean() {
+    fn test0166_a_host_function_in_a_result_gives_its_reference_to_lean() {
         unsafe {
             let ty = nat_to_nat();
             static DROPPED: AtomicUsize = AtomicUsize::new(0);
@@ -1551,8 +1555,9 @@ mod tests {
         }
     }
 
+    /// TEST0167: io errors raised by hosts transfer their handle to lean
     #[test]
-    fn io_errors_raised_by_hosts_transfer_their_handle_to_lean() {
+    fn test0167_io_errors_raised_by_hosts_transfer_their_handle_to_lean() {
         unsafe {
             // An error object as Lean sends it: a new handle and the message. (Any object stands
             // for the `IO.Error`, whose rendering needs a compiled program.)
@@ -1585,8 +1590,9 @@ mod tests {
         }
     }
 
+    /// TEST0168: arguments that do not match the signature are malformed
     #[test]
-    fn arguments_that_do_not_match_the_signature_are_malformed() {
+    fn test0168_arguments_that_do_not_match_the_signature_are_malformed() {
         unsafe {
             let ty = nat_to_nat();
             static DROPPED: AtomicUsize = AtomicUsize::new(0);

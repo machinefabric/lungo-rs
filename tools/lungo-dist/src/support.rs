@@ -320,11 +320,11 @@ mod tests {
         out
     }
 
-    /// A library copied without its repository — as a build machine's copy of the tree has
+    /// TEST0265: A library copied without its repository — as a build machine's copy of the tree has
     /// none — is still exactly its files: what its `.gitignore` ignores, its hidden state, its
     /// `version.txt` and whatever the caller skips are not, and rules outside it do not apply.
     #[test]
-    fn a_library_is_its_files_without_a_repository_to_ask() {
+    fn test0265_a_library_is_its_files_without_a_repository_to_ask() {
         let root = std::env::temp_dir().join(format!("lungo-dist-copy-library-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         // An ignore rule in the tree the library sits in is not the library's.

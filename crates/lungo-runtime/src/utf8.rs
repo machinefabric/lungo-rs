@@ -61,8 +61,9 @@ pub fn validate_one(s: &[u8], pos: usize) -> Option<usize> {
 mod tests {
     use super::*;
 
+    /// TEST0225: lossy decoding replaces each invalid sequence once
     #[test]
-    fn lossy_decoding_replaces_each_invalid_sequence_once() {
+    fn test0225_lossy_decoding_replaces_each_invalid_sequence_once() {
         assert_eq!(decode_lossy(b"ab\xffcd"), "ab\u{fffd}cd");
         assert_eq!(decode_lossy(b"\xe2\x82"), "\u{fffd}");
         // An overlong encoding of '/' and a surrogate are rejected.

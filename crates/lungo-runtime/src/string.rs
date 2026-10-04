@@ -651,8 +651,9 @@ mod tests {
     const PREV: [usize; 12] = [0, 0, 1, 1, 3, 3, 3, 6, 6, 6, 6, 10];
     const VALID: [u8; 12] = [1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1];
 
+    /// TEST0205: positions match lean
     #[test]
-    fn positions_match_lean() {
+    fn test0205_positions_match_lean() {
         unsafe {
             with_s(|s| {
                 assert_eq!(lean_unbox(lean_string_utf8_byte_size(s)), 11);
@@ -676,8 +677,9 @@ mod tests {
         }
     }
 
+    /// TEST0206: big positions match lean
     #[test]
-    fn big_positions_match_lean() {
+    fn test0206_big_positions_match_lean() {
         unsafe {
             with_s(|s| {
                 let big = alloc_mpz(BigInt::from(1u8) << 70);
@@ -693,8 +695,9 @@ mod tests {
         }
     }
 
+    /// TEST0207: extract matches lean
     #[test]
-    fn extract_matches_lean() {
+    fn test0207_extract_matches_lean() {
         unsafe {
             with_s(|s| {
                 let ex = |b, e| string(lean_string_utf8_extract(s, lean_box(b), lean_box(e)));
@@ -708,8 +711,9 @@ mod tests {
         }
     }
 
+    /// TEST0208: set matches lean
     #[test]
-    fn set_matches_lean() {
+    fn test0208_set_matches_lean() {
         unsafe {
             let set = |i, c: char| {
                 let s = lean_mk_string(S);
@@ -729,8 +733,9 @@ mod tests {
         }
     }
 
+    /// TEST0209: push and append copy on write
     #[test]
-    fn push_and_append_copy_on_write() {
+    fn test0209_push_and_append_copy_on_write() {
         unsafe {
             let s = lean_mk_string("ab");
             lean_inc(s);
@@ -753,8 +758,9 @@ mod tests {
         }
     }
 
+    /// TEST0210: compare hash and lists match lean
     #[test]
-    fn compare_hash_and_lists_match_lean() {
+    fn test0210_compare_hash_and_lists_match_lean() {
         unsafe {
             let cmp = |a: &str, b: &str| {
                 let (x, y) = (lean_mk_string(a), lean_mk_string(b));
@@ -779,8 +785,9 @@ mod tests {
         }
     }
 
+    /// TEST0211: utf8 validation matches lean
     #[test]
-    fn utf8_validation_matches_lean() {
+    fn test0211_utf8_validation_matches_lean() {
         assert_eq!(validate_utf8(&[0xe2, 0x82, 0xac]), Some(1));
         assert_eq!(validate_utf8(&[0xed, 0xa0, 0x80]), None);
     }

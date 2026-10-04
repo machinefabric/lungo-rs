@@ -2327,11 +2327,11 @@ mod tests {
         }
     }
 
-    // Expected values below were observed from Lean 4.34.1 (`lean --run`) on the same inputs.
+    // TEST0178: Expected values below were observed from Lean 4.34.1 (`lean --run`) on the same inputs.
 
     #[cfg(unix)]
     #[test]
-    fn open_errors_classify_like_lean() {
+    fn test0178_open_errors_classify_like_lean() {
         unsafe {
             let d = Scratch::new("open-errors");
             let missing = s(&d.path("missing.txt"));
@@ -2376,9 +2376,10 @@ mod tests {
         }
     }
 
+    /// TEST0179: permission denied on read only file
     #[cfg(unix)]
     #[test]
-    fn permission_denied_on_read_only_file() {
+    fn test0179_permission_denied_on_read_only_file() {
         unsafe {
             if libc::geteuid() == 0 {
                 // Root bypasses permission checks.
@@ -2397,8 +2398,9 @@ mod tests {
         }
     }
 
+    /// TEST0180: directory errors classify like lean
     #[test]
-    fn directory_errors_classify_like_lean() {
+    fn test0180_directory_errors_classify_like_lean() {
         unsafe {
             let d = Scratch::new("dir-errors");
             let root = s(&d.0.to_string_lossy());
@@ -2431,8 +2433,9 @@ mod tests {
         }
     }
 
+    /// TEST0181: get line returns final line without newline then empty
     #[test]
-    fn get_line_returns_final_line_without_newline_then_empty() {
+    fn test0181_get_line_returns_final_line_without_newline_then_empty() {
         unsafe {
             let d = Scratch::new("getline");
             std::fs::write(d.path("a.txt"), "hello\nworld").unwrap();
@@ -2454,8 +2457,9 @@ mod tests {
         std::fs::read_to_string(p).unwrap()
     }
 
+    /// TEST0182: open modes behave like lean
     #[test]
-    fn open_modes_behave_like_lean() {
+    fn test0182_open_modes_behave_like_lean() {
         unsafe {
             let d = Scratch::new("modes");
             let p = d.path("a.txt");
@@ -2506,8 +2510,9 @@ mod tests {
         }
     }
 
+    /// TEST0183: metadata and directory listing
     #[test]
-    fn metadata_and_directory_listing() {
+    fn test0183_metadata_and_directory_listing() {
         unsafe {
             let d = Scratch::new("meta");
             std::fs::write(d.path("a.txt"), "n").unwrap();
@@ -2539,8 +2544,9 @@ mod tests {
         }
     }
 
+    /// TEST0184: getenv of unset and invalid names is none
     #[test]
-    fn getenv_of_unset_and_invalid_names_is_none() {
+    fn test0184_getenv_of_unset_and_invalid_names_is_none() {
         unsafe {
             for name in ["LUNGO_SURELY_UNSET_VARIABLE", "A\u{0}B"] {
                 let n = s(name);
@@ -2555,8 +2561,9 @@ mod tests {
         }
     }
 
+    /// TEST0185: temp files and directories
     #[test]
-    fn temp_files_and_directories() {
+    fn test0185_temp_files_and_directories() {
         unsafe {
             let r = ok(lean_io_create_tempfile());
             let h = lean_ctor_get(r, 0);
@@ -2577,8 +2584,9 @@ mod tests {
         }
     }
 
+    /// TEST0186: random bytes have requested length
     #[test]
-    fn random_bytes_have_requested_length() {
+    fn test0186_random_bytes_have_requested_length() {
         unsafe {
             for n in [0usize, 1, 33, 4096] {
                 let b = ok(lean_io_get_random_bytes(n));
@@ -2588,8 +2596,9 @@ mod tests {
         }
     }
 
+    /// TEST0187: heartbeats are per thread counters
     #[test]
-    fn heartbeats_are_per_thread_counters() {
+    fn test0187_heartbeats_are_per_thread_counters() {
         unsafe {
             lean_io_set_heartbeats(lean_box(41));
             inc_heartbeat();
@@ -2598,8 +2607,9 @@ mod tests {
         }
     }
 
+    /// TEST0188: g format matches iostreams
     #[test]
-    fn g_format_matches_iostreams() {
+    fn test0188_g_format_matches_iostreams() {
         assert_eq!(format_g(12.3456, 3), "12.3");
         assert_eq!(format_g(0.001234, 3), "0.00123");
         assert_eq!(format_g(1234.5, 3), "1.23e+03");
@@ -2607,8 +2617,9 @@ mod tests {
         assert_eq!(format_g(0.5, 3), "0.5");
     }
 
+    /// TEST0189: uv messages and classification
     #[test]
-    fn uv_messages_and_classification() {
+    fn test0189_uv_messages_and_classification() {
         crate::exports::recording::install();
         unsafe {
             let e = decode_uv_error(uve::UV_ETIMEDOUT, None);

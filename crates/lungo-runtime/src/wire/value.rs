@@ -297,8 +297,9 @@ mod tests {
         }
     }
 
+    /// TEST0241: a value of an opaque type is its handle
     #[test]
-    fn a_value_of_an_opaque_type_is_its_handle() {
+    fn test0241_a_value_of_an_opaque_type_is_its_handle() {
         let t = table();
         let w = Type::Inductive { index: 0, args: vec![] };
         let mut out = Vec::new();

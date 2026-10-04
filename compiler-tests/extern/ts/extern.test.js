@@ -6,7 +6,8 @@ import * as L from "lungo-ts";
 import * as provider from "provider";
 import * as consumer from "./consumer/index.js";
 
-test("values pass between programs by value, not by handle", async () => {
+// TEST0005: values pass between programs by value, not by handle
+test("TEST0005 values pass between programs by value, not by handle", async () => {
   const prov = await provider.load();
   const cons = await consumer.load();
   assert.equal(cons.describe(prov.makePair(1n, "apples")), "apples: 1");

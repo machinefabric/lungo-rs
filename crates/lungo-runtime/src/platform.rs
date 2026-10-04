@@ -113,8 +113,9 @@ mod tests {
     use super::externs::*;
     use crate::object::*;
 
+    /// TEST0194: values match the lean release
     #[test]
-    fn values_match_the_lean_release() {
+    fn test0194_values_match_the_lean_release() {
         unsafe {
             assert_eq!(lean_unbox(lean_system_platform_nbits(lean_box(0))), usize::BITS as usize);
             assert_eq!(lean_unbox(lean_version_get_major(lean_box(0))), 4);
@@ -132,9 +133,10 @@ mod tests {
         }
     }
 
+    /// TEST0195: apple silicon target uses clang spelling
     #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
     #[test]
-    fn apple_silicon_target_uses_clang_spelling() {
+    fn test0195_apple_silicon_target_uses_clang_spelling() {
         // Lean 4.34.1 on this platform reports "arm64-apple-darwin24.6.0".
         assert_eq!(super::platform_target(), "arm64-apple-darwin");
     }

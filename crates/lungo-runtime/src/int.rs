@@ -288,8 +288,9 @@ mod tests {
         unsafe { int_to_bigint(o).to_string() }
     }
 
+    /// TEST0175: small range boundaries are canonical
     #[test]
-    fn small_range_boundaries_are_canonical() {
+    fn test0175_small_range_boundaries_are_canonical() {
         assert!(int("2147483647").is_scalar());
         assert!(!int("2147483648").is_scalar());
         assert!(int("-2147483648").is_scalar());
@@ -307,8 +308,9 @@ mod tests {
         }
     }
 
+    /// TEST0176: division conventions match lean
     #[test]
-    fn division_conventions_match_lean() {
+    fn test0176_division_conventions_match_lean() {
         // Expected values from Lean 4.34.1: `Int.div` rounds toward zero (T-division),
         // `Int.emod`/`Int.ediv` (the `/` and `%` instances) are Euclidean, `x / 0 = 0`,
         // `x % 0 = x`.
@@ -333,8 +335,9 @@ mod tests {
         }
     }
 
+    /// TEST0177: conversions
     #[test]
-    fn conversions() {
+    fn test0177_conversions() {
         unsafe {
             assert_eq!(show(lean_int_neg_succ_of_nat(lean_box(4))), "-5");
             assert_eq!(show(lean_nat_abs(int("-100000000000000000000"))), "100000000000000000000");

@@ -97,10 +97,17 @@ struct GenerateArgs {
     /// else the pinned release, downloaded and verified).
     #[arg(long)]
     wasi_sdk: Option<PathBuf>,
-    /// Write nothing: check that every output directory holds exactly what the project
+    /// Write nothing: check that every output directory holds exactly the sources the project
     /// generates now, and fail with LNG0110 naming each file that differs, is missing or is extra.
-    #[arg(long)]
+    /// Platform products (the TypeScript binding's `program.wasm`) are not compared: each machine
+    /// links its own.
+    #[arg(long, conflicts_with = "link")]
     verify: bool,
+    /// Link this machine's platform products (the TypeScript binding's `program.wasm`) into the
+    /// outputs, leaving their sources as they are; fail with LNG0110, linking nothing, where the
+    /// sources are not what the project generates now.
+    #[arg(long)]
+    link: bool,
 }
 
 #[derive(Subcommand)]
@@ -385,7 +392,13 @@ fn generate_settings<'a>(
         outputs,
         runtime_dir: args.runtime_dir,
         wasi_sdk: args.wasi_sdk,
-        verify: args.verify,
+        mode: if args.verify {
+            generate::Mode::Verify
+        } else if args.link {
+            generate::Mode::Link
+        } else {
+            generate::Mode::Write
+        },
     })
 }
 
@@ -621,8 +634,9 @@ mod tests {
         v.iter().map(|s| s.to_string()).collect()
     }
 
+    /// TEST0086: language flags are split in both spellings
     #[test]
-    fn language_flags_are_split_in_both_spellings() {
+    fn test0086_language_flags_are_split_in_both_spellings() {
         let (rest, flags) = split_language_flags(args(&[
             "lungo",
             "generate",
@@ -645,8 +659,9 @@ mod tests {
         assert!(split_language_flags(args(&["lungo", "--go_out"])).is_err());
     }
 
+    /// TEST0087: facade functions are found by rust path
     #[test]
-    fn facade_functions_are_found_by_rust_path() {
+    fn test0087_facade_functions_are_found_by_rust_path() {
         const AGGREGATE: &str = "\
 /// Lean: `Host.evalTokens`
 #[allow(unused_imports)]

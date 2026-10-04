@@ -82,8 +82,9 @@ fn exports() -> BTreeMap<String, Entry> {
     inventory(include_str!("data/toolchain-exports.txt"), 4)
 }
 
+/// TEST0243: every toolchain extern is classified
 #[test]
-fn every_toolchain_extern_is_classified() {
+fn test0243_every_toolchain_extern_is_classified() {
     let mut problems = Vec::new();
     for (symbol, e) in &externs() {
         if e.implemented_by.is_some() {
@@ -110,8 +111,9 @@ fn every_toolchain_extern_is_classified() {
     assert!(problems.is_empty(), "{} unclassified externs:\n{}", problems.len(), problems.join("\n"));
 }
 
+/// TEST0244: externs implemented in lean are not shadowed by primitives
 #[test]
-fn externs_implemented_in_lean_are_not_shadowed_by_primitives() {
+fn test0244_externs_implemented_in_lean_are_not_shadowed_by_primitives() {
     // Resolution prefers the compiled `@[export]` definition; a primitive for the same symbol
     // would be dead code that silently diverges from the definition Lean actually runs.
     let shadowed: Vec<String> = externs()
@@ -122,8 +124,9 @@ fn externs_implemented_in_lean_are_not_shadowed_by_primitives() {
     assert!(shadowed.is_empty(), "primitives shadowing Lean implementations:\n{}", shadowed.join("\n"));
 }
 
+/// TEST0245: registry has no symbols unknown to the toolchain
 #[test]
-fn registry_has_no_symbols_unknown_to_the_toolchain() {
+fn test0245_registry_has_no_symbols_unknown_to_the_toolchain() {
     let known: BTreeSet<String> = externs().into_keys().collect();
     let unknown: Vec<&str> = registry::intrinsics()
         .map(|i| i.symbol)
@@ -133,15 +136,17 @@ fn registry_has_no_symbols_unknown_to_the_toolchain() {
     assert!(unknown.is_empty(), "registry entries that are not toolchain externs: {unknown:?}");
 }
 
+/// TEST0246: registry symbols are unique
 #[test]
-fn registry_symbols_are_unique() {
+fn test0246_registry_symbols_are_unique() {
     let mut seen = BTreeSet::new();
     let dups: Vec<&str> = registry::intrinsics().map(|i| i.symbol).filter(|s| !seen.insert(*s)).collect();
     assert!(dups.is_empty(), "primitives registered twice: {dups:?}");
 }
 
+/// TEST0247: required exports exist with the called representation
 #[test]
-fn required_exports_exist_with_the_called_representation() {
+fn test0247_required_exports_exist_with_the_called_representation() {
     let exports = exports();
     let mut problems = Vec::new();
     for r in REQUIRED {

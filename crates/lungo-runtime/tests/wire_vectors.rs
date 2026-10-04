@@ -211,8 +211,9 @@ fn path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compiler-tests/wire/vectors.json")
 }
 
+/// TEST0248: vectors file is the reference encoding
 #[test]
-fn vectors_file_is_the_reference_encoding() {
+fn test0248_vectors_file_is_the_reference_encoding() {
     let mut text = serde_json::to_string_pretty(&document()).unwrap();
     text.push('\n');
     if std::env::var_os("LUNGO_BLESS").is_some() {
@@ -227,8 +228,9 @@ fn vectors_file_is_the_reference_encoding() {
     );
 }
 
+/// TEST0249: valid encodings round trip through lean objects
 #[test]
-fn valid_encodings_round_trip_through_lean_objects() {
+fn test0249_valid_encodings_round_trip_through_lean_objects() {
     let file: Json = serde_json::from_str(&std::fs::read_to_string(path()).unwrap()).unwrap();
     for v in file["valid"].as_array().unwrap() {
         let ty = wire::parse_type(&unhex(v["type"].as_str().unwrap())).unwrap();
@@ -251,8 +253,9 @@ fn valid_encodings_round_trip_through_lean_objects() {
     }
 }
 
+/// TEST0250: invalid encodings are rejected by both codecs
 #[test]
-fn invalid_encodings_are_rejected_by_both_codecs() {
+fn test0250_invalid_encodings_are_rejected_by_both_codecs() {
     let file: Json = serde_json::from_str(&std::fs::read_to_string(path()).unwrap()).unwrap();
     for v in file["invalid"].as_array().unwrap() {
         let ty = wire::parse_type(&unhex(v["type"].as_str().unwrap())).unwrap();

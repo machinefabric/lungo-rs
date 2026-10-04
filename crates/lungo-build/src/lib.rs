@@ -541,15 +541,17 @@ fn cargo_target() -> Result<lungo_driver::protocol::Target> {
 mod tests {
     use super::*;
 
+    /// TEST0080: rust externs declare host externs
     #[test]
-    fn rust_externs_declare_host_externs() {
+    fn test0080_rust_externs_declare_host_externs() {
         let cfg = configure().rust_extern("provider_send", "crate::provider::send");
         assert!(cfg.lean.host_externs.contains("provider_send"));
         assert!(cfg.check_externs().is_ok());
     }
 
+    /// TEST0081: rust externs must cover exactly the host externs
     #[test]
-    fn rust_externs_must_cover_exactly_the_host_externs() {
+    fn test0081_rust_externs_must_cover_exactly_the_host_externs() {
         let mut undeclared = configure();
         undeclared.rust.rust_externs.insert("a".into(), "crate::a".into());
         assert!(matches!(undeclared.check_externs(), Err(Error::Configuration(_))));
@@ -558,8 +560,9 @@ mod tests {
         assert!(matches!(unmapped.check_externs(), Err(Error::Configuration(_))));
     }
 
+    /// TEST0082: rust options round trip through toml and reject unknown keys
     #[test]
-    fn rust_options_round_trip_through_toml_and_reject_unknown_keys() {
+    fn test0082_rust_options_round_trip_through_toml_and_reject_unknown_keys() {
         let cfg = configure()
             .type_attribute(".", "#[derive(serde::Serialize)]")
             .field_attribute("Formal.Sess.count", "#[serde(skip)]")

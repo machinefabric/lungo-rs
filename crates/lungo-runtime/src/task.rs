@@ -1458,8 +1458,9 @@ mod tests {
         }
     }
 
+    /// TEST0212: spawn map and bind compute values
     #[test]
-    fn spawn_map_and_bind_compute_values() {
+    fn test0212_spawn_map_and_bind_compute_values() {
         setup();
         unsafe {
             let t = lean_task_spawn(closure(const_42 as *const (), 1, &[]), lean_box(0));
@@ -1484,8 +1485,9 @@ mod tests {
         value
     }
 
+    /// TEST0213: dependents and dedicated tasks run
     #[test]
-    fn dependents_and_dedicated_tasks_run() {
+    fn test0213_dependents_and_dedicated_tasks_run() {
         setup();
         unsafe {
             let slow = lean_task_spawn(closure(sleep_then as *const (), 2, &[lean_box(50)]), lean_box(0));
@@ -1498,8 +1500,9 @@ mod tests {
         }
     }
 
+    /// TEST0214: pure tasks are finished
     #[test]
-    fn pure_tasks_are_finished() {
+    fn test0214_pure_tasks_are_finished() {
         setup();
         unsafe {
             let t = lean_task_pure(lean_box(1));
@@ -1508,8 +1511,9 @@ mod tests {
         }
     }
 
+    /// TEST0215: promises resolve once and dropped promises yield none
     #[test]
-    fn promises_resolve_once_and_dropped_promises_yield_none() {
+    fn test0215_promises_resolve_once_and_dropped_promises_yield_none() {
         setup();
         unsafe {
             let p = lean_io_promise_new();
@@ -1542,8 +1546,9 @@ mod tests {
         }
     }
 
+    /// TEST0216: cancellation is observed by the task
     #[test]
-    fn cancellation_is_observed_by_the_task() {
+    fn test0216_cancellation_is_observed_by_the_task() {
         setup();
         unsafe {
             let gate = lean_io_promise_new();
@@ -1581,8 +1586,9 @@ mod tests {
         }
     }
 
+    /// TEST0217: io task combinators
     #[test]
-    fn io_task_combinators() {
+    fn test0217_io_task_combinators() {
         setup();
         unsafe {
             let slow = lean_io_as_task(closure(sleep_then as *const (), 2, &[lean_box(300)]), lean_box(0));
@@ -1608,8 +1614,9 @@ mod tests {
         lean_box(5)
     }
 
+    /// TEST0218: thunks are evaluated once under concurrent access
     #[test]
-    fn thunks_are_evaluated_once_under_concurrent_access() {
+    fn test0218_thunks_are_evaluated_once_under_concurrent_access() {
         unsafe {
             let th = lean_mk_thunk(closure(counted_five as *const (), 1, &[]));
             lean_mark_mt(th);
@@ -1634,8 +1641,9 @@ mod tests {
         }
     }
 
+    /// TEST0219: mutexes follow std sync semantics
     #[test]
-    fn mutexes_follow_std_sync_semantics() {
+    fn test0219_mutexes_follow_std_sync_semantics() {
         unsafe {
             let m = lean_io_basemutex_new();
             assert_eq!(lean_io_basemutex_try_lock(m), 1);
@@ -1672,8 +1680,9 @@ mod tests {
         }
     }
 
+    /// TEST0220: condition variable wakes a waiter holding the mutex
     #[test]
-    fn condition_variable_wakes_a_waiter_holding_the_mutex() {
+    fn test0220_condition_variable_wakes_a_waiter_holding_the_mutex() {
         unsafe {
             let m = lean_io_basemutex_new();
             let c = lean_io_condvar_new();
@@ -1703,8 +1712,9 @@ mod tests {
         }
     }
 
+    /// TEST0221: hardware concurrency is positive
     #[test]
-    fn hardware_concurrency_is_positive() {
+    fn test0221_hardware_concurrency_is_positive() {
         unsafe {
             assert!(lean_internal_get_hardware_concurrency(lean_box(0)) > 0);
         }

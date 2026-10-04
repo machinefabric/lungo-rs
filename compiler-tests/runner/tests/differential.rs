@@ -87,12 +87,14 @@ fn backend_matches_the_native_lean_backend(backend: &str) {
     assert!(failures.is_empty(), "{} programs differ:\n{}", failures.len(), failures.join("\n"));
 }
 
+/// TEST0063: rust backend matches the native lean backend
 #[test]
-fn rust_backend_matches_the_native_lean_backend() {
+fn test0063_rust_backend_matches_the_native_lean_backend() {
     backend_matches_the_native_lean_backend("rust");
 }
 
+/// TEST0064: c backend matches the native lean backend
 #[test]
-fn c_backend_matches_the_native_lean_backend() {
+fn test0064_c_backend_matches_the_native_lean_backend() {
     backend_matches_the_native_lean_backend("c");
 }

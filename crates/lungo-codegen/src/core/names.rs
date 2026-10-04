@@ -176,23 +176,26 @@ pub fn module_file_stem(module: &str) -> String {
 mod tests {
     use super::*;
 
+    /// TEST0123: mangling is injective on ambiguous spellings
     #[test]
-    fn mangling_is_injective_on_ambiguous_spellings() {
+    fn test0123_mangling_is_injective_on_ambiguous_spellings() {
         let names = ["a.b", "a_b", "a__b", "a.«b.c»", "a._d", "a_d", "«a.b»", "x'", "x_x27_"];
         let mangled: std::collections::HashSet<_> = names.iter().map(|n| mangle(n)).collect();
         assert_eq!(mangled.len(), names.len());
     }
 
+    /// TEST0124: module file stems are injective
     #[test]
-    fn module_file_stems_are_injective() {
+    fn test0124_module_file_stems_are_injective() {
         let modules = ["A.B_C", "A_B.C", "A._B", "A_.B", "A.«b-c»", "A.b.c", "A.«b.c»"];
         let stems: std::collections::HashSet<_> = modules.iter().map(|m| module_file_stem(m)).collect();
         assert_eq!(stems.len(), modules.len());
         assert_eq!(module_file_stem("Init.Data.List.Basic"), "Init-Data-List-Basic");
     }
 
+    /// TEST0125: components respect escapes
     #[test]
-    fn components_respect_escapes() {
+    fn test0125_components_respect_escapes() {
         assert_eq!(components("Formal.Op.«open»"), vec!["Formal", "Op", "open"]);
         assert_eq!(components("a.«b.c».d"), vec!["a", "b.c", "d"]);
     }

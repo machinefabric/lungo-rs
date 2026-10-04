@@ -101,8 +101,9 @@ fn walk(b: &Block, seen: &mut BTreeSet<&'static str>) {
     seen.insert(kind);
 }
 
+/// TEST0028: conformance corpus covers every instruction
 #[test]
-fn conformance_corpus_covers_every_instruction() {
+fn test0028_conformance_corpus_covers_every_instruction() {
     let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("../conformance").canonicalize().unwrap();
     let lakefile = std::fs::read_to_string(project.join("lakefile.toml")).unwrap();
     let roots: Vec<&str> =

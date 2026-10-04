@@ -680,8 +680,9 @@ fn library(w: &mut Writer, request: &GenerateRequest) {
 mod tests {
     use super::*;
 
+    /// TEST0117: cmake strings cannot expand or split
     #[test]
-    fn cmake_strings_cannot_expand_or_split() {
+    fn test0117_cmake_strings_cannot_expand_or_split() {
         assert_eq!(cmake_string("a;b${X}\"\\"), "\"a\\;b\\${X}\\\"\\\\\"");
     }
 }

@@ -456,10 +456,10 @@ mod tests {
     use crate::int::lean_cstr_to_int;
     use crate::nat::lean_cstr_to_nat;
 
-    // Expected values computed with Lean 4.34.1 (`lean --run`).
+    // TEST0222: Expected values computed with Lean 4.34.1 (`lean --run`).
 
     #[test]
-    fn unsigned_wraparound_division_and_shifts() {
+    fn test0222_unsigned_wraparound_division_and_shifts() {
         unsafe {
             assert_eq!(lean_uint8_add(200, 100), 44);
             assert_eq!(lean_uint8_sub(3, 5), 254);
@@ -480,8 +480,9 @@ mod tests {
         }
     }
 
+    /// TEST0223: of nat reduces big numbers modulo the width
     #[test]
-    fn of_nat_reduces_big_numbers_modulo_the_width() {
+    fn test0223_of_nat_reduces_big_numbers_modulo_the_width() {
         unsafe {
             let n = lean_cstr_to_nat("18446744073709551617");
             assert_eq!(lean_uint64_of_nat(n), 1);
@@ -490,8 +491,9 @@ mod tests {
         }
     }
 
+    /// TEST0224: signed semantics
     #[test]
-    fn signed_semantics() {
+    fn test0224_signed_semantics() {
         unsafe {
             let i8 = |v: i8| v as u8;
             assert_eq!(lean_int8_div(i8(-128), i8(-1)), i8(-128));

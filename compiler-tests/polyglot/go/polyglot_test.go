@@ -47,7 +47,8 @@ func must[T any](v T, err error) func(t *testing.T) T {
 	}
 }
 
-func TestNumbers(t *testing.T) {
+// TEST0048: numbers
+func Test0048_Numbers(t *testing.T) {
 	f := must(polyglot.Factorial(big.NewInt(25)))(t)
 	if f.String() != "15511210043330985984000000" {
 		t.Errorf("25! = %s", f)
@@ -62,7 +63,8 @@ func TestNumbers(t *testing.T) {
 	}
 }
 
-func TestStructuresAndInductives(t *testing.T) {
+// TEST0049: structures And Inductives
+func Test0049_StructuresAndInductives(t *testing.T) {
 	p := polyglot.Point{X: 1.5, Y: -2, Label: "p", Tag: 7}
 	moved := must(polyglot.MoveBy(p, 1, 0.5))(t)
 	if moved != (polyglot.Point{X: 2.5, Y: -1.5, Label: "p", Tag: 7}) {
@@ -86,9 +88,9 @@ func TestStructuresAndInductives(t *testing.T) {
 	}
 }
 
-// The Lean type `Lookup` and the function `Registry.lookup` are both `Lookup` in Go's one
+// TEST0050: The Lean type `Lookup` and the function `Registry.lookup` are both `Lookup` in Go's one
 // case: the type keeps the name and the function is `RegistryLookup`.
-func TestAFunctionNamedLikeItsType(t *testing.T) {
+func Test0050_AFunctionNamedLikeItsType(t *testing.T) {
 	found := must(polyglot.RegistryLookup(big.NewInt(3), big.NewInt(1)))(t)
 	if hit, ok := found.(polyglot.LookupFound); !ok || hit.Slot.Int64() != 1 {
 		t.Errorf("lookup of a slot there is = %+v", found)
@@ -99,7 +101,8 @@ func TestAFunctionNamedLikeItsType(t *testing.T) {
 	}
 }
 
-func TestScalarsAndContainers(t *testing.T) {
+// TEST0051: scalars And Containers
+func Test0051_ScalarsAndContainers(t *testing.T) {
 	if s := must(polyglot.Mix(^uint64(0), -5, 'λ', true))(t); s != "18446744073709551615/-5/λ/true" {
 		t.Errorf("mix = %q", s)
 	}
@@ -131,7 +134,8 @@ func TestScalarsAndContainers(t *testing.T) {
 	}
 }
 
-func TestErrors(t *testing.T) {
+// TEST0052: errors
+func Test0052_Errors(t *testing.T) {
 	_, err := polyglot.CheckedDiv(big.NewInt(10), big.NewInt(0))
 	var ioe *lungo.IOError
 	if !errors.As(err, &ioe) || ioe.Error() != "checkedDiv: division by zero" {
@@ -147,7 +151,8 @@ func TestErrors(t *testing.T) {
 	}
 }
 
-func TestPolymorphism(t *testing.T) {
+// TEST0053: polymorphism
+func Test0053_Polymorphism(t *testing.T) {
 	tree := must(polyglot.OfList(lungo.NatType, []*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3)}))(t)
 	if n := must(polyglot.Size(lungo.NatType, tree))(t); n.Int64() != 3 {
 		t.Errorf("size = %v", n)
@@ -165,7 +170,8 @@ func TestPolymorphism(t *testing.T) {
 	}
 }
 
-func TestFunctions(t *testing.T) {
+// TEST0054: functions
+func Test0054_Functions(t *testing.T) {
 	calls := 0
 	twice := must(polyglot.ApplyTwice(func(x *big.Int) (*big.Int, error) {
 		calls++
@@ -179,7 +185,8 @@ func TestFunctions(t *testing.T) {
 	}
 }
 
-func TestOpaqueValues(t *testing.T) {
+// TEST0055: opaque Values
+func Test0055_OpaqueValues(t *testing.T) {
 	counter := must(polyglot.NewCounter(big.NewInt(10)))(t)
 	v1 := must(polyglot.Bump(counter))(t)
 	v2 := must(polyglot.Bump(counter))(t)
@@ -193,7 +200,8 @@ func TestOpaqueValues(t *testing.T) {
 	}
 }
 
-func TestHostExterns(t *testing.T) {
+// TEST0056: host Externs
+func Test0056_HostExterns(t *testing.T) {
 	if s := must(polyglot.ScaledSum([]*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3)}))(t); s.Int64() != 60 {
 		t.Errorf("scaledSum = %v", s)
 	}
@@ -212,7 +220,8 @@ func TestHostExterns(t *testing.T) {
 	}
 }
 
-func TestConcurrentCalls(t *testing.T) {
+// TEST0057: concurrent Calls
+func Test0057_ConcurrentCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
@@ -227,7 +236,8 @@ func TestConcurrentCalls(t *testing.T) {
 	wg.Wait()
 }
 
-func TestRunMain(t *testing.T) {
+// TEST0058: run Main
+func Test0058_RunMain(t *testing.T) {
 	if code := must(polyglot.RunMain([]string{"one", "two"}))(t); code != 2 {
 		t.Errorf("main returned %d", code)
 	}

@@ -92,8 +92,9 @@ mod tests {
         Type::Inductive { index: i, args: vec![] }
     }
 
+    /// TEST0122: only cycles through values count
     #[test]
-    fn only_cycles_through_values_count() {
+    fn test0122_only_cycles_through_values_count() {
         let table = TypeTable {
             types: vec![
                 // 0: structure containing Option 0: recursive by value.

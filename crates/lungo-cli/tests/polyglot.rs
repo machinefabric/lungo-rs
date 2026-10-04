@@ -74,8 +74,9 @@ fn fixture(language: &str) -> PathBuf {
     repo().join("compiler-tests/polyglot").join(language)
 }
 
+/// TEST0111: c binding
 #[test]
-fn c_binding() {
+fn test0111_c_binding() {
     let package = generate("c", &["runtime"]);
     let build = root().join("c-build");
     // A fresh build: a CMake cache records the absolute paths it was configured with.
@@ -115,8 +116,9 @@ fn generate_into(language: &str, components: &[&str], module: &Path, package: &s
     out
 }
 
+/// TEST0112: go binding
 #[test]
-fn go_binding() {
+fn test0112_go_binding() {
     let module = root().join("go-module");
     let package = generate_into("go", &["go"], &module, "polyglot");
     let dist = distribution(&["go"]);
@@ -138,8 +140,9 @@ fn go_binding() {
     assert!(out.contains("ok  \texample.com/polyglottest"), "{out}");
 }
 
+/// TEST0113: python binding
 #[test]
-fn python_binding() {
+fn test0113_python_binding() {
     let dist = distribution(&["python"]);
     let package = generate("python", &["python"]);
     let venv = root().join("python-venv");
@@ -174,9 +177,10 @@ fn python_binding() {
     unittest("editable");
 }
 
+/// TEST0114: swift binding
 #[cfg(target_os = "macos")]
 #[test]
-fn swift_binding() {
+fn test0114_swift_binding() {
     let dist = distribution(&["swift"]);
     let package = generate("swift", &["swift"]);
     let tests = root().join("swift-tests");
@@ -223,11 +227,47 @@ let package = Package(
     assert!(text.contains("Executed 3 tests, with 0 failures"), "the Objective-C tests ran:\n{text}");
 }
 
+/// TEST0115: ts binding
 #[test]
-fn ts_binding() {
+fn test0115_ts_binding() {
     let dist = distribution(&["ts"]);
     let package = generate("ts", &["ts"]);
     assert!(package.join("program.wasm").is_file(), "the WebAssembly module is linked");
+
+    // `program.wasm` is a platform product: `--verify` does not compare it, and
+    // `--link` links it again for this machine — the same bytes `generate` linked
+    // here — into an output whose sources are current, and refuses one whose
+    // sources are not, leaving the module as it is.
+    let lungo = |mode: &str| {
+        let out = Command::new(env!("CARGO_BIN_EXE_lungo"))
+            .arg("--config")
+            .arg(repo().join("compiler-tests/polyglot/lungo.toml"))
+            .arg("generate")
+            .arg(format!("--ts_out={}", package.display()))
+            .arg("--runtime-dir")
+            .arg(&dist)
+            .arg(mode)
+            .output()
+            .unwrap();
+        (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+    };
+    let module = package.join("program.wasm");
+    let linked = std::fs::read(&module).unwrap();
+    std::fs::write(&module, b"linked elsewhere").unwrap();
+    let (ok, text) = lungo("--verify");
+    assert!(ok && text.contains("verified: ts"), "--verify compared the platform product:\n{text}");
+    let (ok, text) = lungo("--link");
+    assert!(ok && text.contains("linked: ts"), "{text}");
+    assert!(std::fs::read(&module).unwrap() == linked, "--link did not link the module generate linked");
+    let index = package.join("index.js");
+    let source = std::fs::read_to_string(&index).unwrap();
+    std::fs::write(&index, format!("{source}// edited by hand\n")).unwrap();
+    std::fs::write(&module, b"linked elsewhere").unwrap();
+    let (ok, text) = lungo("--link");
+    assert!(!ok && text.contains("LNG0110") && text.contains("changed: index.js"), "{text}");
+    assert_eq!(std::fs::read(&module).unwrap(), b"linked elsewhere", "--link linked over stale sources");
+    std::fs::write(&index, source).unwrap();
+    std::fs::write(&module, &linked).unwrap();
     let project = root().join("ts-project");
     if project.exists() {
         std::fs::remove_dir_all(&project).unwrap();
@@ -259,9 +299,9 @@ fn ts_binding() {
     assert!(out.contains("# pass 11") && out.contains("# fail 0"), "{out}");
 }
 
-/// WebAssembly has no child processes: a program spawning one cannot be generated for it.
+/// TEST0116: WebAssembly has no child processes: a program spawning one cannot be generated for it.
 #[test]
-fn webassembly_rejects_primitives_it_lacks() {
+fn test0116_webassembly_rejects_primitives_it_lacks() {
     let dist = distribution(&["ts"]);
     let out = root().join("ts-process");
     let result = Command::new(env!("CARGO_BIN_EXE_lungo"))

@@ -31,7 +31,8 @@ static int32_t record(void *ctx, const lungo_value *const *args, size_t n, lungo
     polyglot_implement_host_record(record, NULL, NULL);
 }
 
-- (void)testHostExternsThroughTheCAPI {
+// TEST0059: host Externs Through The CAPI
+- (void)test0059_HostExternsThroughTheCAPI {
     lungo_value *items[2] = {lungo_value_nat(1), lungo_value_nat(2)};
     lungo_value *list = lungo_value_list(items, 2);
     lungo_value *result = NULL;
@@ -44,7 +45,8 @@ static int32_t record(void *ctx, const lungo_value *const *args, size_t n, lungo
     lungo_value_free(list);
 }
 
-- (void)testFactorialThroughTheCAPI {
+// TEST0060: factorial Through The CAPI
+- (void)test0060_FactorialThroughTheCAPI {
     lungo_value *n = lungo_value_nat(20);
     lungo_value *result = NULL;
     lungo_error *error = NULL;
@@ -56,7 +58,8 @@ static int32_t record(void *ctx, const lungo_value *const *args, size_t n, lungo
     lungo_value_free(n);
 }
 
-- (void)testConstructorsAndErrors {
+// TEST0061: constructors And Errors
+- (void)test0061_ConstructorsAndErrors {
     lungo_value *shape = polyglot_shape_empty();
     lungo_value *result = NULL;
     lungo_error *error = NULL;

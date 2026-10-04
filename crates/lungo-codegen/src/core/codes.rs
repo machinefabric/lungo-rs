@@ -125,8 +125,9 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    /// TEST0119: codes are unique well formed and ordered
     #[test]
-    fn codes_are_unique_well_formed_and_ordered() {
+    fn test0119_codes_are_unique_well_formed_and_ordered() {
         let mut seen = BTreeSet::new();
         let mut previous = "";
         for c in ErrorCode::ALL {

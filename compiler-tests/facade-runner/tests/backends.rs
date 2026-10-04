@@ -136,64 +136,75 @@ builders!(oracle, o);
 proptest! {
     #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
 
+    /// TEST0007: nat arithmetic
     #[test]
-    fn nat_arithmetic(a in nat(), b in nat()) {
+    fn test0007_nat_arithmetic(a in nat(), b in nat()) {
         same("natOps", pure::nat_ops(a.clone(), b.clone()), oracle::nat_ops(a, b))?;
     }
 
+    /// TEST0008: nat powers
     #[test]
-    fn nat_powers(a in nat(), e in 0u8..40) {
+    fn test0008_nat_powers(a in nat(), e in 0u8..40) {
         same("natPow", pure::nat_pow(a.clone(), e), oracle::nat_pow(a, e))?;
     }
 
+    /// TEST0009: int arithmetic
     #[test]
-    fn int_arithmetic(a in int(), b in int()) {
+    fn test0009_int_arithmetic(a in int(), b in int()) {
         same("intOps", pure::int_ops(a.clone(), b.clone()), oracle::int_ops(a, b))?;
     }
 
+    /// TEST0010: fixed width
     #[test]
-    fn fixed_width(a: u64, b: u64, c: i32, d: i32, e: u8, f: u16, g: usize) {
+    fn test0010_fixed_width(a: u64, b: u64, c: i32, d: i32, e: u8, f: u16, g: usize) {
         same("fixedOps", pure::fixed_ops(a, b, c, d, e, f, g), oracle::fixed_ops(a, b, c, d, e, f, g))?;
     }
 
+    /// TEST0011: signed widths
     #[test]
-    fn signed_widths(a: i8, b: i16, c: i64, d: isize) {
+    fn test0011_signed_widths(a: i8, b: i16, c: i64, d: isize) {
         same("signedMix", pure::signed_mix(a, b, c, d), oracle::signed_mix(a, b, c, d))?;
     }
 
+    /// TEST0012: floating point
     #[test]
-    fn floating_point(x in float(), y in float(), z: f32) {
+    fn test0012_floating_point(x in float(), y in float(), z: f32) {
         same("floatOps", pure::float_ops(x, y), oracle::float_ops(x, y))?;
         same("float32Ops", pure::float32_ops(z), oracle::float32_ops(z))?;
     }
 
+    /// TEST0013: float arrays
     #[test]
-    fn float_arrays(xs in prop::collection::vec(float(), 0..16), k in float()) {
+    fn test0013_float_arrays(xs in prop::collection::vec(float(), 0..16), k in float()) {
         let arr = FloatArray::from(xs);
         same("floats", pure::floats(arr.clone()), oracle::floats(arr.clone()))?;
         same("scaled", pure::scaled(arr.clone(), k), oracle::scaled(arr, k))?;
     }
 
+    /// TEST0014: strings
     #[test]
-    fn strings(s in text(), sep in text(), parts in prop::collection::vec(text(), 0..6)) {
+    fn test0014_strings(s in text(), sep in text(), parts in prop::collection::vec(text(), 0..6)) {
         same("textStats", pure::text_stats(s.clone()), oracle::text_stats(s.clone()))?;
         same("joinWith", pure::join_with(sep.clone(), parts.clone()), oracle::join_with(sep, parts))?;
         same("bytes", pure::bytes(s.clone()), oracle::bytes(s))?;
     }
 
+    /// TEST0015: characters
     #[test]
-    fn characters(c: char) {
+    fn test0015_characters(c: char) {
         same("charInfo", pure::char_info(c), oracle::char_info(c))?;
     }
 
+    /// TEST0016: utf8 decoding
     #[test]
-    fn utf8_decoding(bytes in prop::collection::vec(any::<u8>(), 0..24)) {
+    fn test0016_utf8_decoding(bytes in prop::collection::vec(any::<u8>(), 0..24)) {
         let b = ByteArray::from(bytes);
         same("decode", pure::decode(b.clone()), oracle::decode(b))?;
     }
 
+    /// TEST0017: records
     #[test]
-    fn records(p in pixel(), c in 0u8..3, ps in prop::collection::vec(pixel(), 0..5)) {
+    fn test0017_records(p in pixel(), c in 0u8..3, ps in prop::collection::vec(pixel(), 0..5)) {
         same("recolor", pure::recolor(p::pixel(&p), p::color(c)), oracle::recolor(o::pixel(&p), o::color(c)))?;
         same(
             "brighten",
@@ -202,8 +213,9 @@ proptest! {
         )?;
     }
 
+    /// TEST0018: structures
     #[test]
-    fn structures(a in nat(), b in nat(), n in nat(), s in text()) {
+    fn test0018_structures(a in nat(), b in nat(), n in nat(), s in text()) {
         same(
             "addMeters",
             pure::add_meters(pure::Meters { value: a.clone() }, pure::Meters { value: b.clone() }),
@@ -212,20 +224,23 @@ proptest! {
         same("swapPair", pure::swap_pair((n.clone(), s.clone())), oracle::swap_pair((n, s)))?;
     }
 
+    /// TEST0019: inductives
     #[test]
-    fn inductives(s in shape()) {
+    fn test0019_inductives(s in shape()) {
         same("describeShape", pure::describe_shape(p::shape(&s)), oracle::describe_shape(o::shape(&s)))?;
         same("Shape.area", pure::shape::area(p::shape(&s)), oracle::shape::area(o::shape(&s)))?;
     }
 
+    /// TEST0020: except and option
     #[test]
-    fn except_and_option(x in int(), xs in prop::collection::vec(prop::option::of(nat()), 0..8)) {
+    fn test0020_except_and_option(x in int(), xs in prop::collection::vec(prop::option::of(nat()), 0..8)) {
         same("classify", pure::classify(x.clone()), oracle::classify(x))?;
         same("firstSome", pure::first_some(List::from(xs.clone())), oracle::first_some(List::from(xs)))?;
     }
 
+    /// TEST0021: trees
     #[test]
-    fn trees(xs in prop::collection::vec(int(), 0..24)) {
+    fn test0021_trees(xs in prop::collection::vec(int(), 0..24)) {
         let pt = pure::build_tree(List::from(xs.clone()));
         let ot = oracle::build_tree(List::from(xs.clone()));
         same("buildTree", &pt, &ot)?;
@@ -238,8 +253,9 @@ proptest! {
         same("treeToList (sorted)", pure::tree_to_list(pt), List::from(sorted))?;
     }
 
+    /// TEST0022: instances from rust
     #[test]
-    fn instances_from_rust(xs in prop::collection::vec(any::<i32>(), 0..16)) {
+    fn test0022_instances_from_rust(xs in prop::collection::vec(any::<i32>(), 0..16)) {
         // The `Ord` dictionary is a Rust closure, called back from Lean in both backends.
         let pord = pure::_root_::Ord { compare: LeanClosure::from_fn(|a: Nat, b: Nat| p::ordering(a.cmp(&b))) };
         let oord = oracle::_root_::Ord { compare: LeanClosure::from_fn(|a: Nat, b: Nat| o::ordering(a.cmp(&b))) };
@@ -253,8 +269,9 @@ proptest! {
         same("Tree.toList", pure::tree::to_list(pt), oracle::tree::to_list(ot))?;
     }
 
+    /// TEST0023: higher order
     #[test]
-    fn higher_order(x in nat(), xs in prop::collection::vec(int(), 0..10), ns in prop::collection::vec(nat(), 0..10), k in nat()) {
+    fn test0023_higher_order(x in nat(), xs in prop::collection::vec(int(), 0..10), ns in prop::collection::vec(nat(), 0..10), k in nat()) {
         let kp = k.clone();
         let pf = LeanClosure::from_fn(move |n: Nat| &n * &kp + Nat::from(1u128));
         let ko = k.clone();
@@ -271,16 +288,18 @@ proptest! {
         same("makeAdder", pure::make_adder(k.clone(), x.clone()), oracle::make_adder(k, x))?;
     }
 
+    /// TEST0024: polymorphism
     #[test]
-    fn polymorphism(s in text(), n in nat(), xss in prop::collection::vec(prop::collection::vec(text(), 0..4), 0..5)) {
+    fn test0024_polymorphism(s in text(), n in nat(), xss in prop::collection::vec(prop::collection::vec(text(), 0..4), 0..5)) {
         same("identity", pure::identity(s.clone()), oracle::identity(s.clone()))?;
         same("pairUp", pure::pair_up(n.clone(), s.clone()), oracle::pair_up(n, s))?;
         let lists: List<List<String>> = xss.into_iter().map(List::from).collect();
         same("lengths", pure::lengths(lists.clone()), oracle::lengths(lists))?;
     }
 
+    /// TEST0025: effects
     #[test]
-    fn effects(n in 0u64..200, s in text()) {
+    fn test0025_effects(n in 0u64..200, s in text()) {
         let n = Nat::from(n as u128);
         let pr = pure::count_to(n.clone()).map_err(|e| e.message().to_owned());
         let or = oracle::count_to(n.clone()).map_err(|e| e.message().to_owned());
@@ -292,18 +311,18 @@ proptest! {
     }
 }
 
-/// Lean closures returned to Rust can be called from Rust in both backends.
+/// TEST0026: Lean closures returned to Rust can be called from Rust in both backends.
 #[test]
-fn closures_flow_both_ways() {
+fn test0026_closures_flow_both_ways() {
     let p = pure::apply_twice(LeanClosure::from_fn(|n: Nat| &n + &n), Nat::from(5u128));
     let o = oracle::apply_twice(LeanClosure::from_fn(|n: Nat| &n + &n), Nat::from(5u128));
     assert_eq!(p, Nat::from(20u128));
     assert_eq!(o, Nat::from(20u128));
 }
 
-/// Values shared between threads are safe on both runtimes (Lean marks them multi-threaded).
+/// TEST0027: Values shared between threads are safe on both runtimes (Lean marks them multi-threaded).
 #[test]
-fn concurrent_calls() {
+fn test0027_concurrent_calls() {
     let tree: Vec<Int> = (0..200).map(|i| Int::from(((i * 7919) % 257) as i128 - 128)).collect();
     std::thread::scope(|s| {
         for _ in 0..8 {

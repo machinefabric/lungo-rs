@@ -21,23 +21,26 @@ fn ok(args: &[&str]) -> String {
     stdout
 }
 
+/// TEST0091: prepare reports toolchain and worker
 #[test]
-fn prepare_reports_toolchain_and_worker() {
+fn test0091_prepare_reports_toolchain_and_worker() {
     let out = ok(&["prepare"]);
     assert!(out.contains("Lean 4.34.1 (5045d0056413266e57c625dcd7c365b10e377c52)"), "{out}");
     assert!(out.contains("worker "), "{out}");
 }
 
+/// TEST0092: check summarizes the program
 #[test]
-fn check_summarizes_the_program() {
+fn test0092_check_summarizes_the_program() {
     let out = ok(&["check"]);
     assert!(out.contains("Lean 4.34.1"), "{out}");
     assert!(out.contains("modules,") && out.contains("compiled declarations"), "{out}");
     assert!(out.contains("generation succeeded"), "{out}");
 }
 
+/// TEST0093: generate writes rust then reuses it
 #[test]
-fn generate_writes_rust_then_reuses_it() {
+fn test0093_generate_writes_rust_then_reuses_it() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-out");
     let flag = format!("--rust_out={}", out.display());
     let first = ok(&["generate", &flag]);
@@ -50,8 +53,9 @@ fn generate_writes_rust_then_reuses_it() {
     }
 }
 
+/// TEST0094: generate writes the outputs the configuration names
 #[test]
-fn generate_writes_the_outputs_the_configuration_names() {
+fn test0094_generate_writes_the_outputs_the_configuration_names() {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"));
     let out = tmp.join("configured-out");
     let config = tmp.join("out-dir.toml");
@@ -66,8 +70,9 @@ fn generate_writes_the_outputs_the_configuration_names() {
     assert!(out.join("formal").join("formal.rs").is_file());
 }
 
+/// TEST0095: generate refuses to replace a directory it did not create
 #[test]
-fn generate_refuses_to_replace_a_directory_it_did_not_create() {
+fn test0095_generate_refuses_to_replace_a_directory_it_did_not_create() {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("foreign-out");
     let dir = tmp.join("formal");
     std::fs::create_dir_all(&dir).unwrap();
@@ -78,24 +83,27 @@ fn generate_refuses_to_replace_a_directory_it_did_not_create() {
     assert_eq!(std::fs::read_to_string(dir.join("mine.txt")).unwrap(), "user data");
 }
 
+/// TEST0096: a development build requires a local distribution for bindings
 #[test]
-fn a_development_build_requires_a_local_distribution_for_bindings() {
+fn test0096_a_development_build_requires_a_local_distribution_for_bindings() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-runtime");
     let (success, _, stderr) = cli(&["generate", &format!("--c_out={}", out.display())]);
     assert!(!success);
     assert!(stderr.contains("error[LNG0108]") && stderr.contains("--runtime-dir"), "{stderr}");
 }
 
+/// TEST0097: unknown generators are plugins that must exist
 #[test]
-fn unknown_generators_are_plugins_that_must_exist() {
+fn test0097_unknown_generators_are_plugins_that_must_exist() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-plugin");
     let (success, _, stderr) = cli(&["generate", &format!("--nonexistent_out={}", out.display())]);
     assert!(!success);
     assert!(stderr.contains("error[LNG0504]") && stderr.contains("lungo-gen-nonexistent"), "{stderr}");
 }
 
+/// TEST0098: inspect shows type source and trust
 #[test]
-fn inspect_shows_type_source_and_trust() {
+fn test0098_inspect_shows_type_source_and_trust() {
     let out = ok(&["inspect", "Formal.apply"]);
     assert!(out.contains("Formal.apply : Formal.Op → Formal.Sess → Option Formal.Sess"), "{out}");
     assert!(out.contains("module: Formal.Session"), "{out}");
@@ -107,23 +115,26 @@ fn inspect_shows_type_source_and_trust() {
     assert!(stderr.contains("Formal.nope is neither exported nor part of the compiled program"), "{stderr}");
 }
 
+/// TEST0099: ir prints bridge ir
 #[test]
-fn ir_prints_bridge_ir() {
+fn test0099_ir_prints_bridge_ir() {
     let out = ok(&["ir", "Formal.run"]);
     assert!(out.contains("def Formal.run"), "{out}");
     assert!(out.contains("case[tobj] x_1 : tobj of"), "{out}");
     assert!(out.contains("def Formal.run._boxed"), "compiler auxiliaries are included:\n{out}");
 }
 
+/// TEST0100: rust prints generated code
 #[test]
-fn rust_prints_generated_code() {
+fn test0100_rust_prints_generated_code() {
     let out = ok(&["rust", "Formal.run"]);
     assert!(out.contains("// Lean: Formal.run"), "{out}");
     assert!(out.contains("pub fn run("), "the facade function is shown:\n{out}");
 }
 
+/// TEST0101: rust finds facade functions without documentation
 #[test]
-fn rust_finds_facade_functions_without_documentation() {
+fn test0101_rust_finds_facade_functions_without_documentation() {
     let config = Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-comments.toml");
     std::fs::write(
         &config,
@@ -138,8 +149,9 @@ fn rust_finds_facade_functions_without_documentation() {
     assert!(!out.contains("/// Lean: `Formal.run"), "its documentation is disabled:\n{out}");
 }
 
+/// TEST0102: externs and mappings are machine readable
 #[test]
-fn externs_and_mappings_are_machine_readable() {
+fn test0102_externs_and_mappings_are_machine_readable() {
     let externs: serde_json::Value = serde_json::from_str(&ok(&["externs"])).unwrap();
     let nat_add =
         externs.as_array().unwrap().iter().find(|e| e["declaration"] == "Nat.add").expect("Formal.run reaches Nat.add");
@@ -166,8 +178,9 @@ fn externs_and_mappings_are_machine_readable() {
     }
 }
 
+/// TEST0103: configuration errors are reported
 #[test]
-fn configuration_errors_are_reported() {
+fn test0103_configuration_errors_are_reported() {
     let out = Command::new(env!("CARGO_BIN_EXE_lungo"))
         .arg("check")
         .current_dir(Path::new(env!("CARGO_TARGET_TMPDIR")))
@@ -177,8 +190,9 @@ fn configuration_errors_are_reported() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no lungo configuration"));
 }
 
+/// TEST0104: verify names every file that is not what the project generates
 #[test]
-fn verify_names_every_file_that_is_not_what_the_project_generates() {
+fn test0104_verify_names_every_file_that_is_not_what_the_project_generates() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("verify-out");
     if out.exists() {
         std::fs::remove_dir_all(&out).unwrap();

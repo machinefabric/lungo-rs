@@ -745,10 +745,10 @@ mod tests {
         }
     }
 
-    // Expected values below were observed from Lean 4.34.1 (`lean --run`) on the same inputs.
+    // TEST0196: Expected values below were observed from Lean 4.34.1 (`lean --run`) on the same inputs.
 
     #[test]
-    fn piped_output_and_exit_codes() {
+    fn test0196_piped_output_and_exit_codes() {
         unsafe {
             let a = spawn_args([1, 0, 0], "sh", &["-c", "echo hi; echo err >&2; exit 3"], None, &[], true);
             let c = ok(lean_io_process_spawn(a));
@@ -763,8 +763,9 @@ mod tests {
         }
     }
 
+    /// TEST0197: missing program and directory fail in the child
     #[test]
-    fn missing_program_and_directory_fail_in_the_child() {
+    fn test0197_missing_program_and_directory_fail_in_the_child() {
         unsafe {
             let a = spawn_args([1, 0, 0], "definitely-not-a-program-xyz", &[], None, &[], true);
             let c = ok(lean_io_process_spawn(a));
@@ -783,8 +784,9 @@ mod tests {
         }
     }
 
+    /// TEST0198: stdin environment and cwd
     #[test]
-    fn stdin_environment_and_cwd() {
+    fn test0198_stdin_environment_and_cwd() {
         unsafe {
             let a = spawn_args(
                 [0, 0, 1],
@@ -812,8 +814,9 @@ mod tests {
         }
     }
 
+    /// TEST0199: try wait kill and cleared environment
     #[test]
-    fn try_wait_kill_and_cleared_environment() {
+    fn test0199_try_wait_kill_and_cleared_environment() {
         unsafe {
             let a = spawn_args([1, 1, 1], "sleep", &["5"], None, &[], true);
             let c = ok(lean_io_process_spawn(a));
@@ -830,8 +833,9 @@ mod tests {
         }
     }
 
+    /// TEST0200: set current dir error names the path
     #[test]
-    fn set_current_dir_error_names_the_path() {
+    fn test0200_set_current_dir_error_names_the_path() {
         unsafe {
             crate::exports::recording::install();
             let p = lean_mk_string("/nonexistent-q");

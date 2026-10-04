@@ -42,9 +42,9 @@ pub fn mix_hash(mut h: u64, mut k: u64) -> u64 {
 mod tests {
     use super::*;
 
-    // Expected values computed by Lean 4.34.1 (`"...".hash`, which is `hash_str(len, s, 11)`).
+    // TEST0173: Expected values computed by Lean 4.34.1 (`"...".hash`, which is `hash_str(len, s, 11)`).
     #[test]
-    fn string_hashes_match_lean() {
+    fn test0173_string_hashes_match_lean() {
         assert_eq!(hash_str(b"", 11), EMPTY_HASH);
         assert_eq!(hash_str(b"hello", 11), HELLO_HASH);
         assert_eq!(hash_str("héllo wörld, long enough".as_bytes(), 11), LONG_HASH);
@@ -54,8 +54,9 @@ mod tests {
     pub(crate) const HELLO_HASH: u64 = 9821865621596011261;
     pub(crate) const LONG_HASH: u64 = 12994951943092991614;
 
+    /// TEST0174: mix hash matches lean
     #[test]
-    fn mix_hash_matches_lean() {
+    fn test0174_mix_hash_matches_lean() {
         // `mixHash 1 2` in Lean 4.34.1.
         assert_eq!(mix_hash(1, 2), MIX_1_2);
     }

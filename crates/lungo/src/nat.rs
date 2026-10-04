@@ -233,8 +233,9 @@ impl num_traits::Zero for Nat {
 mod tests {
     use super::*;
 
+    /// TEST0253: representation is canonical across the u64 boundary
     #[test]
-    fn representation_is_canonical_across_the_u64_boundary() {
+    fn test0253_representation_is_canonical_across_the_u64_boundary() {
         let max = Nat::from(u64::MAX);
         let over = &max + &Nat::from(1u8);
         assert_eq!(over.to_u64(), None);

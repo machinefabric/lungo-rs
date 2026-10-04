@@ -189,8 +189,9 @@ mod tests {
         ]
     }
 
+    /// TEST0120: a change anywhere in the closure changes the fingerprint
     #[test]
-    fn a_change_anywhere_in_the_closure_changes_the_fingerprint() {
+    fn test0120_a_change_anywhere_in_the_closure_changes_the_fingerprint() {
         let before = fingerprints(&model(FacadeType::String), "4.34.1");
         assert_eq!(before, fingerprints(&model(FacadeType::String), "4.34.1"), "deterministic");
         // `Tag` is reached from `Wf` only through `Urn`'s list: changing it changes all three.
@@ -204,8 +205,9 @@ mod tests {
         assert_ne!(before["Urn"], before["Tag"]);
     }
 
+    /// TEST0121: recursive types are named where they recur
     #[test]
-    fn recursive_types_are_named_where_they_recur() {
+    fn test0121_recursive_types_are_named_where_they_recur() {
         let t = TypeDecl {
             name: "Tree".into(),
             opaque: false,

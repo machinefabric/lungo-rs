@@ -482,10 +482,10 @@ pub fn interface_addresses() -> std::io::Result<Vec<Interface>> {
 mod tests {
     use super::*;
 
-    // Expected strings were obtained from Lean 4.34.1's `IPv4Addr.ofString`/`toString` and
+    // TEST0233: Expected strings were obtained from Lean 4.34.1's `IPv4Addr.ofString`/`toString` and
     // `IPv6Addr.ofString`/`toString` (`lean --run`).
     #[test]
-    fn ipv4_parsing_follows_inet_pton4() {
+    fn test0233_ipv4_parsing_follows_inet_pton4() {
         assert_eq!(pton4(b"127.0.0.1"), Some([127, 0, 0, 1]));
         assert_eq!(pton4(b"255.255.255.255"), Some([255; 4]));
         assert_eq!(pton4(b"01.2.3.4"), None);
@@ -496,8 +496,9 @@ mod tests {
         assert_eq!(pton4(b" 1.2.3.4"), None);
     }
 
+    /// TEST0234: ipv6 round trips like libuv
     #[test]
-    fn ipv6_round_trips_like_libuv() {
+    fn test0234_ipv6_round_trips_like_libuv() {
         let cases = [
             ("::", "::"),
             ("::1", "::1"),

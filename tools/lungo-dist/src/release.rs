@@ -581,8 +581,9 @@ mod tests {
         all
     }
 
+    /// TEST0261: the runtime manifest is what the release published
     #[test]
-    fn the_runtime_manifest_is_what_the_release_published() {
+    fn test0261_the_runtime_manifest_is_what_the_release_published() {
         let m = runtime_manifest(&release_manifest(&complete()), "release").unwrap();
         assert_eq!(m["version"], VERSION);
         let artifacts = m["artifacts"].as_object().unwrap();
@@ -597,8 +598,9 @@ mod tests {
         assert_eq!(artifacts[XCFRAMEWORK_KEY]["sha256"], "ab".repeat(32));
     }
 
+    /// TEST0262: an incomplete release names what is missing
     #[test]
-    fn an_incomplete_release_names_what_is_missing() {
+    fn test0262_an_incomplete_release_names_what_is_missing() {
         let mut partial = complete();
         partial.retain(|(p, _)| *p != "x86_64-pc-windows-msvc" && *p != XCFRAMEWORK_PLATFORM);
         let e = runtime_manifest(&release_manifest(&partial), "release").unwrap_err();
@@ -610,12 +612,12 @@ mod tests {
         assert!(runtime_manifest(&release_manifest(&renamed), "release").unwrap_err().contains(RUNTIME_TARGETS[0]));
     }
 
-    /// A local distribution's wheel is linked by this machine's toolchain and says so: on Linux
+    /// TEST0263: A local distribution's wheel is linked by this machine's toolchain and says so: on Linux
     /// it is tagged for this Linux, never `manylinux`, which is a claim only the zig-linked
     /// release runtime can make. `local` used to build its wheel the way a release does, so a
     /// Linux machine with no zig could not build a local distribution at all.
     #[test]
-    fn a_local_wheel_is_tagged_for_this_machine_and_linked_by_it() {
+    fn test0263_a_local_wheel_is_tagged_for_this_machine_and_linked_by_it() {
         assert_eq!(local_wheel_tag("x86_64-unknown-linux-gnu").unwrap(), "linux_x86_64");
         assert_eq!(local_wheel_tag("aarch64-unknown-linux-gnu").unwrap(), "linux_aarch64");
         assert_eq!(release_wheel_tag("x86_64-unknown-linux-gnu").unwrap(), "manylinux_2_28_x86_64");
@@ -642,8 +644,9 @@ mod tests {
         assert!(wheel.contains("Linker::Host"), "a local wheel is not linked by the host's toolchain");
     }
 
+    /// TEST0264: every release target is linked by a toolchain that exists for it
     #[test]
-    fn every_release_target_is_linked_by_a_toolchain_that_exists_for_it() {
+    fn test0264_every_release_target_is_linked_by_a_toolchain_that_exists_for_it() {
         for t in RUNTIME_TARGETS {
             let apple_or_msvc = t.contains("-apple-") || t.ends_with("-windows-msvc");
             match linker_for(t) {

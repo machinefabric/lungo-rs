@@ -132,8 +132,9 @@ impl<'de> Deserialize<'de> for FloatArray {
 mod tests {
     use super::*;
 
+    /// TEST0254: unbounded numbers round trip as decimal strings
     #[test]
-    fn unbounded_numbers_round_trip_as_decimal_strings() {
+    fn test0254_unbounded_numbers_round_trip_as_decimal_strings() {
         let big: Nat = "340282366920938463463374607431768211456".parse().unwrap();
         let json = serde_json::to_string(&big).unwrap();
         assert_eq!(json, "\"340282366920938463463374607431768211456\"");
@@ -147,8 +148,9 @@ mod tests {
         assert_eq!(serde_json::from_str::<Int>("-5").unwrap(), Int::from(-5i128));
     }
 
+    /// TEST0255: collections serialize as sequences
     #[test]
-    fn collections_serialize_as_sequences() {
+    fn test0255_collections_serialize_as_sequences() {
         let l = List(vec![Nat::from(1u64), Nat::from(2u64)]);
         let json = serde_json::to_string(&l).unwrap();
         assert_eq!(json, "[\"1\",\"2\"]");

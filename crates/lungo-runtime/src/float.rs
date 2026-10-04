@@ -297,10 +297,10 @@ mod tests {
     use super::float_to_string;
     use crate::object::*;
 
-    // Expected values computed with Lean 4.34.1 (`lean --run`).
+    // TEST0169: Expected values computed with Lean 4.34.1 (`lean --run`).
 
     #[test]
-    fn to_string_matches_lean() {
+    fn test0169_to_string_matches_lean() {
         assert_eq!(float_to_string(0.0), "0.000000");
         assert_eq!(float_to_string(-0.0), "-0.000000");
         assert_eq!(float_to_string(f64::NAN), "NaN");
@@ -320,8 +320,9 @@ mod tests {
         }
     }
 
+    /// TEST0170: saturating conversions
     #[test]
-    fn saturating_conversions() {
+    fn test0170_saturating_conversions() {
         unsafe {
             assert_eq!(lean_float_to_uint8(300.7), 255);
             assert_eq!(lean_float_to_uint8(-3.7), 0);
@@ -335,8 +336,9 @@ mod tests {
         }
     }
 
+    /// TEST0171: bits frexp and scaleb
     #[test]
-    fn bits_frexp_and_scaleb() {
+    fn test0171_bits_frexp_and_scaleb() {
         unsafe {
             assert_eq!(lean_float_to_bits(f64::NAN), 9221120237041090560);
             assert_eq!(lean_float_to_bits(lean_float_of_bits(0xfff0000000000001)), 9221120237041090560);
@@ -356,8 +358,9 @@ mod tests {
         }
     }
 
+    /// TEST0172: libm matches lean
     #[test]
-    fn libm_matches_lean() {
+    fn test0172_libm_matches_lean() {
         unsafe {
             assert_eq!(float_to_string(sqrt(2.0)), "1.414214");
             assert_eq!(float_to_string(exp(1.0)), "2.718282");

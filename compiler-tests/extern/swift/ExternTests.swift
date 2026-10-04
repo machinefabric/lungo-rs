@@ -5,7 +5,8 @@ import XCTest
 
 /// A value made by one program is used by the other: both run on the one runtime.
 final class ExternTests: XCTestCase {
-    func testValuesPassBetweenPrograms() throws {
+    // TEST0005: values Pass Between Programs
+    func test0005_ValuesPassBetweenPrograms() throws {
         let p = try XCTUnwrap(try Provider.mkPos(3))
         let d = try Consumer.double(p)
         XCTAssertEqual(try Provider.value(d), 6)

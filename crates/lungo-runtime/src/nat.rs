@@ -271,8 +271,9 @@ mod tests {
     const MAX_SMALL: &str = "9223372036854775807";
     const MAX_SMALL_PLUS_1: &str = "9223372036854775808";
 
+    /// TEST0192: small big boundary is canonical
     #[test]
-    fn small_big_boundary_is_canonical() {
+    fn test0192_small_big_boundary_is_canonical() {
         assert!(nat(MAX_SMALL).is_scalar());
         assert!(!nat(MAX_SMALL_PLUS_1).is_scalar());
         unsafe {
@@ -287,8 +288,9 @@ mod tests {
         }
     }
 
+    /// TEST0193: arithmetic matches lean
     #[test]
-    fn arithmetic_matches_lean() {
+    fn test0193_arithmetic_matches_lean() {
         // Expected values computed with Lean 4.34.1 (`#eval`).
         unsafe {
             assert_eq!(show(lean_nat_sub(lean_box(3), lean_box(5))), "0");

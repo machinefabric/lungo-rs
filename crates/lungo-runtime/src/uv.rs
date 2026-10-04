@@ -404,8 +404,9 @@ mod tests {
         (-code) as u32
     }
 
+    /// TEST0226: tcp echo over loopback
     #[test]
-    fn tcp_echo_over_loopback() {
+    fn test0226_tcp_echo_over_loopback() {
         setup();
         unsafe {
             let server = ok(lean_uv_tcp_new());
@@ -465,8 +466,9 @@ mod tests {
         }
     }
 
+    /// TEST0227: udp datagrams over loopback
     #[test]
-    fn udp_datagrams_over_loopback() {
+    fn test0227_udp_datagrams_over_loopback() {
         setup();
         unsafe {
             let u1 = ok(lean_uv_udp_new());
@@ -497,8 +499,9 @@ mod tests {
         }
     }
 
+    /// TEST0228: dns resolves localhost and rejects unknown names
     #[test]
-    fn dns_resolves_localhost_and_rejects_unknown_names() {
+    fn test0228_dns_resolves_localhost_and_rejects_unknown_names() {
         setup();
         unsafe {
             let host = lean_mk_string("localhost");
@@ -518,8 +521,9 @@ mod tests {
         }
     }
 
+    /// TEST0229: timers fire once and repeat
     #[test]
-    fn timers_fire_once_and_repeat() {
+    fn test0229_timers_fire_once_and_repeat() {
         setup();
         unsafe {
             let t = ok(lean_uv_timer_mk(50, 0));
@@ -550,8 +554,9 @@ mod tests {
         }
     }
 
+    /// TEST0230: address strings
     #[test]
-    fn address_strings() {
+    fn test0230_address_strings() {
         unsafe {
             let s = lean_mk_string("1.2.3");
             assert!(lean_uv_pton_v4(s).is_scalar());
@@ -566,8 +571,9 @@ mod tests {
         }
     }
 
+    /// TEST0231: system queries succeed
     #[test]
-    fn system_queries_succeed() {
+    fn test0231_system_queries_succeed() {
         unsafe {
             let cwd = ok(lean_uv_cwd());
             assert_eq!(std::path::Path::new(lean_string_str(cwd)), std::env::current_dir().unwrap());
@@ -592,9 +598,10 @@ mod tests {
         }
     }
 
+    /// TEST0232: signals are delivered to watchers
     #[cfg(unix)]
     #[test]
-    fn signals_are_delivered_to_watchers() {
+    fn test0232_signals_are_delivered_to_watchers() {
         setup();
         unsafe {
             // Portable number 10 is `SIGUSR1`.

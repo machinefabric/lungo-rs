@@ -6,8 +6,9 @@
 use lungo_build::{Environment, configure};
 use std::path::Path;
 
+/// TEST0042: the executable standard library translates
 #[test]
-fn the_executable_standard_library_translates() {
+fn test0042_the_executable_standard_library_translates() {
     let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/stdlib").canonicalize().unwrap();
     let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("stdlib");
     let env = Environment::native(project.clone(), scratch.join("out"), scratch.join("work"));

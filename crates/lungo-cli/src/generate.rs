@@ -35,9 +35,27 @@ pub struct Settings<'a> {
     pub outputs: Vec<Output>,
     pub runtime_dir: Option<PathBuf>,
     pub wasi_sdk: Option<PathBuf>,
-    /// Compare instead of writing (`--verify`).
-    pub verify: bool,
+    pub mode: Mode,
 }
+
+/// What `lungo generate` does with each output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Write the generated sources and link this machine's platform products.
+    Write,
+    /// Compare the generated sources with what the project generates now, writing nothing.
+    /// Platform products are not compared: each machine links its own.
+    Verify,
+    /// Check the generated sources as `Verify` does, then link this machine's platform
+    /// products into outputs whose sources are current, leaving the sources as they are.
+    Link,
+}
+
+/// The platform product of the TypeScript binding: the program and the lungo runtime linked
+/// into one WebAssembly module, on and for the machine that links it. The runtime archive it
+/// links is built by Cargo, which mixes the host into the identity of every crate with a build
+/// script, so two machines link different bytes from the same sources.
+pub const WASM_MODULE: &str = "program.wasm";
 
 /// The WebAssembly target of the TypeScript binding.
 pub const WASM_TARGET: &str = "wasm32-wasip1";
@@ -100,8 +118,14 @@ fn runtime_cache(rel: &str) -> bool {
     rel.split(['/', '\\']).any(|component| component == "__pycache__")
 }
 
-/// How the output directory `dir` differs from what the project generates now (`expected`).
-fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+/// How the output directory `dir` differs from what the project generates now: the sources
+/// `expected`, besides the platform products named `products`, which are not compared.
+fn drift(
+    dir: &Path,
+    expected: &BTreeMap<String, Vec<u8>>,
+    products: &[&str],
+    actual: &BTreeMap<String, Vec<u8>>,
+) -> Option<String> {
     let mut lines = Vec::new();
     for (rel, bytes) in expected {
         match actual.get(rel) {
@@ -113,7 +137,7 @@ fn drift(dir: &Path, expected: &BTreeMap<String, Vec<u8>>, actual: &BTreeMap<Str
     lines.extend(
         actual
             .keys()
-            .filter(|rel| !expected.contains_key(*rel) && !runtime_cache(rel))
+            .filter(|rel| !expected.contains_key(*rel) && !products.contains(&rel.as_str()) && !runtime_cache(rel))
             .map(|rel| format!("  extra:   {rel}")),
     );
     (!lines.is_empty())
@@ -129,8 +153,9 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         let mut rust = s.rust.clone();
         rust.out_dir = None;
         let builder = Builder::from_options(s.lean.clone(), rust);
-        if s.verify {
+        if s.mode != Mode::Write {
             // Generated beside the output and compared: the Rust module is the build's output.
+            // It has no platform products to link.
             let scratch = dir.with_file_name(format!(
                 ".lungo-verify-{}-{}",
                 dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
@@ -148,7 +173,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
                     .map_err(|e| Error::io(format!("cannot remove {}", scratch.display()), e))?;
             }
             let (at, expected, actual) = compared?;
-            match drift(&at, &expected, &actual) {
+            match drift(&at, &expected, &[], &actual) {
                 Some(d) => drifts.push(d),
                 None => report.push(format!("verified: rust {}", at.display())),
             }
@@ -188,7 +213,16 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             Generator::Builtin(_) => format!("builtin {}", lungo_build::codegen::GENERATOR_VERSION),
             Generator::Plugin { program, digest } => format!("plugin {} {digest}", program.display()),
         };
-        let sdk = if o.language == "ts" { Some(crate::wasm::wasi_sdk(s.wasi_sdk.as_deref())?) } else { None };
+        let products: &[&str] = if o.language == "ts" { &[WASM_MODULE] } else { &[] };
+        if s.mode == Mode::Link && products.is_empty() {
+            continue;
+        }
+        // Linking needs the wasi-sdk; comparing sources does not.
+        let sdk = if o.language == "ts" && s.mode != Mode::Verify {
+            Some(crate::wasm::wasi_sdk(s.wasi_sdk.as_deref())?)
+        } else {
+            None
+        };
         let sdk_text = sdk.as_ref().map(|p| p.to_string_lossy().into_owned());
         let config = serde_json::to_string(&KeyConfig {
             language: &o.language,
@@ -202,7 +236,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         })
         .expect("key configuration serializes");
         let key = lungo_driver::build_key(&ctx, env, &config)?;
-        if !s.verify
+        if s.mode == Mode::Write
             && let Some(previous) = output::read_build_info(&o.dir, &ctx.project)
             && previous.build_key == key.value
             && output::still_current(&o.dir, &previous)
@@ -246,26 +280,31 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             ".lungo-work-{}",
             dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
         ));
+        if s.mode != Mode::Write {
+            let expected: BTreeMap<String, Vec<u8>> =
+                files.iter().map(|(k, v)| (k.clone(), v.as_bytes().to_vec())).collect();
+            if let Some(d) = drift(&o.dir, &expected, products, &output::output_files(&dir)?) {
+                drifts.push(d);
+                continue;
+            }
+            if s.mode == Mode::Verify {
+                report.push(format!("verified: {} {}", o.language, o.dir.display()));
+                continue;
+            }
+        }
         let mut binary = BTreeMap::new();
         if let Some(sdk) = &sdk {
             let runtime_package = runtime::runtime_package(&runtime, WASM_TARGET)?;
             let module = crate::wasm::link(&program.files, &program.boundary, &runtime_package, sdk, &work)?;
-            binary.insert("program.wasm".to_owned(), module);
+            binary.insert(WASM_MODULE.to_owned(), module);
         }
-        if s.verify {
+        if s.mode == Mode::Link {
+            output::replace_products(&dir, &binary)?;
             if work.exists() {
                 std::fs::remove_dir_all(&work)
                     .map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
             }
-            let expected: BTreeMap<String, Vec<u8>> = files
-                .iter()
-                .map(|(k, v)| (k.clone(), v.as_bytes().to_vec()))
-                .chain(binary.iter().map(|(k, v)| (k.clone(), v.clone())))
-                .collect();
-            match drift(&o.dir, &expected, &output::output_files(&dir)?) {
-                Some(d) => drifts.push(d),
-                None => report.push(format!("verified: {} {}", o.language, o.dir.display())),
-            }
+            report.push(format!("linked: {} {} for this machine", o.language, o.dir.display()));
             continue;
         }
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
@@ -298,18 +337,35 @@ fn codegen_error(analysis: &Analysis, errors: Vec<lungo_build::CodegenError>) ->
 mod drift_tests {
     use super::*;
 
-    /// A bytecode cache Python wrote into a generated package is not drift; a file
+    /// TEST0084: A bytecode cache Python wrote into a generated package is not drift; a file
     /// nobody generated is, even one whose name looks compiled.
     #[test]
-    fn a_runtime_cache_is_not_drift_and_a_stray_file_is() {
+    fn test0084_a_runtime_cache_is_not_drift_and_a_stray_file_is() {
         let expected: BTreeMap<String, Vec<u8>> = [("__init__.py".to_string(), b"x".to_vec())].into();
         let mut actual = expected.clone();
         actual.insert("__pycache__/__init__.cpython-311.pyc".into(), b"c".to_vec());
         actual.insert("sub/__pycache__/m.cpython-312.pyc".into(), b"c".to_vec());
-        assert_eq!(drift(Path::new("out"), &expected, &actual), None);
+        assert_eq!(drift(Path::new("out"), &expected, &[], &actual), None);
 
         actual.insert("stray.pyc".into(), b"c".to_vec());
-        let report = drift(Path::new("out"), &expected, &actual).expect("a stray file is drift");
+        let report = drift(Path::new("out"), &expected, &[], &actual).expect("a stray file is drift");
         assert!(report.contains("extra:   stray.pyc") && !report.contains("__pycache__"), "{report}");
+    }
+
+    /// TEST0085: A platform product is neither compared nor extra: another machine linked the one in the
+    /// directory, from the same sources. A source that differs still is drift beside it.
+    #[test]
+    fn test0085_a_platform_product_is_not_compared_and_a_changed_source_is() {
+        let expected: BTreeMap<String, Vec<u8>> = [("index.js".to_string(), b"js".to_vec())].into();
+        let mut actual = expected.clone();
+        actual.insert(WASM_MODULE.into(), b"linked elsewhere".to_vec());
+        assert_eq!(drift(Path::new("out"), &expected, &[WASM_MODULE], &actual), None);
+
+        let report = drift(Path::new("out"), &expected, &[], &actual).expect("unnamed, it is a stray file");
+        assert!(report.contains("extra:   program.wasm"), "{report}");
+
+        actual.insert("index.js".into(), b"edited".to_vec());
+        let report = drift(Path::new("out"), &expected, &[WASM_MODULE], &actual).expect("a changed source");
+        assert!(report.contains("changed: index.js") && !report.contains("program.wasm"), "{report}");
     }
 }

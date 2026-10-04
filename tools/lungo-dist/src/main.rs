@@ -530,10 +530,10 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
 
-    /// A musl runtime is static only: musl targets build with `crt-static`, under which Rust
+    /// TEST0260: A musl runtime is static only: musl targets build with `crt-static`, under which Rust
     /// makes no shared library, so a package that expected one could not be assembled.
     #[test]
-    fn a_musl_runtime_is_static_only() {
+    fn test0260_a_musl_runtime_is_static_only() {
         for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
             let libs = libraries(target);
             assert_eq!(libs.built_static, "liblungo.a");

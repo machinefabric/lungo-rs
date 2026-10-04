@@ -43,8 +43,9 @@ mod tests {
         const FINGERPRINT: &'static str = "ab12";
     }
 
+    /// TEST0252: the layout a program was generated for must be the types
     #[test]
-    fn the_layout_a_program_was_generated_for_must_be_the_types() {
+    fn test0252_the_layout_a_program_was_generated_for_must_be_the_types() {
         assert_layout::<Point>("ab12");
         assert_layout::<crate::LeanValue<Point>>("ab12");
         for other in ["ab13", "ab1", "ab123", ""] {

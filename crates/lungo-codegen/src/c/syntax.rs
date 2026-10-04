@@ -70,8 +70,9 @@ mod tests {
         assert_eq!(string(b"\x001??=\"\\\n\xff"), "\"\\0001\\?\\?=\\\"\\\\\\012\\377\"");
     }
 
+    /// TEST0118: comments cannot be closed by their text
     #[test]
-    fn comments_cannot_be_closed_by_their_text() {
+    fn test0118_comments_cannot_be_closed_by_their_text() {
         assert_eq!(comment("a */ b"), "/* a * / b */");
     }
 }

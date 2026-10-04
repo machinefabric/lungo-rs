@@ -5,8 +5,9 @@ fn sess(open: bool, count: u64) -> Sess {
     Sess { is_open: open, count: Nat::from(count) }
 }
 
+/// TEST0256: apply follows the lean definition
 #[test]
-fn apply_follows_the_lean_definition() {
+fn test0256_apply_follows_the_lean_definition() {
     assert_eq!(formal::apply(Op::Open, sess(false, 0)), Some(sess(true, 0)));
     assert_eq!(formal::apply(Op::Open, sess(true, 3)), None);
     assert_eq!(formal::apply(Op::Close, sess(true, 3)), Some(sess(false, 3)));
@@ -14,8 +15,9 @@ fn apply_follows_the_lean_definition() {
     assert_eq!(formal::apply(Op::Tick, sess(false, 41)), Some(sess(false, 42)));
 }
 
+/// TEST0257: counts beyond machine integers are exact
 #[test]
-fn counts_beyond_machine_integers_are_exact() {
+fn test0257_counts_beyond_machine_integers_are_exact() {
     let huge: Nat = "340282366920938463463374607431768211455".parse().unwrap();
     let s = Sess { is_open: true, count: huge.clone() };
     let next = formal::apply(Op::Tick, s).unwrap();
@@ -24,16 +26,18 @@ fn counts_beyond_machine_integers_are_exact() {
     assert_eq!(formal::apply(Op::Tick, edge).unwrap().count.to_string(), "18446744073709551616");
 }
 
+/// TEST0258: run stops at the first rejected operation
 #[test]
-fn run_stops_at_the_first_rejected_operation() {
+fn test0258_run_stops_at_the_first_rejected_operation() {
     let ops = List::from(vec![Op::Open, Op::Tick, Op::Tick, Op::Close]);
     assert_eq!(formal::run(ops, sess(false, 0)), Some(sess(false, 2)));
     let bad = List::from(vec![Op::Close, Op::Tick]);
     assert_eq!(formal::run(bad, sess(false, 0)), None);
 }
 
+/// TEST0259: metadata identifies the lean declaration
 #[test]
-fn metadata_identifies_the_lean_declaration() {
+fn test0259_metadata_identifies_the_lean_declaration() {
     let info = formal::__meta::declaration("Formal.apply").expect("Formal.apply is exported");
     assert_eq!(info.module, "Formal.Session");
     assert_eq!(info.lean_type, "Formal.Op → Formal.Sess → Option Formal.Sess");

@@ -63,8 +63,9 @@ fn decode_program(v: &Value) -> Result<Program, FrameError> {
     decode_frame(FrameKind::Response, &encode_frame(FrameKind::Response, v).unwrap())
 }
 
+/// TEST0152: programs round trip
 #[test]
-fn programs_round_trip() {
+fn test0152_programs_round_trip() {
     let frame = encode_frame(FrameKind::Response, &sample()).unwrap();
     assert_eq!(&frame[..4], b"LNGF");
     assert_eq!(frame[4], FrameKind::Response as u8);
@@ -75,8 +76,9 @@ fn programs_round_trip() {
     assert!(decode_program(&sample_value()).is_ok());
 }
 
+/// TEST0153: unknown operations are rejected
 #[test]
-fn unknown_operations_are_rejected() {
+fn test0153_unknown_operations_are_rejected() {
     // An unknown statement.
     let mut v = sample_value();
     rename_key(&mut v, "set_tag", "set_colour");
@@ -96,8 +98,9 @@ fn unknown_operations_are_rejected() {
     assert!(decode_program(&v).unwrap_err().to_string().contains("bytecode"));
 }
 
+/// TEST0154: unknown representations are rejected
 #[test]
-fn unknown_representations_are_rejected() {
+fn test0154_unknown_representations_are_rejected() {
     let mut v = sample_value();
     each_map(&mut v, &mut |entries| {
         for (k, x) in entries.iter_mut() {
@@ -109,8 +112,9 @@ fn unknown_representations_are_rejected() {
     assert!(decode_program(&v).unwrap_err().to_string().contains("uint128"));
 }
 
+/// TEST0155: unknown fields are rejected
 #[test]
-fn unknown_fields_are_rejected() {
+fn test0155_unknown_fields_are_rejected() {
     let mut v = sample_value();
     each_map(&mut v, &mut |entries| {
         if entries.iter().any(|(k, _)| k.as_text() == Some("origin")) {
@@ -120,15 +124,17 @@ fn unknown_fields_are_rejected() {
     assert!(decode_program(&v).unwrap_err().to_string().contains("inline_hint"));
 }
 
+/// TEST0156: missing fields are rejected
 #[test]
-fn missing_fields_are_rejected() {
+fn test0156_missing_fields_are_rejected() {
     let mut v = sample_value();
     each_map(&mut v, &mut |entries| entries.retain(|(k, _)| k.as_text() != Some("borrow")));
     assert!(decode_program(&v).unwrap_err().to_string().contains("borrow"));
 }
 
+/// TEST0157: corrupt frames are rejected
 #[test]
-fn corrupt_frames_are_rejected() {
+fn test0157_corrupt_frames_are_rejected() {
     let good = encode_frame(FrameKind::Response, &sample()).unwrap();
     let decode = |f: &[u8]| decode_frame::<Program>(FrameKind::Response, f).unwrap_err();
 

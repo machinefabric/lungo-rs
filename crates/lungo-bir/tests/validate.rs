@@ -131,14 +131,16 @@ fn simple(stmts: Vec<Stmt>, terminator: Terminator) -> Program {
     ])
 }
 
+/// TEST0070: every instruction in well formed use is accepted
 #[test]
-fn every_instruction_in_well_formed_use_is_accepted() {
+fn test0070_every_instruction_in_well_formed_use_is_accepted() {
     let p = program(vec![add(), everything()]);
     assert_eq!(errors_of(&p), Vec::<String>::new());
 }
 
+/// TEST0071: scoping
 #[test]
-fn scoping() {
+fn test0071_scoping() {
     assert_rejects(&simple(vec![], ret(9)), "x_9 is used outside its scope");
     assert_rejects(
         &simple(vec![let_(1, IrType::Object, Expr::Lit(Literal::Str("s".into())))], ret(1)),
@@ -163,8 +165,9 @@ fn scoping() {
     assert_rejects(&simple(vec![join], ret(8)), "x_8 is used outside its scope");
 }
 
+/// TEST0072: join points
 #[test]
-fn join_points() {
+fn test0072_join_points() {
     let join = || Stmt::Join { id: 7, params: vec![param(8, IrType::Object, false)], body: block(vec![], ret(8)) };
     assert_rejects(
         &simple(vec![], Terminator::Jmp { id: 7, args: vec![Arg::Var(1)] }),
@@ -186,8 +189,9 @@ fn join_points() {
     assert_rejects(&simple(vec![recursive], ret(1)), "jump to block_7, which is not in scope");
 }
 
+/// TEST0073: calls and closures
 #[test]
-fn calls_and_closures() {
+fn test0073_calls_and_closures() {
     let call =
         |args: Vec<Arg>| simple(vec![let_(3, IrType::Object, Expr::Fap { function: "add".into(), args })], ret(3));
     assert_rejects(&call(vec![Arg::Var(1)]), "add takes 2 arguments but is applied to 1");
@@ -236,8 +240,9 @@ fn calls_and_closures() {
     );
 }
 
+/// TEST0074: constructors and fields
 #[test]
-fn constructors_and_fields() {
+fn test0074_constructors_and_fields() {
     let bad_arity = simple(
         vec![let_(3, IrType::Object, Expr::Ctor { info: ctor("P", 0, 2, 0, 0), args: vec![Arg::Var(1)] })],
         ret(3),
@@ -291,8 +296,9 @@ fn constructors_and_fields() {
     assert_rejects(&simple(vec![let_(3, IrType::Object, reuse)], ret(3)), "reuse for P gives 0 fields for 1");
 }
 
+/// TEST0075: reference counting
 #[test]
-fn reference_counting() {
+fn test0075_reference_counting() {
     assert_rejects(
         &simple(vec![Stmt::Inc { var: 1, count: 0, checked: true, persistent: false }], ret(1)),
         "inc by zero",
@@ -306,8 +312,9 @@ fn reference_counting() {
     assert_rejects(&simple(vec![let_(3, IrType::Object, Expr::IsShared { var: 1 })], ret(1)), "isShared bound as obj");
 }
 
+/// TEST0076: boxing and literals
 #[test]
-fn boxing_and_literals() {
+fn test0076_boxing_and_literals() {
     assert_rejects(
         &simple(vec![let_(3, IrType::Object, Expr::Box { ty: IrType::Object, var: 1 })], ret(3)),
         "box of non-scalar type obj",
@@ -329,8 +336,9 @@ fn boxing_and_literals() {
     );
 }
 
+/// TEST0077: cases and returns
 #[test]
-fn cases_and_returns() {
+fn test0077_cases_and_returns() {
     let case = |var, var_ty, alts| simple(vec![], Terminator::Case { type_name: "T".into(), var, var_ty, alts });
     let leaf = |tag| Alt::Ctor { info: ctor("T.c", tag, 0, 0, 0), body: block(vec![], ret(1)) };
     let default = || Alt::Default { body: block(vec![], ret(1)) };
@@ -364,8 +372,9 @@ fn cases_and_returns() {
     assert_rejects(&scalar, "an erased argument cannot be passed as u8");
 }
 
+/// TEST0078: program structure
 #[test]
-fn program_structure() {
+fn test0078_program_structure() {
     let mut p = program(vec![add(), everything()]);
     p.bir_version = BIR_VERSION + 1;
     assert_rejects(&p, "is incompatible with");
@@ -387,8 +396,9 @@ fn program_structure() {
     assert_rejects(&p, "initializer references missing declaration \"initAdd\"");
 }
 
+/// TEST0079: externs
 #[test]
-fn externs() {
+fn test0079_externs() {
     let entry = ExternEntry::Standard { backend: "c".into(), symbol: "lean_add".into() };
     let ext = |selected: ExternEntry, exported_by: Option<&str>| Declaration {
         name: "ext".into(),

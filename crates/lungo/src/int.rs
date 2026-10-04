@@ -216,8 +216,9 @@ impl std::ops::Mul for &Int {
 mod tests {
     use super::*;
 
+    /// TEST0251: representation is canonical across the i64 boundary
     #[test]
-    fn representation_is_canonical_across_the_i64_boundary() {
+    fn test0251_representation_is_canonical_across_the_i64_boundary() {
         let min = Int::from(i64::MIN);
         let below = &min - &Int::from(1);
         assert_eq!(below.to_i64(), None);

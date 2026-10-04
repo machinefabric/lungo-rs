@@ -111,8 +111,9 @@ pub fn validate_language_name(name: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// TEST0083: project files reject unknown keys and plugins named like built ins
     #[test]
-    fn project_files_reject_unknown_keys_and_plugins_named_like_built_ins() {
+    fn test0083_project_files_reject_unknown_keys_and_plugins_named_like_built_ins() {
         let dir = std::env::temp_dir().join(format!("lungo-config-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("lungo.toml");

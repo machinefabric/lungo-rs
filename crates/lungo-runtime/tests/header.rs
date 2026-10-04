@@ -4,8 +4,9 @@
 
 use std::path::Path;
 
+/// TEST0242: header declares every primitive of the registry
 #[test]
-fn header_declares_every_primitive_of_the_registry() {
+fn test0242_header_declares_every_primitive_of_the_registry() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("include/lungo.h");
     let current = std::fs::read_to_string(&path).unwrap();
     let expected =

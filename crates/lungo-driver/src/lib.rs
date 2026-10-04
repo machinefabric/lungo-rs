@@ -546,14 +546,16 @@ pub fn relative_path(base: &Path, path: &Path) -> String {
 mod tests {
     use super::*;
 
+    /// TEST0135: relative paths never leak absolute prefixes
     #[test]
-    fn relative_paths_never_leak_absolute_prefixes() {
+    fn test0135_relative_paths_never_leak_absolute_prefixes() {
         assert_eq!(relative_path(Path::new("/a/b/crate"), Path::new("/a/b/crate/lean")), "lean");
         assert_eq!(relative_path(Path::new("/a/b/crate"), Path::new("/a/b/shared/lean")), "../shared/lean");
     }
 
+    /// TEST0136: options round trip through toml and reject unknown keys
     #[test]
-    fn options_round_trip_through_toml_and_reject_unknown_keys() {
+    fn test0136_options_round_trip_through_toml_and_reject_unknown_keys() {
         let options = LeanOptions::default().root_module("Formal").host_extern("host_log").deny_axioms(true);
         let text = toml::to_string(&options).unwrap();
         assert_eq!(toml::from_str::<LeanOptions>(&text).unwrap(), options);
@@ -561,8 +563,9 @@ mod tests {
         assert_eq!(toml::from_str::<LeanOptions>("").unwrap(), LeanOptions::default(), "every setting has a default");
     }
 
+    /// TEST0137: program names are path macro and symbol safe
     #[test]
-    fn program_names_are_path_macro_and_symbol_safe() {
+    fn test0137_program_names_are_path_macro_and_symbol_safe() {
         for good in ["formal", "Formal_2", "type-error"] {
             assert!(validate_name(good, false).is_ok(), "{good}");
         }

@@ -19,12 +19,12 @@ fn main() {
     }
     let tests: [(&str, fn()); 2] = [
         (
-            "a_plugin_receives_the_request_and_its_files_are_published",
-            a_plugin_receives_the_request_and_its_files_are_published,
+            "test0268_a_plugin_receives_the_request_and_its_files_are_published",
+            test0268_a_plugin_receives_the_request_and_its_files_are_published,
         ),
         (
-            "plugin_failures_are_reported_and_nothing_is_published",
-            plugin_failures_are_reported_and_nothing_is_published,
+            "test0269_plugin_failures_are_reported_and_nothing_is_published",
+            test0269_plugin_failures_are_reported_and_nothing_is_published,
         ),
     ];
     for (name, test) in tests {
@@ -116,7 +116,8 @@ fn generate(out: &Path, opts: &[&str]) -> std::process::Output {
     cmd.output().unwrap()
 }
 
-fn a_plugin_receives_the_request_and_its_files_are_published() {
+/// TEST0268: a plugin receives the request and its files are published (run by this file's own harness, `main`)
+fn test0268_a_plugin_receives_the_request_and_its_files_are_published() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("echo-out");
     let run = generate(&out, &[]);
     assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
@@ -147,7 +148,8 @@ fn a_plugin_receives_the_request_and_its_files_are_published() {
     assert!(String::from_utf8_lossy(&again.stdout).starts_with("up to date: echo "));
 }
 
-fn plugin_failures_are_reported_and_nothing_is_published() {
+/// TEST0269: plugin failures are reported and nothing is published (run by this file's own harness, `main`)
+fn test0269_plugin_failures_are_reported_and_nothing_is_published() {
     for (opts, needle) in [
         (&["fail=the plugin refuses"][..], "the plugin refuses"),
         (&["garbage=1"][..], "malformed response"),

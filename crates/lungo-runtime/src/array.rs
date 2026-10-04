@@ -579,8 +579,9 @@ mod tests {
         unsafe { array_elements(o).iter().map(|v| lean_unbox(*v)).collect() }
     }
 
+    /// TEST0158: push grows and copies on write
     #[test]
-    fn push_grows_and_copies_on_write() {
+    fn test0158_push_grows_and_copies_on_write() {
         unsafe {
             let mut a = lean_alloc_array(0, 0);
             for k in 0..10 {
@@ -602,8 +603,9 @@ mod tests {
         }
     }
 
+    /// TEST0159: out of bounds get returns default
     #[test]
-    fn out_of_bounds_get_returns_default() {
+    fn test0159_out_of_bounds_get_returns_default() {
         crate::exports::recording::install();
         unsafe {
             let a = array_from_vec(vec![lean_box(10), lean_box(20)]);
@@ -616,8 +618,9 @@ mod tests {
         }
     }
 
+    /// TEST0160: replicate list round trip and swap
     #[test]
-    fn replicate_list_round_trip_and_swap() {
+    fn test0160_replicate_list_round_trip_and_swap() {
         unsafe {
             let s = lean_mk_string("x");
             let r = lean_mk_array(lean_box(3), s);
@@ -638,8 +641,9 @@ mod tests {
         }
     }
 
+    /// TEST0161: byte arrays match lean
     #[test]
-    fn byte_arrays_match_lean() {
+    fn test0161_byte_arrays_match_lean() {
         unsafe {
             let b = byte_array_from_slice(&[1, 2, 3]);
             // Lean 4.34.1: `ByteArray.hash ⟨#[1,2,3]⟩` and the empty hash.
@@ -671,8 +675,9 @@ mod tests {
         }
     }
 
+    /// TEST0162: float arrays round trip
     #[test]
-    fn float_arrays_round_trip() {
+    fn test0162_float_arrays_round_trip() {
         unsafe {
             let f = float_array_from_slice(&[1.5, -2.0]);
             let f = lean_float_array_push(f, 3.25);

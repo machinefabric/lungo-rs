@@ -12,8 +12,9 @@ fn nats(xs: &[u64]) -> List<Nat> {
     xs.iter().map(|&x| nat(x)).collect()
 }
 
+/// TEST0043: lean calls back into rust
 #[test]
-fn lean_calls_back_into_rust() {
+fn test0043_lean_calls_back_into_rust() {
     // One test drives the host's global table and log, so the steps cannot interleave.
     callbacks::set_table(&[("alpha", 1), ("beta", 20), ("gamma", 300)]);
     callbacks::take_log();
@@ -34,8 +35,9 @@ fn lean_calls_back_into_rust() {
     assert_eq!(host::host_lookup("nope".into()), None);
 }
 
+/// TEST0044: closures cross the boundary in both directions
 #[test]
-fn closures_cross_the_boundary_in_both_directions() {
+fn test0044_closures_cross_the_boundary_in_both_directions() {
     // Lean passes its closure to Rust, which calls it back for every element.
     assert_eq!(host::transformed(nats(&[1, 2, 3, 0]), nat(10)), nats(&[11, 21, 31, 1]));
     // Rust passes its closure to Lean, which passes it back to Rust.
@@ -47,8 +49,9 @@ fn closures_cross_the_boundary_in_both_directions() {
     assert_eq!(r, List::from(vec![&big + &nat(1)]));
 }
 
+/// TEST0045: custom syntax and macros compile unchanged
 #[test]
-fn custom_syntax_and_macros_compile_unchanged() {
+fn test0045_custom_syntax_and_macros_compile_unchanged() {
     // `defconst answer := sum! 20, 20, 2`
     assert_eq!(host::answer(), nat(42));
     // `sum! n, answer, (n |>> (· * 3))` = n + 42 + 9n
@@ -66,20 +69,20 @@ fn custom_syntax_and_macros_compile_unchanged() {
     assert_ne!(host::token_hash(Token::Plus), host::token_hash(Token::Times));
 }
 
-/// Gate: PureRust mode links no Lean runtime: the build records no native link directives.
+/// TEST0046: Gate: PureRust mode links no Lean runtime: the build records no native link directives.
 #[test]
-fn pure_rust_build_links_no_native_libraries() {
+fn test0046_pure_rust_build_links_no_native_libraries() {
     let info = include_str!(concat!(env!("OUT_DIR"), "/lungo/host/build-info.json"));
     assert!(info.contains("\"link_directives\": []"), "PureRust build links native libraries:\n{info}");
 }
 
-/// Gate: PureRust mode links no Lean runtime. The binary may contain no C-level symbol of
+/// TEST0047: Gate: PureRust mode links no Lean runtime. The binary may contain no C-level symbol of
 /// Lean's runtime (`lean_*`) or of Lean-emitted C code (`l_*`, `initialize_*`): the runtime
 /// and all compiled Lean code are Rust, whose symbols are mangled. (MSVC keeps symbols in a
 /// separate PDB file rather than the executable, so this reading applies to ELF and Mach-O.)
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[test]
-fn pure_rust_binary_contains_no_lean_native_code() {
+fn test0047_pure_rust_binary_contains_no_lean_native_code() {
     use object::{Object, ObjectSymbol};
     let exe = std::env::current_exe().unwrap();
     let data = std::fs::read(&exe).unwrap();

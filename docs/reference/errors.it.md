@@ -97,10 +97,11 @@ trasferimento.
 
 ### LNG0110
 
-**Output generato non aggiornato.** `lungo generate --verify` ha trovato una directory di
-output diversa da quella che il progetto genera ora; il messaggio elenca ogni file modificato,
-mancante o in più. Il registro della build (`build-info.json`) non viene confrontato. Esegui
-`lungo generate` e fai il commit di ciò che scrive.
+**Output generato non aggiornato.** `lungo generate --verify` (o `--link`) ha trovato una
+directory di output i cui sorgenti generati sono diversi da quelli che il progetto genera ora;
+il messaggio elenca ogni file modificato, mancante o in più. Non vengono confrontati né il
+registro della build (`build-info.json`) né un prodotto di piattaforma (il `program.wasm` del
+binding TypeScript). Esegui `lungo generate` e fai il commit dei sorgenti che scrive.
 
 ## Lean
 

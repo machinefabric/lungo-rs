@@ -147,8 +147,9 @@ mod tests {
         }
     }
 
+    /// TEST0190: name equality is structural
     #[test]
-    fn name_equality_is_structural() {
+    fn test0190_name_equality_is_structural() {
         unsafe {
             let a = name_str(name_str(lean_box(0), "Lean"), "Name");
             let b = name_str(name_str(lean_box(0), "Lean"), "Name");
@@ -163,8 +164,9 @@ mod tests {
         }
     }
 
+    /// TEST0191: strict boolean operators
     #[test]
-    fn strict_boolean_operators() {
+    fn test0191_strict_boolean_operators() {
         unsafe {
             assert_eq!(lean_strict_and(1, 0), 0);
             assert_eq!(lean_strict_or(0, 1), 1);

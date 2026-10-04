@@ -16,12 +16,14 @@ fn assert_documents_every_code(page: &str) {
     assert!(unknown.is_empty(), "{path} documents codes that do not exist: {unknown:?}");
 }
 
+/// TEST0150: error reference matches the codes
 #[test]
-fn error_reference_matches_the_codes() {
+fn test0150_error_reference_matches_the_codes() {
     assert_documents_every_code("errors.md");
 }
 
+/// TEST0151: italian error reference matches the codes
 #[test]
-fn italian_error_reference_matches_the_codes() {
+fn test0151_italian_error_reference_matches_the_codes() {
     assert_documents_every_code("errors.it.md");
 }

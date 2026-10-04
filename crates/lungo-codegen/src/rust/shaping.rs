@@ -151,8 +151,9 @@ impl<'a> Selector<'a> {
 mod tests {
     use super::*;
 
+    /// TEST0132: paths select names and namespaces
     #[test]
-    fn paths_select_names_and_namespaces() {
+    fn test0132_paths_select_names_and_namespaces() {
         assert!(selects(".", "Formal.Sess"));
         assert!(selects("Formal.Sess", "Formal.Sess"));
         assert!(selects("Formal", "Formal.Sess.isOpen"));
@@ -160,8 +161,9 @@ mod tests {
         assert!(!selects("Formal.Sess.isOpen", "Formal.Sess"));
     }
 
+    /// TEST0133: settings that select nothing are reported
     #[test]
-    fn settings_that_select_nothing_are_reported() {
+    fn test0133_settings_that_select_nothing_are_reported() {
         let shaping = Shaping {
             type_attributes: vec![
                 Attribute { path: ".".into(), attribute: "#[a]".into() },

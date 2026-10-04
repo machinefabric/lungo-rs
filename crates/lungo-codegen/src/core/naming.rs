@@ -151,8 +151,9 @@ pub fn distinct_locals(names: Vec<String>) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// TEST0126: shortest unique suffixes are distinct
     #[test]
-    fn shortest_unique_suffixes_are_distinct() {
+    fn test0126_shortest_unique_suffixes_are_distinct() {
         let names = ["Demo.area", "Geo.Shape.area", "Demo.perimeter", "B", "A.B"];
         let short = short_names(&names);
         assert_eq!(short[0], vec!["Demo", "area"]);
@@ -162,8 +163,9 @@ mod tests {
         assert_eq!(short[4], vec!["A", "B"]);
     }
 
+    /// TEST0127: a name claimed twice is an error naming both owners
     #[test]
-    fn a_name_claimed_twice_is_an_error_naming_both_owners() {
+    fn test0127_a_name_claimed_twice_is_an_error_naming_both_owners() {
         let mut s = Scope::new("C");
         s.reserve_prefix("demo__");
         s.claim("demo_foo".into(), "function Demo.foo").unwrap();
@@ -172,13 +174,13 @@ mod tests {
         assert!(s.claim("demo__x".into(), "type X").is_err());
     }
 
-    /// A function beside a type of its own name keeps one more component, and keeps adding
+    /// TEST0128: A function beside a type of its own name keeps one more component, and keeps adding
     /// them while what it gets is taken by something that is not a function. Lean code names
     /// the type an operation answers with after the operation (`Acquire`, `Gate.acquire`); in
     /// a language with one case for both, that was refused, and every such pair had to be
     /// renamed in the model for the sake of one binding.
     #[test]
-    fn a_function_gives_way_to_what_is_not_a_function() {
+    fn test0128_a_function_gives_way_to_what_is_not_a_function() {
         let upper = |cs: &[String]| -> String {
             cs.iter()
                 .map(|c| {
@@ -215,8 +217,9 @@ mod tests {
         assert!(e.contains("function Demo.Gate.grant") && e.contains("type Demo.Grant"), "{e}");
     }
 
+    /// TEST0129: repeated locals are numbered without collisions
     #[test]
-    fn repeated_locals_are_numbered_without_collisions() {
+    fn test0129_repeated_locals_are_numbered_without_collisions() {
         assert_eq!(distinct_locals(vec!["x".into(), "y".into(), "x".into()]), vec!["x", "y", "x2"]);
         let clash = distinct_locals(vec!["x".into(), "x".into(), "x2".into()]);
         assert_eq!(clash.len(), 3);

@@ -313,8 +313,9 @@ pub fn file_sha256(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
 
+    /// TEST0088: a local distribution is identified by what it holds
     #[test]
-    fn a_local_distribution_is_identified_by_what_it_holds() {
+    fn test0088_a_local_distribution_is_identified_by_what_it_holds() {
         let root = std::env::temp_dir().join(format!("lungo-distribution-digest-{}", std::process::id()));
         if root.exists() {
             std::fs::remove_dir_all(&root).unwrap();
@@ -365,8 +366,9 @@ mod tests {
         )
     }
 
+    /// TEST0089: manifests must match this release and carry sha256 over https
     #[test]
-    fn manifests_must_match_this_release_and_carry_sha256_over_https() {
+    fn test0089_manifests_must_match_this_release_and_carry_sha256_over_https() {
         let v = env!("CARGO_PKG_VERSION");
         let sha = "a".repeat(64);
         assert!(Manifest::parse(&manifest_text(v, &sha, "https://example.com/r.tar.gz")).is_ok());
@@ -375,8 +377,9 @@ mod tests {
         assert!(Manifest::parse(&manifest_text(v, &sha, "http://example.com/r.tar.gz")).is_err());
     }
 
+    /// TEST0090: a tampered archive is rejected and never unpacked
     #[test]
-    fn a_tampered_archive_is_rejected_and_never_unpacked() {
+    fn test0090_a_tampered_archive_is_rejected_and_never_unpacked() {
         let dir = std::env::temp_dir().join(format!("lungo-runtime-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         // A valid archive: one directory with a file.

@@ -853,8 +853,9 @@ impl Emitter<'_> {
 #[cfg(test)]
 mod tests {
 
+    /// TEST0130: an embedded module may be private to its package
     #[test]
-    fn an_embedded_module_may_be_private_to_its_package() {
+    fn test0130_an_embedded_module_may_be_private_to_its_package() {
         assert!(valid_module_component("_formal"));
         assert!(valid_module_component("formal"));
         assert!(!valid_module_component("__formal"), "one underscore marks it private");
@@ -867,8 +868,9 @@ mod tests {
 
     use super::{file_url, valid_module_component, valid_package};
 
+    /// TEST0131: file urls have an empty host and escape what urls cannot hold
     #[test]
-    fn file_urls_have_an_empty_host_and_escape_what_urls_cannot_hold() {
+    fn test0131_file_urls_have_an_empty_host_and_escape_what_urls_cannot_hold() {
         assert_eq!(file_url("/srv/lungo dist/python"), "file:///srv/lungo%20dist/python");
         assert_eq!(file_url("C:/Users/Ünï/dist/python"), "file:///C:/Users/%C3%9Cn%C3%AF/dist/python");
         assert_eq!(file_url("/a#b?c%d"), "file:///a%23b%3Fc%25d");

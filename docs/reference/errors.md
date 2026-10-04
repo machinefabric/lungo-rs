@@ -94,10 +94,11 @@ download was tampered with or corrupted in transit.
 
 ### LNG0110
 
-**Generated output is out of date.** `lungo generate --verify` found an output directory that
-is not what the project generates now; the message names every file that changed, is missing,
-or is extra. The build record (`build-info.json`) is not compared. Run `lungo generate` and
-commit what it writes.
+**Generated output is out of date.** `lungo generate --verify` (or `--link`) found an output
+directory whose generated sources are not what the project generates now; the message names
+every file that changed, is missing, or is extra. Neither the build record (`build-info.json`)
+nor a platform product (the TypeScript binding's `program.wasm`) is compared. Run
+`lungo generate` and commit the sources it writes.
 
 ## Lean
 

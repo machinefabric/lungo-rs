@@ -3,8 +3,9 @@
 use host::{consumer, provider};
 use lungo::Nat;
 
+/// TEST0006: values pass between programs
 #[test]
-fn values_pass_between_programs() {
+fn test0006_values_pass_between_programs() {
     let p = provider::mk_pos(Nat::from(3u64)).expect("3 is positive");
     let d = consumer::double(p);
     assert_eq!(provider::value(d.clone()), Nat::from(6u64));

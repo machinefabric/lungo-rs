@@ -34,8 +34,9 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// TEST0134: fields are length prefixed
     #[test]
-    fn fields_are_length_prefixed() {
+    fn test0134_fields_are_length_prefixed() {
         let mut a = Hasher::new("t");
         a.str("ab").str("c");
         let mut b = Hasher::new("t");

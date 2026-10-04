@@ -174,8 +174,9 @@ fn parse_version(text: &str) -> Option<(String, String)> {
 mod tests {
     use super::*;
 
+    /// TEST0140: parses lean version banner
     #[test]
-    fn parses_lean_version_banner() {
+    fn test0140_parses_lean_version_banner() {
         let (v, c) = parse_version(
             "Lean (version 4.34.1, arm64-apple-darwin24.6.0, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
         )
@@ -185,8 +186,9 @@ mod tests {
         assert!(parse_version("lean 4").is_none());
     }
 
+    /// TEST0141: floating and unknown pins are rejected
     #[test]
-    fn floating_and_unknown_pins_are_rejected() {
+    fn test0141_floating_and_unknown_pins_are_rejected() {
         let dir = std::env::temp_dir().join(format!("lng-pin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         for pin in ["stable", "leanprover/lean4:stable", "leanprover/lean4:v4.35.0-rc3"] {
