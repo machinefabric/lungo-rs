@@ -149,13 +149,13 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
     let analyses = Analyses { lean: s.lean, host: OnceCell::new(), wasm: OnceCell::new() };
     let mut report = Vec::new();
     let mut drifts = Vec::new();
-    if let Some(dir) = &s.rust_out {
+    // The Rust output has no platform products: `--link` leaves it alone.
+    if let Some(dir) = s.rust_out.as_ref().filter(|_| s.mode != Mode::Link) {
         let mut rust = s.rust.clone();
         rust.out_dir = None;
         let builder = Builder::from_options(s.lean.clone(), rust);
-        if s.mode != Mode::Write {
+        if s.mode == Mode::Verify {
             // Generated beside the output and compared: the Rust module is the build's output.
-            // It has no platform products to link.
             let scratch = dir.with_file_name(format!(
                 ".lungo-verify-{}-{}",
                 dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
