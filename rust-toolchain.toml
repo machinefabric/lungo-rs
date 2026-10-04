@@ -1,0 +1,17 @@
+# The one Rust that builds lungo, everywhere: a developer machine, every test
+# guest, and the release.
+#
+# The runtime lungo-generated code links against is compiled into each
+# language's package — for TypeScript, linked into the WebAssembly module the
+# generator writes (`program.wasm`). Built by whichever Rust a machine had, the
+# runtime differed between machines (rustc 1.98.1 on one, 1.99.0 on another),
+# so the module a guest generated was never the one checked in, and
+# `lungo generate --verify` failed in every formal suite run anywhere else.
+#
+# The minimal profile, so what is installed is what lungo needs to build: a
+# machine whose own rustup profile asks for more (miri, the cranelift backend)
+# would otherwise fail to install a toolchain that does not ship them.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+targets = ["wasm32-wasip1"]
