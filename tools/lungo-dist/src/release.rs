@@ -415,6 +415,7 @@ pub fn cli(platform: &str, manifest: &Path, out_dir: &Path) -> Result<()> {
     read_manifest(manifest)?;
     let manifest = io("cannot resolve the manifest", dunce::canonicalize(manifest))?;
     let linker = linker_for(target)?;
+    crate::ensure_target(target)?;
     let target_dir = crate::target_dir().join("lungo-dist").join("cli");
     let mut cmd = Command::new("cargo");
     cmd.current_dir(repo())

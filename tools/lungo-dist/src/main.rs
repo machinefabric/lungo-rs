@@ -333,8 +333,22 @@ pub enum Linker {
     Zig,
 }
 
+/// Adds `target` to the Rust that builds lungo (`rust-toolchain.toml`), if it is not there.
+///
+/// The toolchain file declares only what every machine builds for (WebAssembly); a release
+/// builds for every target of [`release::RUNTIME_TARGETS`] from one machine, and that machine's
+/// copy of the pinned toolchain had none of them. The release failed in its first build with
+/// `can't find crate for core: the x86_64-unknown-linux-gnu target may not be installed`.
+/// Asked of rustup in the repository, so it is the pinned toolchain that is given the target;
+/// adding one that is already installed changes nothing.
+pub fn ensure_target(target: &str) -> Result<()> {
+    run(Command::new("rustup").current_dir(repo()).args(["target", "add", target]))?;
+    Ok(())
+}
+
 /// Builds the runtime package of `target` into `out` (replaced).
 pub fn runtime(target: &str, out: &Path, linker: Linker) -> Result<()> {
+    ensure_target(target)?;
     let repo = repo();
     match linker {
         Linker::Host => run(cargo(target).args(["build", "-p", "lungo-capi", "--release", "--target", target]))?,
