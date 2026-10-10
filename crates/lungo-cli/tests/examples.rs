@@ -191,3 +191,31 @@ fn test0329_the_ledger_example_from_swift() {
     let out = swift("ledger", "Ledger");
     assert!(out.contains("Executed 1 test, with 0 failures"), "{out}");
 }
+
+/// Generates example `name` (program `program`) for Python, installs it in a virtual environment
+/// with lungo-py, and runs its tests with `unittest`.
+fn python(name: &str, program: &str) -> String {
+    let dist = distribution(&["python"]);
+    let work = fresh(&root().join(name).join("python"));
+    let package = work.join(program);
+    support::generate(&example(name).join("lungo.toml"), "python", &package, &dist);
+    let venv = work.join("venv");
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
+    run(Command::new(python).args(["-m", "venv"]).arg(&venv));
+    let py = venv.join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
+    run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(dist.join("python")));
+    run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(&package));
+    let tests = fresh(&work.join("tests"));
+    copy_tests(name, "python", &tests);
+    let out = Command::new(&py).args(["-m", "unittest", "-v"]).current_dir(&tests).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{text}");
+    text
+}
+
+/// TEST0335: the oracle-monitor example from Python
+#[test]
+fn test0335_the_oracle_monitor_example_from_python() {
+    let out = python("oracle-monitor", "access");
+    assert!(out.contains("Ran 2 tests") && out.trim_end().ends_with("OK"), "{out}");
+}

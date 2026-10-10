@@ -1,0 +1,10 @@
+name = "access"
+version = "0.1.0"
+defaultTargets = ["Access"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Access"

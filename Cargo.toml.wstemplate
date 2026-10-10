@@ -13,6 +13,7 @@ members = [
     "crates/lungo-runtime",
     "tools/lungo-dist",
     "examples/ledger",
+    "examples/oracle-monitor",
     "examples/session",
     "examples/clock",
     "examples/codec",

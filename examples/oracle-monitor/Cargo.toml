@@ -1,0 +1,13 @@
+[package]
+name = "oracle-monitor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: a proved policy evaluator used as a test oracle, and a proved runtime monitor, from Rust and Python"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true
