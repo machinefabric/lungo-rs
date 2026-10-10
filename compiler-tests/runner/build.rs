@@ -26,12 +26,10 @@ fn main() -> lungo_build::Result<()> {
         writeln!(rust_arms, "        {name:?} => Some(p_{name}::__lean_main_with(args)),").unwrap();
 
         let analysis = cfg.analyze(project, &env)?;
-        let host_externs = Default::default();
         let program = lungo_build::codegen::c::generate_program(&lungo_build::codegen::c::ProgramInput {
             success: &analysis.success,
             toolchain: &analysis.toolchain,
             name,
-            host_externs: &host_externs,
             local_prefix: "../conformance",
             target: &std::env::var("TARGET").expect("Cargo sets TARGET"),
         })

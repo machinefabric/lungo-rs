@@ -1,5 +1,9 @@
 """The polyglot assertions, in Python, on the generated Python package."""
 
+import asyncio
+import random
+import subprocess
+import sys
 import threading
 import unittest
 
@@ -7,12 +11,18 @@ import lungo_py
 import polyglot as P
 
 
-class Host:
-    def __init__(self):
-        self.lines = []
+class Scaler:
+    """The scaler capability: multiplies by ten."""
 
     def host_scale(self, n):
         return n * 10
+
+
+class Journal:
+    """The journal capability: records lines, refusing `fail`."""
+
+    def __init__(self):
+        self.lines = []
 
     def host_record(self, line):
         if line == "fail":
@@ -20,8 +30,37 @@ class Host:
         self.lines.append(line)
 
 
-HOST = Host()
-P.set_host(HOST)
+JOURNAL = Journal()
+P.set_scaler(Scaler())
+P.set_journal(JOURNAL)
+
+
+class Fetcher:
+    """Answers the program's operations: `get` waits for `release` when the url is "slow", and
+    raises for "broken"."""
+
+    def __init__(self, release=None):
+        self.release = release
+
+    async def get(self, url):
+        if url == "slow":
+            await self.release.wait()
+        elif url == "broken":
+            raise ConnectionError("the network is down")
+        elif url == "missing":
+            return lungo_py.Err("not found")
+        return lungo_py.Ok("body:" + url)
+
+    def stamp(self, t):
+        return t
+
+    def scaler(self, k):
+        return lambda x: x * k
+
+
+def helper(code):
+    """Runs `code` in a Python process of its own."""
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
 
 
 class PolyglotTest(unittest.TestCase):
@@ -110,15 +149,15 @@ class PolyglotTest(unittest.TestCase):
         with self.assertRaises(lungo_py.MalformedError):
             P.bump(counter)
 
-    # TEST0056: host externs
-    def test_0056_host_externs(self):
+    # TEST0056: host capabilities
+    def test_0056_host_capabilities(self):
         self.assertEqual(P.scaled_sum([1, 2, 3]), 60)
-        HOST.lines.clear()
+        JOURNAL.lines.clear()
         self.assertEqual(P.record_all(["a", "b"]), 2)
         with self.assertRaises(lungo_py.LeanIOError) as e:
             P.record_all(["c", "fail", "d"])
         self.assertIn("refuses to record", e.exception.message)
-        self.assertEqual(HOST.lines, ["a", "b", "c"])
+        self.assertEqual(JOURNAL.lines, ["a", "b", "c"])
 
     # TEST0057: concurrent calls
     def test_0057_concurrent_calls(self):
@@ -138,6 +177,122 @@ class PolyglotTest(unittest.TestCase):
     # TEST0058: run main
     def test_0058_run_main(self):
         self.assertEqual(P.run_main(["one", "two"]), 2)
+
+    # TEST0297: a call before every capability is installed fails, naming the capability and an
+    # operation of it
+    def test_0297_a_missing_capability_is_named(self):
+        out = helper(
+            "import lungo_py, polyglot as P\n"
+            "class Journal:\n"
+            "    def host_record(self, line): pass\n"
+            "P.set_journal(Journal())\n"
+            "try:\n"
+            "    P.factorial(3)\n"
+            "except lungo_py.MissingCapabilityError as e:\n"
+            "    print('missing:', e.capability, e.operation)\n"
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "missing: polyglot.scaler hostScale\n")
+
+    # TEST0298: the package's assurance document is the program's: its claims, what they assume,
+    # and the capabilities each export needs
+    def test_0298_assurance_is_the_programs_assurance(self):
+        a = P.ASSURANCE
+        self.assertEqual((a.program, a.schema_version, a.provenance.lean_version), ("polyglot", 1, "4.34.1"))
+        c = a.claim("Polyglot.factorial_pos")
+        self.assertEqual((c.status, c.relation, c.assumptions), ("proved", "lungo.law", ()))
+        self.assertEqual(a.claim("Polyglot.Tree.mirror_mirror").relation, "lungo.roundtrip")
+        c = a.claim("Polyglot.divide_ok")
+        self.assertEqual((c.relation, c.specifications), ("lungo.equals", ("Polyglot.natDiv",)))
+        # Proved, and conditional on what the host's scaler is assumed to do.
+        c = a.claim("Polyglot.scaledSum_singleton_mono")
+        self.assertEqual((c.status, c.assumptions), ("proved", ("Polyglot.ScalesMonotonically",)))
+        e = a.export("Polyglot.scaledSum")
+        self.assertEqual((e.capabilities, e.assumptions), (("Polyglot.Scaler",), ("Polyglot.ScalesMonotonically",)))
+        e = a.export("Polyglot.fetchAll")
+        self.assertEqual((e.async_, e.capabilities), (True, ("Polyglot.fetchInterface",)))
+        # Sorted by Lean name.
+        self.assertEqual(
+            [(c.id, c.form) for c in a.capabilities],
+            [("polyglot.journal", "extern"), ("polyglot.scaler", "extern"), ("polyglot.fetch", "async")],
+        )
+        self.assertEqual(a.export("Polyglot.negate").claims, ())
+
+    # TEST0299: an async program runs on its handler's answers: data, an opaque handle passed
+    # back, and a host function the program calls
+    def test_0299_an_async_program_runs_on_the_handlers_answers(self):
+        async def run():
+            h = Fetcher()
+            self.assertEqual(await P.fetch_all(h, ["a", "missing", "b"]), ["body:a", "error: not found", "body:b"])
+            token = P.mk_token(5)
+            self.assertIsNotNone(token)
+            self.assertEqual(await P.stamp_token(h, token), 6)
+            self.assertEqual(await P.apply_scaler(h, 7, 6), 42)
+
+        asyncio.run(run())
+        self.assertEqual(lungo_py.outstanding(), 0)
+
+    # TEST0300: an error of the handler abandons the program: the call raises it, and nothing
+    # waits
+    def test_0300_a_handlers_error_abandons_the_program(self):
+        with self.assertRaisesRegex(ConnectionError, "the network is down"):
+            asyncio.run(P.fetch_all(Fetcher(), ["a", "broken", "b"]))
+        self.assertEqual(lungo_py.outstanding(), 0)
+
+    # TEST0301: cancelling the task abandons a program waiting for an answer
+    def test_0301_cancellation_abandons_the_program(self):
+        async def run():
+            task = asyncio.create_task(P.fetch_all(Fetcher(asyncio.Event()), ["slow"]))
+            await asyncio.sleep(0.05)
+            self.assertEqual(lungo_py.outstanding(), 1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(run())
+        self.assertEqual(lungo_py.outstanding(), 0)
+
+    # TEST0302: many async programs waiting at once resume independently, answered in any order
+    def test_0302_concurrent_async_programs_resume_independently(self):
+        async def run():
+            release = asyncio.Event()
+            h = Fetcher(release)
+
+            async def one(i):
+                await asyncio.sleep(random.random() / 50)
+                return await P.fetch_all(h, ["slow", "x" * i])
+
+            tasks = [asyncio.create_task(one(i)) for i in range(100)]
+            await asyncio.sleep(0.1)
+            self.assertEqual(lungo_py.outstanding(), 100)
+            release.set()
+            for i, got in enumerate(await asyncio.gather(*tasks)):
+                self.assertEqual(got, ["body:slow", "body:" + "x" * i])
+
+        asyncio.run(run())
+        self.assertEqual(lungo_py.outstanding(), 0)
+
+    # TEST0303: a process may end while a program waits for an answer
+    def test_0303_a_process_ends_with_a_program_waiting(self):
+        out = helper(
+            "import asyncio, os, lungo_py, polyglot as P\n"
+            "class Slow:\n"
+            "    async def get(self, url):\n"
+            "        await asyncio.Event().wait()\n"
+            "async def main():\n"
+            "    asyncio.create_task(P.fetch_all(Slow(), ['slow']))\n"
+            "    while lungo_py.outstanding() == 0:\n"
+            "        await asyncio.sleep(0.001)\n"
+            "    print('waiting:', lungo_py.outstanding(), flush=True)\n"
+            "    os._exit(0)\n"
+            "class Host:\n"
+            "    def host_scale(self, n): return n\n"
+            "    def host_record(self, line): pass\n"
+            "P.set_scaler(Host())\n"
+            "P.set_journal(Host())\n"
+            "asyncio.run(main())\n"
+        )
+        self.assertEqual((out.returncode, out.stdout), (0, "waiting: 1\n"), out.stderr)
 
 
 if __name__ == "__main__":

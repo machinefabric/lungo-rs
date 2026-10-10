@@ -2,8 +2,8 @@ import Lean
 import Lake.Load.Manifest
 import Lake.Load.Workspace
 import Lake.Config.InstallPath
-import Lungo.Cbor
-import Lungo.Diagnostics
+import LungoWorker.Cbor
+import LungoWorker.Diagnostics
 
 /-!
 Read-only access to the project's Lake workspace.
@@ -13,7 +13,7 @@ the locked manifest to learn which package owns each module and which files are 
 inputs, and loads the root package's configuration through Lake to learn its default targets;
 it never updates or rewrites anything.
 -/
-namespace Lungo.LakeInfo
+namespace LungoWorker.LakeInfo
 
 open Lean System Cbor
 
@@ -173,4 +173,4 @@ def Workspace.inputPath (ws : Workspace) (file : FilePath) : WorkerM String := d
     let ups := List.replicate (rootComps.length - common) ".."
     return "/".intercalate (ups ++ fileComps.drop common)
 
-end Lungo.LakeInfo
+end LungoWorker.LakeInfo

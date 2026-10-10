@@ -478,6 +478,93 @@ pub mod facade {
         }
     }
 
+    /// An async program (`Lungo.Async.Program`) a generated async function drives: done with a
+    /// value, or waiting for the host to perform an operation. Dropped before it is done, it
+    /// releases the program, so a future dropped mid-operation leaves nothing behind.
+    pub struct AsyncProgram<B: Backend> {
+        obj: Obj,
+        _backend: core::marker::PhantomData<fn() -> B>,
+    }
+
+    // The program object is marked as shared between threads before it is held here.
+    unsafe impl<B: Backend> Send for AsyncProgram<B> {}
+
+    /// The layout of `Lungo.Async.Program`, which lungo's worker checks against Lean's compiler:
+    /// `done` (tag 0) holds the value in object field 0, `call` (tag 1) the operation in object
+    /// field 0 and the continuation in object field 1.
+    const DONE_TAG: u8 = 0;
+    const CALL_TAG: u8 = 1;
+
+    impl<B: Backend> AsyncProgram<B> {
+        /// Takes the program `o`.
+        ///
+        /// # Safety
+        ///
+        /// `o` must be a live `Lungo.Async.Program` of `B`, owned by the caller.
+        pub unsafe fn new(o: Obj) -> Self {
+            unsafe { B::mark_mt(o) };
+            AsyncProgram { obj: o, _backend: core::marker::PhantomData }
+        }
+
+        fn tag(&self) -> u8 {
+            if rt::lean_is_scalar(self.obj) {
+                panic!("lungo: an async program is a scalar: its layout is not the one lungo reads");
+            }
+            match unsafe { rt::lean_ptr_tag(self.obj) } {
+                t @ (DONE_TAG | CALL_TAG) => t,
+                t => panic!("lungo: an async program has constructor tag {t}: its layout is not the one lungo reads"),
+            }
+        }
+
+        /// Whether the program is done.
+        pub fn is_done(&self) -> bool {
+            self.tag() == DONE_TAG
+        }
+
+        /// The program's value.
+        ///
+        /// # Safety
+        ///
+        /// The program must be done, with a value representing a `T`.
+        pub unsafe fn value<T: LeanType<B>>(&self) -> T {
+            debug_assert!(self.is_done());
+            unsafe { T::from_lean(rt::lean_ctor_get(self.obj, 0)) }
+        }
+
+        /// The operation the program waits for.
+        ///
+        /// # Safety
+        ///
+        /// The program must wait for an operation representing an `O`.
+        pub unsafe fn operation<O: LeanType<B>>(&self) -> O {
+            debug_assert!(!self.is_done());
+            unsafe { O::from_lean(rt::lean_ctor_get(self.obj, 0)) }
+        }
+
+        /// Continues the program with the answer to the operation it waits for.
+        ///
+        /// # Safety
+        ///
+        /// The program must wait for an operation answered with an `A`.
+        pub unsafe fn resume<A: LeanType<B>>(&mut self, answer: A) {
+            debug_assert!(!self.is_done());
+            unsafe {
+                let resume = rt::lean_ctor_get(self.obj, 1);
+                B::inc(resume);
+                B::dec(self.obj);
+                let next = B::apply(resume, &[answer.into_lean()]);
+                B::mark_mt(next);
+                self.obj = next;
+            }
+        }
+    }
+
+    impl<B: Backend> Drop for AsyncProgram<B> {
+        fn drop(&mut self) {
+            unsafe { B::dec(self.obj) }
+        }
+    }
+
     /// Unpacks an owned `IO` result.
     ///
     /// # Safety

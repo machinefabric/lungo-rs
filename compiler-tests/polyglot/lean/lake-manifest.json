@@ -1,6 +1,13 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
- "packages": [],
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "lungo",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../lean",
+   "configFile": "lakefile.toml"}],
  "name": "polyglot",
  "lakeDir": ".lake",
  "fixedToolchain": false}

@@ -4,13 +4,17 @@ import LungoKit
 import Polyglot
 import XCTest
 
-final class RecordingHost: PolyglotHost {
-    private let lock = NSLock()
-    private(set) var lines: [String] = []
-
+/// The scaler capability: multiplies by ten.
+final class TenfoldScaler: PolyglotScaler {
     func hostScale(_ n: LungoNat) throws -> LungoNat {
         LungoNat(n.uint64! * 10)
     }
+}
+
+/// The journal capability: records lines, refusing `fail`.
+final class RecordingJournal: PolyglotJournal {
+    private let lock = NSLock()
+    private(set) var lines: [String] = []
 
     func hostRecord(_ line: String) throws {
         if line == "fail" { throw LungoIOError("the host refuses to record `fail`") }
@@ -26,15 +30,66 @@ final class RecordingHost: PolyglotHost {
     }
 }
 
-let host: RecordingHost = {
-    let h = RecordingHost()
-    setHost(h)
-    return h
+let journal: RecordingJournal = {
+    let j = RecordingJournal()
+    setScaler(TenfoldScaler())
+    setJournal(j)
+    return j
 }()
+
+/// Opens once `release` is called; a task waiting for it is cancelled with the task.
+actor Gate {
+    private var open = false
+
+    func release() { open = true }
+
+    func wait() async throws {
+        while !open { try await Task.sleep(nanoseconds: 1_000_000) }
+    }
+}
+
+struct NetworkDown: Error {}
+
+/// Answers the program's operations: `get` waits for `gate` when the url is "slow", and throws
+/// for "broken".
+struct Fetcher: PolyglotFetchOpHandler {
+    var gate: Gate? = nil
+
+    func get(_ url: String) async throws -> LungoExcept<String, String> {
+        switch url {
+        case "slow": try await gate!.wait()
+        case "broken": throw NetworkDown()
+        case "missing": return .error("not found")
+        default: break
+        }
+        return .ok("body:\(url)")
+    }
+
+    func stamp(_ t: Token) async throws -> Token { t }
+
+    func scaler(_ k: LungoNat) async throws -> (LungoNat) throws -> LungoNat {
+        { x in LungoNat(x.uint64! * k.uint64!) }
+    }
+}
+
+/// TEST0297: run alone (`swift test --filter MissingCapabilityTests`, with
+/// LUNGO_POLYGLOT_WITHOUT_CAPABILITIES set), before any capability is installed.
+final class MissingCapabilityTests: XCTestCase {
+    // TEST0297: a call before every capability is installed fails, naming the capability and an
+    // operation of it
+    func test0297_AMissingCapabilityIsNamed() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["LUNGO_POLYGLOT_WITHOUT_CAPABILITIES"] != nil)
+        XCTAssertThrowsError(try factorial(3)) { e in
+            let missing = e as? LungoMissingCapability
+            XCTAssertEqual(missing?.capability, "polyglot.journal")
+            XCTAssertEqual(missing?.operation, "hostRecord")
+        }
+    }
+}
 
 final class PolyglotTests: XCTestCase {
     override func setUp() {
-        _ = host
+        _ = journal
     }
 
     // TEST0048: numbers
@@ -120,15 +175,15 @@ final class PolyglotTests: XCTestCase {
         XCTAssertThrowsError(try bump(counter)) { XCTAssert($0 is LungoMalformed) }
     }
 
-    // TEST0056: host Externs
-    func test0056_HostExterns() throws {
+    // TEST0056: host Capabilities
+    func test0056_HostCapabilities() throws {
         XCTAssertEqual(try scaledSum([1, 2, 3]), 60)
-        host.clear()
+        journal.clear()
         XCTAssertEqual(try recordAll(["a", "b"]), 2)
         XCTAssertThrowsError(try recordAll(["c", "fail", "d"])) { e in
             XCTAssert((e as? LungoIOError)?.message.contains("refuses to record") == true)
         }
-        XCTAssertEqual(host.lines, ["a", "b", "c"])
+        XCTAssertEqual(journal.lines, ["a", "b", "c"])
     }
 
     // TEST0057: concurrent Calls
@@ -145,5 +200,99 @@ final class PolyglotTests: XCTestCase {
     // TEST0058: run Main
     func test0058_RunMain() throws {
         XCTAssertEqual(try runMain(["one", "two"]), 2)
+    }
+
+    // TEST0298: the package's assurance document is the program's: its claims, what they assume,
+    // and the capabilities each export needs
+    func test0298_AssuranceIsTheProgramsAssurance() throws {
+        let a = assurance
+        XCTAssertEqual(a.program, "polyglot")
+        XCTAssertEqual(a.schemaVersion, 1)
+        XCTAssertEqual(a.provenance.leanVersion, "4.34.1")
+        XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.status, "proved")
+        XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.relation, "lungo.law")
+        XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.assumptions, [])
+        XCTAssertEqual(a.claim("Polyglot.Tree.mirror_mirror")?.relation, "lungo.roundtrip")
+        XCTAssertEqual(a.claim("Polyglot.divide_ok")?.specifications, ["Polyglot.natDiv"])
+        // Proved, and conditional on what the host's scaler is assumed to do.
+        XCTAssertEqual(a.claim("Polyglot.scaledSum_singleton_mono")?.status, "proved")
+        XCTAssertEqual(a.claim("Polyglot.scaledSum_singleton_mono")?.assumptions, ["Polyglot.ScalesMonotonically"])
+        XCTAssertEqual(a.export("Polyglot.scaledSum")?.capabilities, ["Polyglot.Scaler"])
+        XCTAssertEqual(a.export("Polyglot.scaledSum")?.assumptions, ["Polyglot.ScalesMonotonically"])
+        XCTAssertEqual(a.export("Polyglot.fetchAll")?.isAsync, true)
+        XCTAssertEqual(a.export("Polyglot.fetchAll")?.capabilities, ["Polyglot.fetchInterface"])
+        // Sorted by Lean name.
+        XCTAssertEqual(
+            a.capabilities.map { "\($0.id)/\($0.form)" },
+            ["polyglot.journal/extern", "polyglot.scaler/extern", "polyglot.fetch/async"]
+        )
+        XCTAssertEqual(a.export("Polyglot.negate")?.claims, [])
+        XCTAssertEqual(try LungoAssurance.decode(assuranceJSON), a)
+    }
+
+    // TEST0299: an async program runs on its handler's answers: data, an opaque handle passed
+    // back, and a host function the program calls
+    func test0299_AnAsyncProgramRunsOnTheHandlersAnswers() async throws {
+        let h = Fetcher()
+        let bodies = try await fetchAll(h, ["a", "missing", "b"])
+        XCTAssertEqual(bodies, ["body:a", "error: not found", "body:b"])
+        let token = try XCTUnwrap(try mkToken(5))
+        XCTAssertEqual(try await stampToken(h, token), 6)
+        XCTAssertEqual(try await applyScaler(h, 7, 6), 42)
+        XCTAssertEqual(lungoOutstanding(), 0)
+    }
+
+    // TEST0300: an error of the handler abandons the program: the call throws it, and nothing
+    // waits
+    func test0300_AHandlersErrorAbandonsTheProgram() async throws {
+        do {
+            _ = try await fetchAll(Fetcher(), ["a", "broken", "b"])
+            XCTFail("the fetch succeeded")
+        } catch {
+            XCTAssert(error is NetworkDown, "\(error)")
+        }
+        XCTAssertEqual(lungoOutstanding(), 0)
+    }
+
+    // TEST0301: cancelling the task abandons a program waiting for an answer
+    func test0301_CancellationAbandonsTheProgram() async throws {
+        let task = Task { try await fetchAll(Fetcher(gate: Gate()), ["slow"]) }
+        while lungoOutstanding() == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        XCTAssertEqual(lungoOutstanding(), 1)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("the cancelled fetch succeeded")
+        } catch {
+            XCTAssert(error is CancellationError, "\(error)")
+        }
+        XCTAssertEqual(lungoOutstanding(), 0)
+    }
+
+    // TEST0302: many async programs waiting at once resume independently, answered in any order
+    func test0302_ConcurrentAsyncProgramsResumeIndependently() async throws {
+        let gate = Gate()
+        let h = Fetcher(gate: gate)
+        try await withThrowingTaskGroup(of: (Int, [String]).self) { group in
+            for i in 0..<100 {
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64.random(in: 0..<20_000_000))
+                    return (i, try await fetchAll(h, ["slow", String(repeating: "x", count: i)]))
+                }
+            }
+            while lungoOutstanding() < 100 { try await Task.sleep(nanoseconds: 1_000_000) }
+            await gate.release()
+            for try await (i, got) in group {
+                XCTAssertEqual(got, ["body:slow", "body:" + String(repeating: "x", count: i)])
+            }
+        }
+        XCTAssertEqual(lungoOutstanding(), 0)
+    }
+
+    // TEST0303: the process ends while a program waits for an answer (this test runs last)
+    func test0303_AProcessEndsWithAProgramWaiting() async throws {
+        Task.detached { _ = try? await fetchAll(Fetcher(gate: Gate()), ["slow"]) }
+        while lungoOutstanding() == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        XCTAssertEqual(lungoOutstanding(), 1)
     }
 }

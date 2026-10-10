@@ -10,6 +10,7 @@
 //! `LeanType` conversions do; encoding reads them. Every read is bounds-checked and every value
 //! validated: malformed input is a [`WireError`], never undefined behaviour.
 
+pub mod program;
 pub mod value;
 
 use crate::object::*;
@@ -273,6 +274,11 @@ pub enum Returns {
     Io(Type),
     /// `EIO ε α`: the value, or an error of `ε`.
     Eio { error: Type, value: Type },
+    /// `Lungo.Async.Program op α`: a computation that asks the host to perform operations of the
+    /// inductive type `op` (an index in the type table, without parameters), constructor `i`
+    /// answered with a value of `rets[i]`, and ends with a value of `value`. A call returns its
+    /// first [step](program).
+    Async { op: u32, rets: Vec<Type>, value: Type },
 }
 
 /// Kinds of [`Returns`] in an encoded [`Signature`].
@@ -280,6 +286,100 @@ pub mod returns {
     pub const VALUE: u8 = 0;
     pub const IO: u8 = 1;
     pub const EIO: u8 = 2;
+    pub const ASYNC: u8 = 3;
+}
+
+impl Returns {
+    /// Appends the encoding: the kind, then its types.
+    pub fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Returns::Value(t) => {
+                out.push(returns::VALUE);
+                t.encode(out);
+            }
+            Returns::Io(t) => {
+                out.push(returns::IO);
+                t.encode(out);
+            }
+            Returns::Eio { error, value } => {
+                out.push(returns::EIO);
+                error.encode(out);
+                value.encode(out);
+            }
+            Returns::Async { op, rets, value } => {
+                out.push(returns::ASYNC);
+                put_u32(out, *op);
+                put_len(out, rets.len());
+                for r in rets {
+                    r.encode(out);
+                }
+                value.encode(out);
+            }
+        }
+    }
+
+    fn read(r: &mut Reader) -> Result<Returns, WireError> {
+        Ok(match r.u8()? {
+            returns::VALUE => Returns::Value(r.ty()?),
+            returns::IO => Returns::Io(r.ty()?),
+            returns::EIO => Returns::Eio { error: r.ty()?, value: r.ty()? },
+            returns::ASYNC => {
+                let op = r.u32()?;
+                let n = r.count(1)?;
+                let rets = (0..n).map(|_| r.ty()).collect::<Result<_, _>>()?;
+                Returns::Async { op, rets, value: r.ty()? }
+            }
+            k => return err(format!("invalid result kind {k}")),
+        })
+    }
+
+    /// Checks that the types are valid in `table`, with `params` type parameters.
+    pub fn check(&self, table: &TypeTable, params: u32) -> Result<(), WireError> {
+        match self {
+            Returns::Value(t) | Returns::Io(t) => table.check_type(t, params),
+            Returns::Eio { error, value } => {
+                table.check_type(error, params)?;
+                table.check_type(value, params)
+            }
+            Returns::Async { op, rets, value } => {
+                let decl = table
+                    .types
+                    .get(*op as usize)
+                    .ok_or_else(|| WireError(format!("operation type index {op} outside the type table")))?;
+                if decl.opaque || decl.params != 0 {
+                    return err(format!("{} cannot be the operations of an async program", decl.name));
+                }
+                if rets.len() != decl.ctors.len() {
+                    return err(format!("{} answers for the {} operations of {}", rets.len(), decl.ctors.len(), decl.name));
+                }
+                // What the host answers is fixed by the operation: it has no type parameters.
+                for r in rets {
+                    table.check_type(r, 0)?;
+                }
+                table.check_type(value, params)
+            }
+        }
+    }
+
+    /// With type parameters instantiated by `args`.
+    pub fn substitute(&self, args: &[Type]) -> Result<Returns, WireError> {
+        Ok(match self {
+            Returns::Value(t) => Returns::Value(t.substitute(args)?),
+            Returns::Io(t) => Returns::Io(t.substitute(args)?),
+            Returns::Eio { error, value } => Returns::Eio { error: error.substitute(args)?, value: value.substitute(args)? },
+            Returns::Async { op, rets, value } => {
+                Returns::Async { op: *op, rets: rets.clone(), value: value.substitute(args)? }
+            }
+        })
+    }
+}
+
+/// Parses a complete encoding of what a function returns ([`Returns::encode`]).
+pub fn parse_returns(bytes: &[u8]) -> Result<Returns, WireError> {
+    let mut r = Reader::new(bytes);
+    let returns = Returns::read(&mut r)?;
+    r.finish()?;
+    Ok(returns)
 }
 
 /// The signature of a function crossing the boundary: its number of type parameters (which its
@@ -299,21 +399,7 @@ impl Signature {
         for p in &self.params {
             p.encode(&mut out);
         }
-        match &self.returns {
-            Returns::Value(t) => {
-                out.push(returns::VALUE);
-                t.encode(&mut out);
-            }
-            Returns::Io(t) => {
-                out.push(returns::IO);
-                t.encode(&mut out);
-            }
-            Returns::Eio { error, value } => {
-                out.push(returns::EIO);
-                error.encode(&mut out);
-                value.encode(&mut out);
-            }
-        }
+        self.returns.encode(&mut out);
         out
     }
 
@@ -322,12 +408,7 @@ impl Signature {
         let type_params = r.u32()?;
         let n = r.count(1)?;
         let params = (0..n).map(|_| r.ty()).collect::<Result<_, _>>()?;
-        let returns = match r.u8()? {
-            returns::VALUE => Returns::Value(r.ty()?),
-            returns::IO => Returns::Io(r.ty()?),
-            returns::EIO => Returns::Eio { error: r.ty()?, value: r.ty()? },
-            k => return err(format!("invalid result kind {k}")),
-        };
+        let returns = Returns::read(&mut r)?;
         r.finish()?;
         Ok(Signature { type_params, params, returns })
     }
@@ -337,13 +418,7 @@ impl Signature {
         for p in &self.params {
             table.check_type(p, self.type_params)?;
         }
-        match &self.returns {
-            Returns::Value(t) | Returns::Io(t) => table.check_type(t, self.type_params),
-            Returns::Eio { error, value } => {
-                table.check_type(error, self.type_params)?;
-                table.check_type(value, self.type_params)
-            }
-        }
+        self.returns.check(table, self.type_params)
     }
 
     /// The signature with its type parameters instantiated by `args`.
@@ -354,13 +429,7 @@ impl Signature {
         Ok(Signature {
             type_params: 0,
             params: self.params.iter().map(|p| p.substitute(args)).collect::<Result<_, _>>()?,
-            returns: match &self.returns {
-                Returns::Value(t) => Returns::Value(t.substitute(args)?),
-                Returns::Io(t) => Returns::Io(t.substitute(args)?),
-                Returns::Eio { error, value } => {
-                    Returns::Eio { error: error.substitute(args)?, value: value.substitute(args)? }
-                }
-            },
+            returns: self.returns.substitute(args)?,
         })
     }
 }

@@ -8,7 +8,7 @@ use lungo_bir::{ExternEntry, IrType, Param, Program};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 const MAGIC: &[u8; 4] = b"LNGF";
 const HEADER_SIZE: usize = 17;
 /// Nesting permitted in a response: bounded by the control-flow nesting of compiled code.
@@ -109,6 +109,9 @@ pub struct Request {
     /// `@[export]` symbols of Lean definitions the target runtime calls; they are compiled into
     /// every program.
     pub runtime_exports: Vec<String>,
+    /// Modules loaded for their assurance records only: imported into the environment the worker
+    /// reads, never part of the program.
+    pub assurance_modules: Vec<String>,
 }
 
 /// The modules whose code the program is made of.
@@ -210,6 +213,9 @@ pub struct Success {
     pub entry_point: Option<EntryPoint>,
     /// The Lean definitions providing the requested runtime exports.
     pub runtime_exports: Vec<RuntimeExport>,
+    /// What the program's Lean code registered with lungo's Lean library, checked against the
+    /// environment.
+    pub assurance: Assurance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,6 +316,9 @@ pub struct SourceEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternRequirement {
+    /// Set when the extern is an operation of a capability (`@[lungo_operation]`): the host
+    /// implements it.
+    pub operation: Option<OperationRef>,
     pub declaration: String,
     pub entry: ExternEntry,
     pub lean_type: Option<String>,
@@ -415,6 +424,14 @@ pub enum FacadeType {
         head: Option<String>,
         lean_type: String,
     },
+    /// `Lungo.Async.Program op α`: a computation asking the host to perform operations of the
+    /// inductive type `op`, whose constructor `i` is answered with a value of `rets[i]`, ending
+    /// with a value of `result`.
+    Async {
+        op: String,
+        rets: Vec<FacadeType>,
+        result: Box<FacadeType>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -516,6 +533,164 @@ pub enum DiagnosticKind {
     Request,
     /// Lean produced compiler output the adapter does not accept.
     Adapter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationRef {
+    /// The capability declaration the operation belongs to.
+    pub capability: String,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Assurance records
+// ---------------------------------------------------------------------------------------------
+
+/// The records the program's Lean code registered with lungo's Lean library (`Lungo.Registry`),
+/// as the worker read and checked them. Every array is sorted by declaration name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Assurance {
+    /// The library, when the program imports it.
+    pub library: Option<AssuranceLibrary>,
+    pub specs: Vec<SpecRecord>,
+    pub claims: Vec<ClaimRecord>,
+    pub capabilities: Vec<CapabilityRecord>,
+    pub operations: Vec<OperationRecord>,
+    pub assumptions: Vec<AssumptionRecord>,
+    pub roles: Vec<RoleRecord>,
+    /// Problems the worker found; each is an error of the build.
+    pub violations: Vec<AssuranceViolation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssuranceLibrary {
+    /// The Lake package providing the library.
+    pub package: String,
+    pub schema_version: u32,
+}
+
+/// Where a record's declaration is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordOrigin {
+    pub module: String,
+    /// The Lake package owning the module.
+    pub package: Option<String>,
+    pub source: Option<DeclSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpecRecord {
+    pub name: String,
+    pub kind: String,
+    /// The specification's type, pretty-printed.
+    pub statement: String,
+    pub origin: RecordOrigin,
+    /// The canonical text the record's fingerprint is computed from.
+    pub fingerprint_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimRecord {
+    /// The theorem proving the claim; also the claim's identity.
+    pub evidence: String,
+    pub relation: String,
+    pub subjects: Vec<String>,
+    pub specs: Vec<String>,
+    /// The evidence's statement, pretty-printed.
+    pub statement: String,
+    /// The registered assumptions among the statement's hypotheses: the claim holds of a host
+    /// only when the host satisfies them.
+    pub assumptions: Vec<String>,
+    pub evidence_trust: EvidenceTrust,
+    pub origin: RecordOrigin,
+    pub fingerprint_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceTrust {
+    /// Axioms the evidence depends on, excluding `sorryAx`.
+    pub axioms: Vec<String>,
+    pub depends_on_sorry: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CapabilityRecord {
+    pub name: String,
+    /// The capability's namespaced identifier, such as `time.clock`.
+    pub id: String,
+    pub kind: CapabilityKind,
+    pub origin: RecordOrigin,
+    pub fingerprint_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CapabilityKind {
+    /// A group of `@[extern]` operations the host implements synchronously.
+    Extern,
+    /// An instance of `Lungo.Async.Interface op_type`: the operations are its constructors.
+    Async { op_type: String, operations: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationRecord {
+    pub name: String,
+    pub capability: String,
+    /// The extern key: the symbol of `@[extern "symbol"]`, or the declaration's name.
+    pub symbol: String,
+    /// Whether the program's compiled code includes the operation.
+    pub reachable: bool,
+    pub origin: RecordOrigin,
+    pub fingerprint_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssumptionRecord {
+    pub name: String,
+    pub capability: String,
+    pub statement: String,
+    pub origin: RecordOrigin,
+    pub fingerprint_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleRecord {
+    pub name: String,
+    pub role: String,
+    pub exported: bool,
+    pub origin: RecordOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssuranceViolation {
+    pub kind: ViolationKind,
+    pub declaration: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViolationKind {
+    MalformedRecord,
+    DanglingReference,
+    InvalidClaim,
+    NotInStatement,
+    DuplicateId,
+    CapabilityMismatch,
+    AsyncInterface,
+    LibraryVersion,
+    MetadataOnlyDependency,
 }
 
 impl Response {

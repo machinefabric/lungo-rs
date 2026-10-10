@@ -12,3 +12,5 @@ endif()
 
 add_executable(polyglot_test test.c)
 target_link_libraries(polyglot_test PRIVATE polyglot)
+# The package's assurance document, which the program embeds byte for byte.
+target_compile_definitions(polyglot_test PRIVATE POLYGLOT_ASSURANCE="${POLYGLOT_PACKAGE}/assurance.json")

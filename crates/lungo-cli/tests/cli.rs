@@ -48,7 +48,7 @@ fn test0093_generate_writes_rust_then_reuses_it() {
     let second = ok(&["generate", &flag]);
     let module = out.join("formal");
     assert_eq!(second.trim_end(), format!("up to date: rust {}", module.display()));
-    for f in ["formal.rs", "names.json", "externs.json", "sources.json", "manifest.json", "build-info.json"] {
+    for f in ["formal.rs", "names.json", "externs.json", "sources.json", "manifest.json", "assurance.json", "build-info.json"] {
         assert!(module.join(f).is_file(), "{f} is published");
     }
 }
@@ -112,7 +112,10 @@ fn test0098_inspect_shows_type_source_and_trust() {
     assert!(out.contains("compiled: ("), "{out}");
     let (success, _, stderr) = cli(&["inspect", "Formal.nope"]);
     assert!(!success);
-    assert!(stderr.contains("Formal.nope is neither exported nor part of the compiled program"), "{stderr}");
+    assert!(
+        stderr.contains("Formal.nope is neither exported, part of the compiled program, nor an assurance record"),
+        "{stderr}"
+    );
 }
 
 /// TEST0099: ir prints bridge ir

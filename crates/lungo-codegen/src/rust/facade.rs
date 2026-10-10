@@ -181,6 +181,16 @@ pub struct Facade<'a> {
     shaping: &'a Selector<'a>,
     /// The layout fingerprint of every described type, by Lean name.
     fingerprints: &'a BTreeMap<String, String>,
+    /// The handler trait of each async capability emitted so far, by operation type.
+    handlers: BTreeMap<String, Handler>,
+}
+
+/// The handler trait of an async capability.
+#[derive(Clone)]
+struct Handler {
+    placement: Placement,
+    /// The method performing each constructor of the operation type.
+    methods: Vec<String>,
 }
 
 impl<'a> Facade<'a> {
@@ -214,6 +224,7 @@ impl<'a> Facade<'a> {
             members: Vec::new(),
             shaping,
             fingerprints,
+            handlers: BTreeMap::new(),
         })
     }
 
@@ -330,7 +341,103 @@ impl<'a> Facade<'a> {
                 let marker = self.marker(head);
                 format!("::lungo::LeanValue<{}__opaque::{marker}, {}>", "super::".repeat(depth), self.backend(depth))
             }
+            FacadeType::Async { op, .. } => {
+                return Err(CodegenError::external(
+                    crate::ErrorCode::AsyncInterface,
+                    format!(
+                        "an async program over {op} appears inside a value; an async program crosses to Rust \
+                         only as what an exported function returns"
+                    ),
+                ));
+            }
         })
+    }
+
+    /// The pattern binding the fields of constructor `k` of `t` to `__f0`, `__f1`, …, written
+    /// from a module at `depth`, and the number of fields.
+    fn ctor_pattern(&self, t: &TypeDecl, k: usize, depth: usize) -> Result<(String, usize), CodegenError> {
+        let path = self.placement(&t.name)?.path_from_depth(depth);
+        let c = &t.ctors[k];
+        let head = if t.ctors.len() == 1 {
+            path
+        } else {
+            let variants =
+                unique_idents(t.ctors.iter().map(|c| camel(components(&c.name).last().expect("ctor name"))));
+            format!("{path}::{}", variants[k])
+        };
+        let n = c.fields.len();
+        if n == 0 {
+            return Ok((head, 0));
+        }
+        let binds: Vec<String> = match named_fields(c, t.structure) {
+            Some(names) => names.iter().enumerate().map(|(i, (f, _))| format!("{f}: __f{i}")).collect(),
+            None => (0..n).map(|i| format!("__f{i}")).collect(),
+        };
+        Ok(match named_fields(c, t.structure) {
+            Some(_) => (format!("{head} {{ {} }}", binds.join(", ")), n),
+            None => (format!("{head}({})", binds.join(", ")), n),
+        })
+    }
+
+    /// Emits the handler trait of the async capability whose operations are `op`, answered with
+    /// `rets`, once: in the module of the operation type, named after it.
+    fn async_handler(
+        &mut self,
+        modules: &mut ModuleTree,
+        op: &str,
+        rets: &[FacadeType],
+    ) -> Result<Handler, CodegenError> {
+        if let Some(h) = self.handlers.get(op) {
+            return Ok(h.clone());
+        }
+        let t = *self
+            .types
+            .get(op)
+            .ok_or_else(|| CodegenError::internal(format!("the operation type {op} is not described")))?;
+        if rets.len() != t.ctors.len() {
+            return Err(CodegenError::internal(format!("{} answers for the operations of {op}", rets.len())));
+        }
+        let op_placement = self.placement(op)?.clone();
+        let ident = format!("{}Handler", op_placement.ident.trim_start_matches("r#"));
+        if self.placements.values().any(|p| p.module == op_placement.module && p.ident == ident) {
+            return Err(CodegenError::Configuration(format!(
+                "the handler trait of the async capability over {op} would be named `{ident}`, which a generated item \
+                 of the same module already is: rename the Lean declaration"
+            )));
+        }
+        let placement = Placement { module: op_placement.module.clone(), ident };
+        let depth = placement.module.len();
+        let methods =
+            unique_idents(t.ctors.iter().map(|c| snake(components(&c.name).last().expect("ctor name"))));
+        let mut w = Writer::new();
+        w.line(format!("/// Performs the operations of the async capability over `{op}`: a method per constructor,"));
+        w.line("/// answering it. An async function asks a handler for each operation its program waits for; a");
+        w.line("/// method's error abandons the program, and the function returns it.");
+        w.open(format!("pub trait {} {{", placement.ident));
+        w.line("/// What a method fails with.");
+        w.line("type Error;");
+        for (k, c) in t.ctors.iter().enumerate() {
+            let fields = self.field_decls(t, c, depth, &[])?;
+            let names: Vec<String> = match named_fields(c, t.structure) {
+                Some(n) => n.into_iter().map(|(f, _)| f).collect(),
+                None => (0..fields.len()).map(|i| format!("x{i}")).collect(),
+            };
+            let params: Vec<String> = names.iter().zip(&fields).map(|(n, ty)| format!("{n}: {ty}")).collect();
+            let sep = if params.is_empty() { "" } else { ", " };
+            let answer = self.rust_type(&rets[k], depth, &[])?;
+            w.line(format!("/// Performs `{}`.", c.name));
+            w.line(format!(
+                "fn {}(&self{sep}{}) -> impl ::core::future::Future<Output = ::core::result::Result<{answer}, Self::Error>>;",
+                methods[k],
+                params.join(", ")
+            ));
+        }
+        w.close("}");
+        w.line("");
+        modules.push(&placement.module, w.finish());
+        let handler = Handler { placement, methods };
+        self.handlers.insert(op.to_owned(), handler.clone());
+        Ok(handler)
     }
 
     /// Emits the Rust definition and conversions of every described type.
@@ -1118,6 +1225,61 @@ impl<'a> Facade<'a> {
                 }
             }
         }
+        let lng = format!("{}__lng", "super::".repeat(depth));
+        if let FacadeType::Async { op, rets, result } = spec.result {
+            if spec.ir_result.is_scalar() {
+                return Err(CodegenError::internal(format!("{}: an async program compiled as a scalar", export.name)));
+            }
+            let handler = self.async_handler(modules, op, rets)?;
+            let t = *self.types.get(op.as_str()).expect("described by async_handler");
+            let ret = self.rust_type(result, depth, &generics)?;
+            let op_ty = self.rust_type(&FacadeType::Inductive { name: op.clone(), args: Vec::new() }, depth, &generics)?;
+            let mut bounds: Vec<String> = vec![format!("__H: {}", handler.placement.path_from_depth(depth))];
+            bounds.extend(generics.iter().map(|g| format!("{g}: ::lungo::LeanType<{b}>")));
+            let mut params = vec!["handler: &__H".to_owned()];
+            params.extend(sig);
+            w.line("#[allow(unused_imports, unused_unsafe, clippy::all)]");
+            w.open(format!(
+                "pub async fn {}<{}>({}) -> ::core::result::Result<{ret}, __H::Error> {{",
+                placement.ident,
+                bounds.join(", "),
+                params.join(", ")
+            ));
+            w.line("use ::lungo::__runtime::{self as rt, Obj};");
+            w.open("let mut __program = {");
+            w.line(format!("{lng}::__initialize();"));
+            w.open("unsafe {");
+            for l in body_pre {
+                w.line(l);
+            }
+            w.line(format!("let __r: Obj = {lng}::{}({});", mangle(spec.lean_name), call_args.join(", ")));
+            for l in body_post {
+                w.line(l);
+            }
+            w.line(format!("::lungo::__facade::AsyncProgram::<{b}>::new(__r)"));
+            w.close("}");
+            w.close("};");
+            w.open("loop {");
+            w.open("if __program.is_done() {");
+            w.line(format!("return ::core::result::Result::Ok(unsafe {{ __program.value::<{ret}>() }});"));
+            w.close("}");
+            w.open(format!("match unsafe {{ __program.operation::<{op_ty}>() }} {{"));
+            for k in 0..t.ctors.len() {
+                let (pattern, n) = self.ctor_pattern(t, k, depth)?;
+                let answer = self.rust_type(&rets[k], depth, &generics)?;
+                let args: Vec<String> = (0..n).map(|i| format!("__f{i}")).collect();
+                w.open(format!("{pattern} => {{"));
+                w.line(format!("let __a: {answer} = handler.{}({}).await?;", handler.methods[k], args.join(", ")));
+                w.line(format!("unsafe {{ __program.resume::<{answer}>(__a) }};"));
+                w.close("}");
+            }
+            w.close("}");
+            w.close("}");
+            w.close("}");
+            w.line("");
+            modules.push(&placement.module, w.finish());
+            return Ok(());
+        }
         let ret = self.rust_type(spec.result, depth, &generics)?;
         let bounds = if generics.is_empty() {
             String::new()
@@ -1127,7 +1289,6 @@ impl<'a> Facade<'a> {
                 generics.iter().map(|g| format!("{g}: ::lungo::LeanType<{b}>")).collect::<Vec<_>>().join(", ")
             )
         };
-        let lng = format!("{}__lng", "super::".repeat(depth));
         w.line("#[allow(unused_imports, unused_unsafe, clippy::all)]");
         w.open(format!("pub fn {}{bounds}({}) -> {ret} {{", placement.ident, sig.join(", ")));
         w.line("use ::lungo::__runtime::{self as rt, Obj};");

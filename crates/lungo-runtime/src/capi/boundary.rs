@@ -193,6 +193,60 @@ pub unsafe extern "C" fn lungo_call_write_eio(
     }
 }
 
+/// Encodes the first step of the async program `p` (consumed), returned by a function whose
+/// result `returns` describes ([`wire::Returns::Async`], with the call's type parameters).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lungo_call_write_async(call: *mut Call, p: Obj, returns: *const u8, returns_len: usize) {
+    let call = unsafe { &mut *call };
+    let bytes = unsafe { std::slice::from_raw_parts(returns, returns_len) };
+    let returns = wire::parse_returns(bytes)
+        .and_then(|r| r.substitute(&call.type_args))
+        .unwrap_or_else(|e| lean_internal_panic(&format!("a generated async result description is invalid: {e}")));
+    unsafe { wire::program::step_returns(call.table, &returns, p, &mut call.output) };
+}
+
+/// Status of a resumption that was resumed or cancelled already: the output holds a UTF-8
+/// message.
+pub const STALE: i32 = 3;
+
+/// Resumes the async program waiting on `resumption` with the answer `input` (whose handles the
+/// runtime takes, as from a host function's result) and stores its next step in `out`. Returns
+/// `OK`; `MALFORMED` when the answer is not of the type the operation is answered with (the
+/// resumption is consumed all the same); `STALE` when the resumption was resumed or cancelled
+/// already. A resumption is never resumed twice.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lungo_async_resume(resumption: u64, input: *const u8, len: usize, out: *mut Buffer) -> i32 {
+    let out = unsafe { &mut *out };
+    let input = if len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(input, len) } };
+    match wire::program::resume(resumption, input) {
+        Ok(bytes) => {
+            out.set(bytes);
+            OK
+        }
+        Err(e @ wire::program::ResumeError::Stale(_)) => {
+            out.set(e.to_string().into_bytes());
+            STALE
+        }
+        Err(e @ wire::program::ResumeError::Malformed(_)) => {
+            out.set(e.to_string().into_bytes());
+            MALFORMED
+        }
+    }
+}
+
+/// Gives up the async program waiting on `resumption`, releasing it: `OK`, or `STALE` when it
+/// was resumed or cancelled already.
+#[unsafe(no_mangle)]
+pub extern "C" fn lungo_async_cancel(resumption: u64) -> i32 {
+    if wire::program::cancel(resumption) { OK } else { STALE }
+}
+
+/// The number of async programs waiting for an answer.
+#[unsafe(no_mangle)]
+pub extern "C" fn lungo_async_outstanding() -> usize {
+    wire::program::outstanding()
+}
+
 /// Ends a call: stores the encoded result in `out` and returns `OK`, or stores the reason the
 /// input was rejected and returns `MALFORMED`. Frees the call context.
 #[unsafe(no_mangle)]

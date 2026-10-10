@@ -6,9 +6,15 @@
 //! polymorphic types generic types. Every function returns an error besides its result: the
 //! program rejects values Go can express that Lean cannot, and `IO` functions fail with
 //! `*lungo.IOError`, `EIO ε` functions with `*lungo.Error[ε]`.
+//!
+//! Each capability the host provides is an interface with a method per operation, installed with
+//! `Set<Capability>`; a call before every capability is installed fails with
+//! `*lungo.MissingCapabilityError`. An async export takes a `context.Context` and a handler of
+//! its async capability, whose methods the generated code calls for each operation the program
+//! asks. `Assurance()` is the program's assurance document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Function, HostExtern};
+use crate::c::boundary::{AsyncCapability, Boundary, Capability, Function, Operation, capability_name, operation_name};
 use crate::core::model::value_recursive;
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
@@ -84,6 +90,10 @@ const GO_KEYWORDS: &[&str] = &[
     "big",
     "unsafe",
     "sync",
+    "context",
+    "ctx",
+    "op",
+    "handler",
     "C",
     "w",
     "r",
@@ -204,10 +214,33 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
+/// The Go names of a capability.
+struct CapabilityNames {
+    /// The interface.
+    interface: String,
+    /// The function installing an implementation.
+    setter: String,
+    /// The package variable holding it.
+    var: String,
+    /// The interface's method per operation.
+    methods: Vec<String>,
+}
+
+/// The Go names of an async capability.
+struct AsyncNames {
+    /// The handler interface.
+    handler: String,
+    /// The function dispatching an operation to a handler.
+    perform: String,
+    /// The handler's method per operation.
+    methods: Vec<String>,
+}
+
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    host_methods: Vec<String>,
+    capabilities: Vec<CapabilityNames>,
+    asyncs: Vec<AsyncNames>,
 }
 
 fn go_exported(s: &str) -> String {
@@ -222,7 +255,7 @@ impl Names {
         aliases: &BTreeMap<String, String>,
     ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Go");
-        for reserved in ["Host", "SetHost", "RunMain"] {
+        for reserved in ["RunMain", "Assurance", "assuranceJSON", "ready"] {
             scope.claim(reserved.to_owned(), "a generated function")?;
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
@@ -284,16 +317,36 @@ impl Names {
                 scope.claim_function(&f.lean_name, s, |suffix| suffix.iter().map(|c| go_exported(c)).collect())
             })
             .collect::<Result<_, _>>()?;
-        let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
-        let mut methods = Scope::new("Go");
-        let host_methods = short_names(&host_names)
-            .iter()
-            .zip(&b.host_externs)
-            .map(|(s, h)| {
-                methods.claim(s.iter().map(|c| go_exported(c)).collect(), format!("host extern {}", h.declaration))
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Names { types, functions, host_methods })
+        let mut capabilities = Vec::new();
+        for c in &b.capabilities {
+            let interface = scope.claim(go_exported(&capability_name(&c.id)), format!("capability {}", c.id))?;
+            let setter = scope.claim(format!("Set{interface}"), format!("the installer of capability {}", c.id))?;
+            let var = scope.claim(format!("the{interface}"), format!("the implementation of capability {}", c.id))?;
+            let mut methods = Scope::new("Go");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| methods.claim(go_exported(operation_name(&o.declaration)), format!("operation {}", o.declaration)))
+                .collect::<Result<_, _>>()?;
+            capabilities.push(CapabilityNames { interface, setter, var, methods: ms });
+        }
+        let mut asyncs = Vec::new();
+        for c in &b.async_capabilities {
+            let op = &types[c.op_type as usize].name;
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
+            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async capability {}", c.id))?;
+            let mut methods = Scope::new("Go");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| {
+                    let last = components(&o.lean_name).last().cloned().unwrap_or_default();
+                    methods.claim(go_exported(&last), format!("operation {}", o.lean_name))
+                })
+                .collect::<Result<_, _>>()?;
+            asyncs.push(AsyncNames { handler, perform, methods: ms });
+        }
+        Ok(Names { types, functions, capabilities, asyncs })
     }
 }
 
@@ -519,17 +572,26 @@ impl Emitter<'_> {
                 self.named_type(&mut w, i);
             }
         }
+        self.capabilities(&mut w);
+        self.async_capabilities(&mut w);
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
         }
-        self.host(&mut w);
         self.run_main(&mut w);
+        self.assurance(&mut w);
         let text = w.finish();
         let mut imports = vec![];
+        if text.contains("context.") {
+            imports.push("\t\"context\"".to_owned());
+        }
+        imports.push("\t_ \"embed\"".to_owned());
         if text.contains("big.") {
             imports.push("\t\"math/big\"".to_owned());
         }
         imports.push("\t\"sync\"".to_owned());
+        if text.contains("atomic.") {
+            imports.push("\t\"sync/atomic\"".to_owned());
+        }
         if text.contains("utf8.") {
             imports.push("\t\"unicode/utf8\"".to_owned());
         }
@@ -819,9 +881,42 @@ impl Emitter<'_> {
     /// The Go result list of a function returning `returns`, and the result type.
     fn result_type(&self, returns: &Returns) -> Option<String> {
         let t = match returns {
-            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } => t,
+            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } | Returns::Async { value: t, .. } => t,
         };
         (!is_unit(t)).then(|| self.go_type(t))
+    }
+
+    /// The async capability whose operation type is `op`.
+    fn async_capability(&self, op: u32) -> (&AsyncCapability, &AsyncNames) {
+        let b = self.boundary();
+        let i = b
+            .async_capabilities
+            .iter()
+            .position(|c| c.op_type == op)
+            .expect("the boundary has the async capability of every async export");
+        (&b.async_capabilities[i], &self.names.asyncs[i])
+    }
+
+    /// `ready` checks that the host installed every capability before a call.
+    fn ready(&self, w: &mut Writer) {
+        let b = self.boundary();
+        if b.capabilities.is_empty() {
+            return;
+        }
+        w.line("// ready fails unless the host installed every capability.");
+        w.line("func ready() error {");
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+            w.line(format!("\tif {}.Load() == nil {{", n.var));
+            w.line(format!(
+                "\t\treturn &lungo.MissingCapabilityError{{Capability: \"{}\", Operation: \"{}\"}}",
+                c.id,
+                operation_name(&c.operations[0].declaration)
+            ));
+            w.line("\t}");
+        }
+        w.line("\treturn nil");
+        w.line("}");
+        w.line("");
     }
 
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
@@ -836,8 +931,37 @@ impl Emitter<'_> {
             Some(t) => format!("(result {t}, err error)"),
             None => "(err error)".to_owned(),
         };
+        let asynchronous = match &f.returns {
+            Returns::Async { op, .. } => Some(self.async_capability(*op)),
+            _ => None,
+        };
+        if let Some((_, an)) = asynchronous {
+            params.insert(0, format!("handler {}", an.handler));
+            params.insert(0, "ctx context.Context".to_owned());
+        }
         w.line(format!("// {name} is Lean's {} : {}", f.lean_name, f.lean_type.replace('\n', " ")));
+        if let Some((c, an)) = asynchronous {
+            w.line(format!(
+                "// It is an async program: it asks handler to perform the operations of {} and resumes with each",
+                c.id
+            ));
+            w.line(format!(
+                "// answer. An error of handler, or ctx ending, abandons the program and is returned. ({})",
+                an.handler
+            ));
+        }
         w.line(format!("func {name}{tp}({}) {results} {{", params.join(", ")));
+        if !self.boundary().capabilities.is_empty() {
+            w.line("\tif err = ready(); err != nil {");
+            w.line("\t\treturn");
+            w.line("\t}");
+        }
+        if let Some((_, an)) = asynchronous {
+            w.line("\tif handler == nil {");
+            w.line(format!("\t\terr = lungo.Malformed(\"a nil {}\")", an.handler));
+            w.line("\t\treturn");
+            w.line("\t}");
+        }
         let type_args: Vec<String> = (0..n).map(|k| format!(", type{}", param_name(k))).collect();
         w.line(format!("\tw := lungo.NewCall(program(){})", type_args.join("")));
         w.line("\tdefer w.Release()");
@@ -859,6 +983,17 @@ impl Emitter<'_> {
                 self.descriptor(error, Scoped::Function),
                 self.descriptor(value, Scoped::Function)
             ),
+            Returns::Async { op, value, .. } => {
+                let (_, an) = self.async_capability(*op);
+                let op_type = Type::Inductive { index: *op, args: Vec::new() };
+                format!(
+                    "lungo.DriveAsync(ctx, program(), status, out, {}, {}, func(ctx context.Context, op {}, w *lungo.Writer) error {{\n\t\treturn {}(ctx, handler, op, w)\n\t}})",
+                    self.descriptor(&op_type, Scoped::Function),
+                    self.descriptor(value, Scoped::Function),
+                    self.go_type(&op_type),
+                    an.perform
+                )
+            }
         };
         if result.is_some() {
             w.line(format!("\treturn {decode}"));
@@ -870,41 +1005,62 @@ impl Emitter<'_> {
         w.line("");
     }
 
-    fn host(&self, w: &mut Writer) {
+    /// Each capability: its interface, and the function installing an implementation.
+    fn capabilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        if b.host_externs.is_empty() {
-            return;
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+            self.capability(w, c, n);
         }
-        w.line("// Host implements the program's externs in Go. Its methods may run on any goroutine's");
-        w.line("// thread; an error of a method whose Lean type is not IO or EIO terminates the program.");
-        w.line("type Host interface {");
-        for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
+        self.ready(w);
+    }
+
+    fn capability(&self, w: &mut Writer, c: &Capability, n: &CapabilityNames) {
+        let b = self.boundary();
+        w.line(format!(
+            "// {} is the capability {} ({}), which the host provides. Its methods may run on any",
+            n.interface, c.id, c.lean_name
+        ));
+        w.line("// goroutine's thread; an error of a method whose Lean type is not IO or EIO terminates the program.");
+        let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+        if !note.is_empty() {
+            w.line(format!("//{note}"));
+        }
+        w.line(format!("type {} interface {{", n.interface));
+        for (o, m) in c.operations.iter().zip(&n.methods) {
             w.line(format!(
                 "\t// {m} implements Lean's {} : {}",
-                h.declaration,
-                h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
+                o.declaration,
+                o.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
             ));
-            w.line(format!("\t{}", self.host_signature(h, m)));
+            w.line(format!("\t{}", self.operation_signature(o, m)));
         }
         w.line("}");
         w.line("");
-        w.line("// SetHost installs the implementation of the program's externs; the program's first call");
-        w.line("// requires it.");
-        w.line("func SetHost(h Host) {");
-        w.line("\tif h == nil {");
-        w.line("\t\tpanic(\"SetHost(nil)\")");
+        w.line(format!("var {} atomic.Pointer[{}]", n.var, n.interface));
+        w.line("");
+        w.line(format!(
+            "// {} installs the implementation of the capability {}; the program's first call requires it.",
+            n.setter, c.id
+        ));
+        w.line(format!("func {}(c {}) {{", n.setter, n.interface));
+        w.line("\tif c == nil {");
+        w.line(format!("\t\tpanic(\"{}(nil)\")", n.setter));
         w.line("\t}");
-        for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-            let locals: Vec<String> = (0..h.params.len()).map(|k| format!("a{k}")).collect();
-            w.line(format!("\tC.{}(C.size_t({}), C.uint64_t(lungo.RegisterExtern(program(), func(r *lungo.Reader, w *lungo.Writer) error {{", b.set_host_extern, h.index));
-            for (p, l) in h.params.iter().zip(&locals) {
+        w.line(format!("\t{}.Store(&c)", n.var));
+        for (o, m) in c.operations.iter().zip(&n.methods) {
+            let locals: Vec<String> = (0..o.params.len()).map(|k| format!("a{k}")).collect();
+            w.line(format!(
+                "\tC.{}(C.size_t({}), C.uint64_t(lungo.RegisterExtern(program(), func(r *lungo.Reader, w *lungo.Writer) error {{",
+                b.set_host_extern, o.index
+            ));
+            for (p, l) in o.params.iter().zip(&locals) {
                 w.line(format!("\t\t{l}, err := {}.Decode(r)", self.descriptor(&p.ty, Scoped::Function)));
                 w.line("\t\tif err != nil {");
                 w.line("\t\t\treturn err");
                 w.line("\t\t}");
             }
-            let call = format!("h.{m}({})", locals.join(", "));
-            let (t, write) = match &h.returns {
+            let call = format!("c.{m}({})", locals.join(", "));
+            let (t, write) = match &o.returns {
                 Returns::Value(t) => (t, format!("lungo.WriteValue(w, {}, ", self.descriptor(t, Scoped::Function))),
                 Returns::Io(t) => (t, format!("lungo.WriteIO(w, {}, ", self.descriptor(t, Scoped::Function))),
                 Returns::Eio { error, value } => (
@@ -915,6 +1071,7 @@ impl Emitter<'_> {
                         self.descriptor(value, Scoped::Function)
                     ),
                 ),
+                Returns::Async { .. } => unreachable!("an operation does not return an async program"),
             };
             if is_unit(t) {
                 w.line(format!("\t\treturn {write}lungo.Unit{{}}, {call})"));
@@ -928,14 +1085,103 @@ impl Emitter<'_> {
         w.line("");
     }
 
-    fn host_signature(&self, h: &HostExtern, method: &str) -> String {
-        let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| go_local(&p.name, i)).collect());
+    fn operation_signature(&self, o: &Operation, method: &str) -> String {
+        let locals = distinct_locals(o.params.iter().enumerate().map(|(i, p)| go_local(&p.name, i)).collect());
         let params: Vec<String> =
-            h.params.iter().zip(&locals).map(|(p, l)| format!("{l} {}", self.go_type(&p.ty))).collect();
-        match self.result_type(&h.returns) {
+            o.params.iter().zip(&locals).map(|(p, l)| format!("{l} {}", self.go_type(&p.ty))).collect();
+        match self.result_type(&o.returns) {
             Some(t) => format!("{method}({}) ({t}, error)", params.join(", ")),
             None => format!("{method}({}) error", params.join(", ")),
         }
+    }
+
+    /// Each async capability: the handler interface async exports take, and the function
+    /// dispatching an operation to it.
+    fn async_capabilities(&self, w: &mut Writer) {
+        let b = self.boundary();
+        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+            let decl = &b.table.types[c.op_type as usize];
+            let tn = &self.names.types[c.op_type as usize];
+            let op_type = Type::Inductive { index: c.op_type, args: Vec::new() };
+            w.line(format!(
+                "// {} performs the operations of the async capability {} ({}) an async export asks.",
+                n.handler, c.id, c.lean_name
+            ));
+            w.line("// A method's error abandons the program, and the export returns it.");
+            let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+            if !note.is_empty() {
+                w.line(format!("//{note}"));
+            }
+            w.line(format!("type {} interface {{", n.handler));
+            for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
+                let fields = &tn.ctors[o.ctor as usize].1;
+                let mut ps = vec!["ctx context.Context".to_owned()];
+                let locals = distinct_locals(ctor.fields.iter().enumerate().map(|(k, f)| go_local(&f.name, k)).collect());
+                for (f, l) in ctor.fields.iter().zip(&locals) {
+                    ps.push(format!("{l} {}", self.go_type(&f.ty)));
+                }
+                debug_assert_eq!(fields.len(), ctor.fields.len());
+                w.line(format!("\t// {m} performs {}.", o.lean_name));
+                w.line(format!("\t{m}({}) ({}, error)", ps.join(", "), self.go_type(&o.answer)));
+            }
+            w.line("}");
+            w.line("");
+            w.line(format!(
+                "func {}(ctx context.Context, h {}, op {}, w *lungo.Writer) error {{",
+                n.perform,
+                n.handler,
+                self.go_type(&op_type)
+            ));
+            let ptr = self.recursive[c.op_type as usize];
+            let call = |w: &mut Writer, indent: &str, k: usize, x: &str| {
+                let o = &c.operations[k];
+                let args: Vec<String> = std::iter::once("ctx".to_owned())
+                    .chain(tn.ctors[k].1.iter().map(|f| format!("{x}.{f}")))
+                    .collect();
+                w.line(format!("{indent}answer, err := h.{}({})", n.methods[k], args.join(", ")));
+                w.line(format!("{indent}if err != nil {{"));
+                w.line(format!("{indent}\treturn err"));
+                w.line(format!("{indent}}}"));
+                w.line(format!("{indent}return {}.Encode(w, answer)", self.descriptor(&o.answer, Scoped::Function)));
+            };
+            if decl.ctors.len() == 1 {
+                if ptr {
+                    w.line("\tif op == nil {");
+                    w.line(format!("\t\treturn lungo.Malformed(\"a nil {}\")", tn.name));
+                    w.line("\t}");
+                }
+                call(w, "\t", 0, if ptr { "(*op)" } else { "op" });
+            } else {
+                w.line("\tswitch x := op.(type) {");
+                for (k, (cname, _)) in tn.ctors.iter().enumerate() {
+                    w.line(format!("\tcase {cname}:"));
+                    call(w, "\t\t", k, "x");
+                }
+                w.line("\t}");
+                w.line(format!("\treturn lungo.Malformed(\"an operation that is not a {}\")", tn.name));
+            }
+            w.line("}");
+            w.line("");
+        }
+    }
+
+    /// The program's assurance document, embedded from `assurance.json`.
+    fn assurance(&self, w: &mut Writer) {
+        w.line("//go:embed assurance.json");
+        w.line("var assuranceJSON []byte");
+        w.line("");
+        w.line("var assurance = sync.OnceValue(func() *lungo.Assurance {");
+        w.line("\ta, err := lungo.ParseAssurance(assuranceJSON)");
+        w.line("\tif err != nil {");
+        w.line("\t\tpanic(\"lungo: the package's assurance.json is invalid: \" + err.Error())");
+        w.line("\t}");
+        w.line("\treturn a");
+        w.line("})");
+        w.line("");
+        w.line("// Assurance is the program's assurance document: what its Lean code claims and proves of each");
+        w.line("// export, what it trusts, and what it assumes of the host's capabilities.");
+        w.line("func Assurance() *lungo.Assurance { return assurance() }");
+        w.line("");
     }
 
     fn run_main(&self, w: &mut Writer) {

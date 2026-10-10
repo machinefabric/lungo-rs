@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Version of the worker adapter this crate is built for; the worker reports its own.
-pub const ADAPTER_VERSION: u32 = 1;
+pub const ADAPTER_VERSION: u32 = 2;
 
 /// The worker's Lean sources, distributed with this crate and compiled against each project's
 /// toolchain.
@@ -22,14 +22,15 @@ pub const WORKER_SOURCES: &[(&str, &str)] = &[
     ("lakefile.toml", include_str!("../worker/lakefile.toml")),
     ("lake-manifest.json", include_str!("../worker/lake-manifest.json")),
     ("Main.lean", include_str!("../worker/Main.lean")),
-    ("Lungo/BridgeIR.lean", include_str!("../worker/Lungo/BridgeIR.lean")),
-    ("Lungo/Cbor.lean", include_str!("../worker/Lungo/Cbor.lean")),
-    ("Lungo/Diagnostics.lean", include_str!("../worker/Lungo/Diagnostics.lean")),
-    ("Lungo/Driver.lean", include_str!("../worker/Lungo/Driver.lean")),
-    ("Lungo/Interface.lean", include_str!("../worker/Lungo/Interface.lean")),
-    ("Lungo/Lake.lean", include_str!("../worker/Lungo/Lake.lean")),
-    ("Lungo/LCNFAdapter.lean", include_str!("../worker/Lungo/LCNFAdapter.lean")),
-    ("Lungo/Protocol.lean", include_str!("../worker/Lungo/Protocol.lean")),
+    ("LungoWorker/BridgeIR.lean", include_str!("../worker/LungoWorker/BridgeIR.lean")),
+    ("LungoWorker/Cbor.lean", include_str!("../worker/LungoWorker/Cbor.lean")),
+    ("LungoWorker/Diagnostics.lean", include_str!("../worker/LungoWorker/Diagnostics.lean")),
+    ("LungoWorker/Driver.lean", include_str!("../worker/LungoWorker/Driver.lean")),
+    ("LungoWorker/Interface.lean", include_str!("../worker/LungoWorker/Interface.lean")),
+    ("LungoWorker/Assurance.lean", include_str!("../worker/LungoWorker/Assurance.lean")),
+    ("LungoWorker/Lake.lean", include_str!("../worker/LungoWorker/Lake.lean")),
+    ("LungoWorker/LCNFAdapter.lean", include_str!("../worker/LungoWorker/LCNFAdapter.lean")),
+    ("LungoWorker/Protocol.lean", include_str!("../worker/LungoWorker/Protocol.lean")),
 ];
 
 /// Where compiled workers are kept.

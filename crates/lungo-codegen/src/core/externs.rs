@@ -1,11 +1,14 @@
 //! Resolution of Lean `@[extern]` declarations, shared by every backend.
 //!
 //! Externs resolve, in order, to Lean definitions exported with `@[export]`, to runtime
-//! primitives implemented by `lungo-runtime`, and to implementations the application provides
-//! (a Rust function for the Rust backend, a host function of the target language otherwise). An
+//! primitives implemented by `lungo-runtime`, and — for the operations of capabilities
+//! (`@[lungo_operation]`), and only for them — to implementations the application provides (a
+//! Rust function for the Rust backend, a host function of the target language otherwise). An
 //! extern that resolves to none of them is a build error naming the Lean declaration, the symbol,
 //! its Lean type, the runtime representation it must have, and its source location; it is never
-//! replaced or ignored.
+//! replaced or ignored. An operation is the host's by declaration: one that Lean or the runtime
+//! also implements is an error, as is an application implementation of an extern that is not an
+//! operation.
 //!
 //! Runtime primitives are checked against the representation Lean's compiler expects. Their
 //! ownership conventions are reconciled explicitly: when Lean passes an owned argument to a
@@ -36,13 +39,15 @@ pub enum Resolution {
     },
 }
 
-/// How the application provides externs to a backend, for resolution and its diagnostics.
+/// How the application provides the operations of capabilities to a backend, for resolution and
+/// its diagnostics.
 pub struct ApplicationExterns<'a> {
-    /// Extern key → the application's implementation.
+    /// Operation key → the application's implementation.
     pub implementations: &'a BTreeMap<String, String>,
     /// The setting that provides them, named in diagnostics (`Builder::rust_extern`).
     pub setting: &'a str,
-    /// How to provide an unresolved extern with key `key`, appended to its diagnostic.
+    /// How to provide an operation with key `key` that has no implementation, appended to its
+    /// diagnostic.
     pub hint: &'a dyn Fn(&str) -> String,
 }
 
@@ -57,6 +62,23 @@ pub fn resolution_key(decl: &Declaration) -> Result<String, CodegenError> {
         ExternEntry::Adhoc { .. } | ExternEntry::Inline { .. } => Ok(decl.name.clone()),
         ExternEntry::Opaque => Err(CodegenError::adapter(&decl.name, "extern with an opaque entry")),
     }
+}
+
+/// The extern keys of the operations of capabilities among `decls` (every extern declaration
+/// whose requirement names a capability), each mapped to itself: what the host implements, by the
+/// key it is registered under.
+pub fn operation_keys(
+    decls: &[Declaration],
+    requirements: &[ExternRequirement],
+) -> Result<BTreeMap<String, String>, CodegenError> {
+    let operations: std::collections::BTreeSet<&str> =
+        requirements.iter().filter(|r| r.operation.is_some()).map(|r| r.declaration.as_str()).collect();
+    let mut keys = BTreeMap::new();
+    for d in decls.iter().filter(|d| operations.contains(d.name.as_str())) {
+        let key = resolution_key(d)?;
+        keys.insert(key.clone(), key);
+    }
+    Ok(keys)
 }
 
 /// What implements an extern call.
@@ -141,6 +163,8 @@ impl ExternPlan {
             requirements.iter().map(|r| (r.declaration.as_str(), r)).collect();
         let mut plan = ExternPlan::default();
         let mut errors = Vec::new();
+        // Mappings already reported as naming an extern that is not an operation.
+        let mut misplaced: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for decl in decls.iter().filter(|d| matches!(d.body, Body::Extern { .. })) {
             let key = match resolution_key(decl) {
                 Ok(k) => k,
@@ -151,6 +175,40 @@ impl ExternPlan {
             };
             let req = reqs.get(decl.name.as_str()).copied();
             let intrinsic = registry::lookup(&key);
+            if let Some(capability) = req.and_then(|r| r.operation.as_ref()).map(|o| &o.capability) {
+                // An operation of a capability: the host's, and only the host's.
+                let provider = match (&decl.body, intrinsic) {
+                    (Body::Extern { exported_by: Some(implementation), .. }, _) => {
+                        Some(format!("the Lean definition {implementation} (via @[export])"))
+                    }
+                    (_, Some(_)) => Some("the lungo runtime".to_owned()),
+                    _ => None,
+                };
+                if let Some(provider) = provider {
+                    errors.push(CodegenError::external(ErrorCode::CapabilityMismatch, format!(
+                        "`{}` is an operation of the capability {capability}, which the host implements, but \
+                         {provider} already implements the symbol `{key}`; give the operation a symbol of its own\n\n{}",
+                        decl.name,
+                        describe(req, decl, &key, source)
+                    )));
+                    continue;
+                }
+                match user.get(&key) {
+                    Some(implementation) => {
+                        plan.resolutions.insert(
+                            decl.name.clone(),
+                            Resolution::Application { key: key.clone(), implementation: implementation.clone() },
+                        );
+                    }
+                    None => errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
+                        "the operation `{}` of the capability {capability} has no implementation\n\n{}\n{}",
+                        decl.name,
+                        describe(req, decl, &key, source),
+                        (application.hint)(&key)
+                    ))),
+                }
+                continue;
+            }
             if let Body::Extern { exported_by: Some(implementation), .. } = &decl.body {
                 if intrinsic.is_some() || user.contains_key(&key) {
                     errors.push(CodegenError::external(ErrorCode::ConflictingExtern, format!(
@@ -178,11 +236,15 @@ impl ExternPlan {
                         describe(req, decl, &key, source)
                     ))),
                 },
-                (None, Some(implementation)) => {
-                    plan.resolutions.insert(
-                        decl.name.clone(),
-                        Resolution::Application { key: key.clone(), implementation: implementation.clone() },
-                    );
+                (None, Some(path)) => {
+                    misplaced.insert(key.clone());
+                    errors.push(CodegenError::external(ErrorCode::CapabilityMismatch, format!(
+                    "{} maps `{key}` to `{path}`, but `{}` is not an operation of a capability; the host implements \
+                     only operations: mark the declaration `@[lungo_operation C]` with a capability `C`\n\n{}",
+                    application.setting,
+                    decl.name,
+                    describe(req, decl, &key, source)
+                    )));
                 }
                 (None, None) => {
                     let reason = match registry::unsupported(&key) {
@@ -193,14 +255,18 @@ impl ExternPlan {
                         None => String::new(),
                     };
                     errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
-                        "unresolved Lean external symbol\n\n{}{reason}\n{}",
+                        "unresolved Lean external symbol\n\n{}{reason}\nNothing implements it. If the host is to \
+                         implement it, make it an operation of a capability: give it `@[lungo_operation C]`, `C` \
+                         being a declaration with `@[lungo_capability \"ns.name\"]` (lungo's Lean library).",
                         describe(req, decl, &key, source),
-                        (application.hint)(&key)
                     )));
                 }
             }
         }
         for key in user.keys() {
+            if misplaced.contains(key) {
+                continue;
+            }
             let used =
                 plan.resolutions.values().any(|r| matches!(r, Resolution::Application { key: k, .. } if k == key));
             if !used {

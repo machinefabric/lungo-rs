@@ -37,7 +37,9 @@ mod oracle;
 
 pub use lungo_codegen::rust::Attribute;
 pub use lungo_driver::{
-    ADAPTER_VERSION, Analysis, BuildKey, CodegenError, Context, Environment, Error, ErrorCode, LeanOptions, Limits,
+    ADAPTER_VERSION, Analysis, AssuranceIssue, AssurancePolicy, BuildKey, CodegenError, Context, Environment, Error,
+    ErrorCode,
+    LeanOptions, Limits,
     RUNTIME_ABI_VERSION, Result, SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, WorkerCache, bir, cache_root,
     canonical_path, codegen, host_triple, protocol, read_pin, relative_path,
 };
@@ -85,8 +87,9 @@ pub fn configure() -> Builder {
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct RustOptions {
     pub mode: Mode,
-    /// The Rust implementations of the host externs: extern key → Rust path. Its keys are
-    /// exactly the host externs of the `[lean]` settings.
+    /// The Rust implementations of the operations of the program's capabilities (the externs
+    /// its Lean code marks `@[lungo_operation]`): extern key → Rust path. Every operation the
+    /// program reaches has one, and nothing else does.
     pub rust_externs: BTreeMap<String, String>,
     /// Lean types provided by existing Rust types: Lean type → Rust path.
     pub extern_types: BTreeMap<String, String>,
@@ -112,13 +115,14 @@ pub struct RustOptions {
 }
 
 /// Configuration of a Lean project's integration into a Rust crate, built with [`configure`]:
-/// the settings every language shares ([`LeanOptions`]) and the Rust generator's
-/// ([`RustOptions`]).
+/// the settings every language shares ([`LeanOptions`]), the Rust generator's
+/// ([`RustOptions`]), and what the project requires of its assurance ([`AssurancePolicy`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Builder {
     pub lean: LeanOptions,
     pub rust: RustOptions,
+    pub assurance: AssurancePolicy,
 }
 
 fn attribute(path: impl AsRef<str>, attribute: impl AsRef<str>) -> Attribute {
@@ -127,8 +131,29 @@ fn attribute(path: impl AsRef<str>, attribute: impl AsRef<str>) -> Attribute {
 
 impl Builder {
     /// A builder with these settings.
-    pub fn from_options(lean: LeanOptions, rust: RustOptions) -> Self {
-        Builder { lean, rust }
+    pub fn from_options(lean: LeanOptions, rust: RustOptions, assurance: AssurancePolicy) -> Self {
+        Builder { lean, rust, assurance }
+    }
+
+    /// Reads the assurance records of `module` (with everything it imports) without compiling it
+    /// into the program: laws proved apart from the code they are about.
+    pub fn assurance_module(mut self, module: impl Into<String>) -> Self {
+        self.lean = self.lean.assurance_module(module);
+        self
+    }
+
+    /// Requires every export `path` selects (`.`: every export; otherwise the export it names
+    /// and every export in it as a namespace) to be the subject of a proved claim.
+    pub fn require_claims(mut self, path: impl Into<String>) -> Self {
+        self.assurance = self.assurance.require_claims(path);
+        self
+    }
+
+    /// Forbids every proved claim and every export from resting on the assumption, or the
+    /// capability, `name`.
+    pub fn forbid_assumption(mut self, name: impl Into<String>) -> Self {
+        self.assurance = self.assurance.forbid_assumption(name);
+        self
     }
 
     /// Compiles `module` (with everything it imports) instead of the default targets' roots.
@@ -154,13 +179,11 @@ impl Builder {
         self
     }
 
-    /// Implements the Lean extern `symbol` (or, for `@[extern]` without a symbol, the Lean
-    /// declaration name) with the Rust function at `rust_path`, called through a generated
-    /// adapter with facade types. The extern becomes a host extern.
+    /// Implements the operation with extern key `symbol` (an `@[extern "symbol"]` declaration the
+    /// Lean code marks `@[lungo_operation C]`) with the Rust function at `rust_path`, called
+    /// through a generated adapter with facade types.
     pub fn rust_extern(mut self, symbol: impl Into<String>, rust_path: impl Into<String>) -> Self {
-        let symbol = symbol.into();
-        self.lean = self.lean.host_extern(symbol.clone());
-        self.rust.rust_externs.insert(symbol, rust_path.into());
+        self.rust.rust_externs.insert(symbol.into(), rust_path.into());
         self
     }
 
@@ -378,7 +401,6 @@ impl Builder {
         env: &Environment,
         analysis: &dyn Fn(&Context) -> Result<&'a Analysis>,
     ) -> Result<BuildOutcome> {
-        self.check_externs()?;
         let ctx = self.context(project, env)?;
         claim_output(&ctx)?;
         let config = serde_json::to_string(self).expect("configuration serializes");
@@ -398,7 +420,7 @@ impl Builder {
         let generated = self.generate_with(&ctx, env, analysis)?;
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
         let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &generated.link_directives)?;
-        output::publish(&ctx.out_dir, &ctx.work_dir, &generated.files, &generated.binary_files, &info)?;
+        output::publish(&ctx.out_dir, &generated.files, &generated.binary_files, &info)?;
         Ok(BuildOutcome { name: ctx.name, inputs, link_directives: generated.link_directives, reused: false })
     }
 
@@ -415,20 +437,6 @@ impl Builder {
     /// Builds the Lean project in `project` with Lake and runs the worker.
     pub fn analyze(&self, project: &Path, env: &Environment) -> Result<Analysis> {
         self.lean.analyze(project, env)
-    }
-
-    /// The Rust implementations of the host externs cover exactly the declared host externs.
-    fn check_externs(&self) -> Result<()> {
-        let mapped: BTreeSet<&String> = self.rust.rust_externs.keys().collect();
-        let declared: BTreeSet<&String> = self.lean.host_externs.iter().collect();
-        if mapped == declared {
-            return Ok(());
-        }
-        let unmapped: Vec<&&String> = declared.difference(&mapped).collect();
-        let undeclared: Vec<&&String> = mapped.difference(&declared).collect();
-        Err(Error::Configuration(format!(
-            "the Rust implementations of host externs (`rust-externs`) must map exactly the declared host externs (`host-externs`); unmapped: {unmapped:?}, undeclared: {undeclared:?}"
-        )))
     }
 
     fn facade_namespace_for(&self, analysis: &Analysis) -> Result<String> {
@@ -456,9 +464,9 @@ impl Builder {
         }
     }
 
-    /// Checks trust policies and generates the Rust files for an analysis of `project`.
+    /// Checks the trust and assurance policies and generates the Rust files for an analysis of
+    /// `project`.
     pub fn generate(&self, project: &Path, env: &Environment, analysis: &Analysis) -> Result<Generation> {
-        self.check_externs()?;
         on_large_stack(|| {
             let ctx = self.context(project, env)?;
             self.generate_with(&ctx, env, analysis)
@@ -467,6 +475,7 @@ impl Builder {
 
     fn generate_with(&self, ctx: &Context, env: &Environment, analysis: &Analysis) -> Result<Generation> {
         self.lean.check_trust(&analysis.success)?;
+        self.assurance.check(&analysis.success)?;
         let embedded =
             if self.rust.embed_sources { Some(output::local_sources(&ctx.project, &analysis.success)?) } else { None };
         let namespace = self.facade_namespace_for(analysis)?;
@@ -540,25 +549,6 @@ fn cargo_target() -> Result<lungo_driver::protocol::Target> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// TEST0080: rust externs declare host externs
-    #[test]
-    fn test0080_rust_externs_declare_host_externs() {
-        let cfg = configure().rust_extern("provider_send", "crate::provider::send");
-        assert!(cfg.lean.host_externs.contains("provider_send"));
-        assert!(cfg.check_externs().is_ok());
-    }
-
-    /// TEST0081: rust externs must cover exactly the host externs
-    #[test]
-    fn test0081_rust_externs_must_cover_exactly_the_host_externs() {
-        let mut undeclared = configure();
-        undeclared.rust.rust_externs.insert("a".into(), "crate::a".into());
-        assert!(matches!(undeclared.check_externs(), Err(Error::Configuration(_))));
-        let mut unmapped = configure();
-        unmapped.lean.host_externs.insert("b".into());
-        assert!(matches!(unmapped.check_externs(), Err(Error::Configuration(_))));
-    }
 
     /// TEST0082: rust options round trip through toml and reject unknown keys
     #[test]

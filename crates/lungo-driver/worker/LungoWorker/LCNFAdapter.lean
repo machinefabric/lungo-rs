@@ -1,6 +1,6 @@
 import Lean
-import Lungo.BridgeIR
-import Lungo.Diagnostics
+import LungoWorker.BridgeIR
+import LungoWorker.Diagnostics
 
 /-!
 Version-specific adapter from Lean 4.34.1's compiler output to Bridge IR.
@@ -12,7 +12,7 @@ against. The adapter reads it for the executable closure of the requested roots 
 `Init`, `Std`, and package code — so every executable dependency is emitted regardless of
 whether it is public.
 -/
-namespace Lungo.LCNFAdapter
+namespace LungoWorker.LCNFAdapter
 
 open Lean Lean.IR
 
@@ -108,11 +108,13 @@ def initializers (env : Environment) (modIdx : Nat) (phases : IRPhases) : Array 
 /--
 Maps each external symbol provided by a Lean definition (`@[export sym] def f ...`) to that
 definition. Lean's runtime implements some `@[extern]` symbols this way; for them the
-implementation is compiled Lean code rather than a runtime primitive.
+implementation is compiled Lean code rather than a runtime primitive. Only the modules `linked`
+into the program provide symbols: a module loaded for its assurance records only cannot.
 -/
-def exportedSymbols (env : Environment) : Std.HashMap String Name := Id.run do
+def exportedSymbols (env : Environment) (linked : Nat → Bool) : Std.HashMap String Name := Id.run do
   let mut m := {}
   for i in [0:env.header.moduleNames.size] do
+    unless linked i do continue
     for (decl, sym) in exportAttr.ext.getModuleEntries env i do
       m := m.insert (sym.toString (escape := false)) decl
   return m
@@ -178,4 +180,4 @@ def encodeDecl (env : Environment) (exports : Std.HashMap String Name) (d : Decl
         ("selected", selected), ("exported_by", opt ((exportedBy exports d).map BridgeIR.name))])
     ]
 
-end Lungo.LCNFAdapter
+end LungoWorker.LCNFAdapter

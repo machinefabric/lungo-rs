@@ -2,9 +2,14 @@
 //! Lean calls the host's implementations of externs.
 //!
 //! [`generate`] computes the [`Boundary`], the model every binding generator consumes (the
-//! program's types as a wire-format type table, its callable functions, the externs the host
-//! implements, the entry point), and emits its C: the type table, one call entry point per
-//! exported function, and one adapter per host extern.
+//! program's types as a wire-format type table, its callable functions, the capabilities the
+//! host provides, the entry point), and emits its C: the type table, one call entry point per
+//! exported function, and one adapter per operation of a capability.
+//!
+//! A capability is either a group of `@[extern]` operations the host implements synchronously,
+//! called through these adapters, or an async capability: the constructors of an operation type
+//! an async program asks the host to perform, answered through the handler the caller passes to
+//! each async export (see [`lungo_runtime::wire::program`]).
 
 use super::program::Emitter;
 use super::syntax::{c_type, comment, string};
@@ -15,7 +20,7 @@ use crate::core::writer::Writer;
 use crate::{CodegenError, ErrorCode};
 use lungo_bir::{Declaration, IrType, Program};
 use lungo_protocol::{
-    DeclSource, Export, ExternRequirement, FacadeParam, FacadeType, FieldKind, Success, Trust, TypeDecl,
+    CapabilityKind, DeclSource, Export, ExternRequirement, FacadeParam, FacadeType, FieldKind, Success, TypeDecl,
 };
 use lungo_runtime::wire::{self, Returns, Signature, Type};
 use serde::{Deserialize, Serialize};
@@ -56,15 +61,16 @@ pub struct Function {
     /// Type parameters, instantiated by the caller's type arguments (`Type::Param`).
     pub type_params: Vec<String>,
     pub params: Vec<Param>,
+    /// What the function returns; `Returns::Async` for an async program, whose call returns its
+    /// first step.
     pub returns: Returns,
     pub source: Option<DeclSource>,
-    pub trust: Trust,
 }
 
-/// An extern the host implements.
+/// An operation of a capability: an `@[extern]` declaration the host implements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HostExtern {
+pub struct Operation {
     /// Its index for `<prefix>set_host_extern`.
     pub index: usize,
     /// The extern's key: its C symbol, or the Lean declaration for other extern forms.
@@ -74,6 +80,42 @@ pub struct HostExtern {
     /// Type parameters of a polymorphic extern are passed as opaque values.
     pub params: Vec<Param>,
     pub returns: Returns,
+}
+
+/// A capability the host provides by implementing its operations, each called synchronously.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Capability {
+    /// The namespaced identifier, such as `time.clock`.
+    pub id: String,
+    /// The Lean declaration registered as the capability.
+    pub lean_name: String,
+    pub operations: Vec<Operation>,
+}
+
+/// An operation of an async capability: a constructor of its operation type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncOperation {
+    /// The constructor's index in the operation type.
+    pub ctor: u32,
+    /// The constructor's Lean name.
+    pub lean_name: String,
+    /// The type of the host's answer.
+    pub answer: Type,
+}
+
+/// A capability whose operations an async program asks the host to perform; the caller of an
+/// async export passes a handler for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncCapability {
+    pub id: String,
+    /// The Lean declaration registered as the capability (its `Lungo.Async.Interface` instance).
+    pub lean_name: String,
+    /// The operation type: its index in the type table.
+    pub op_type: u32,
+    pub operations: Vec<AsyncOperation>,
 }
 
 impl Function {
@@ -87,7 +129,7 @@ impl Function {
     }
 }
 
-impl HostExtern {
+impl Operation {
     /// The signature of the host's implementation.
     pub fn signature(&self) -> Signature {
         Signature {
@@ -126,11 +168,15 @@ pub struct Boundary {
     /// The Lean names of the table's types, by index.
     pub types: Vec<NamedType>,
     pub functions: Vec<Function>,
-    pub host_externs: Vec<HostExtern>,
+    /// The capabilities whose operations the host implements, by identifier.
+    pub capabilities: Vec<Capability>,
+    /// The async capabilities the program's async exports ask operations of, by identifier.
+    pub async_capabilities: Vec<AsyncCapability>,
     /// `int32_t <prefix>run_main(size_t argc, const char *const *argv)`, when a root module
     /// defines `main`.
     pub run_main: Option<String>,
-    /// `void <prefix>set_host_extern(size_t index, uint64_t callback)`.
+    /// `void <prefix>set_host_extern(size_t index, uint64_t callback)`: registers the host's
+    /// implementation of operation `index`.
     pub set_host_extern: String,
     /// `const lungo_types *<prefix>types(void)`.
     pub types_symbol: String,
@@ -144,8 +190,13 @@ struct Types<'a> {
 }
 
 impl Types<'_> {
+    fn index_of(&self, name: &str) -> Result<u32, CodegenError> {
+        self.index.get(name).copied().ok_or_else(|| CodegenError::internal(format!("type {name} is not described")))
+    }
+
     /// The wire type of `ft` at a value position. `IO` actions stored as values are functions
-    /// the boundary cannot call; they cross as opaque values, as in the Rust facade.
+    /// the boundary cannot call; they cross as opaque values, as in the Rust facade. An async
+    /// program is only ever a function's result: elsewhere it is an error.
     fn wire(&self, ft: &FacadeType) -> Result<Type, CodegenError> {
         Ok(match ft {
             FacadeType::Nat => Type::Nat,
@@ -199,6 +250,15 @@ impl Types<'_> {
                 Type::Inductive { index: self.index[h.as_str()], args: Vec::new() }
             }
             FacadeType::Opaque { .. } => Type::Opaque,
+            FacadeType::Async { op, .. } => {
+                return Err(CodegenError::external(
+                    ErrorCode::AsyncInterface,
+                    format!(
+                        "an async program over {op} appears inside a value; an async program crosses to the host \
+                         only as what an exported function returns"
+                    ),
+                ));
+            }
         })
     }
 
@@ -209,6 +269,11 @@ impl Types<'_> {
             FacadeType::Eio { error, value } => Returns::Eio { error: self.wire(error)?, value: self.wire(value)? },
             // `BaseIO α` functions return their value directly.
             FacadeType::BaseIo(t) => Returns::Value(self.wire(t)?),
+            FacadeType::Async { op, rets, result } => Returns::Async {
+                op: self.index_of(op)?,
+                rets: rets.iter().map(|r| self.wire(r)).collect::<Result<_, _>>()?,
+                value: self.wire(result)?,
+            },
             other => Returns::Value(self.wire(other)?),
         })
     }
@@ -318,9 +383,20 @@ impl TypeConsts {
     fn add(&mut self, prefix: &str, ty: &Type) -> (String, String) {
         let mut bytes = Vec::new();
         ty.encode(&mut bytes);
+        self.bytes(prefix, &bytes)
+    }
+
+    /// What a function returns, encoded.
+    fn returns(&mut self, prefix: &str, returns: &Returns) -> (String, String) {
+        let mut bytes = Vec::new();
+        returns.encode(&mut bytes);
+        self.bytes(prefix, &bytes)
+    }
+
+    fn bytes(&mut self, prefix: &str, bytes: &[u8]) -> (String, String) {
         let name = format!("{prefix}t_{}", self.count);
         self.count += 1;
-        self.lines.extend(byte_array(&name, &bytes));
+        self.lines.extend(byte_array(&name, bytes));
         let len = bytes.len();
         (name, len.to_string())
     }
@@ -368,28 +444,37 @@ pub struct BoundaryInput<'a> {
 pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String), Vec<CodegenError>> {
     let prefix = e.prefix;
     let interface = &input.success.interface;
+    let assurance = &input.success.assurance;
     let requirements: HashMap<&str, &ExternRequirement> =
         input.success.extern_requirements.iter().map(|r| (r.declaration.as_str(), r)).collect();
-    let host: Vec<(&Declaration, &ExternRequirement, String)> = input
-        .externs
-        .resolutions
-        .iter()
-        .filter_map(|(d, r)| match r {
-            Resolution::Application { key, .. } => Some((d.as_str(), key.clone())),
-            _ => None,
-        })
-        .map(|(d, key)| {
-            let decl =
-                input.program.declaration(d).ok_or_else(|| CodegenError::internal(format!("extern {d} missing")))?;
-            let req = requirements
-                .get(d)
-                .copied()
-                .ok_or_else(|| CodegenError::internal(format!("no extern requirement for {d}")))?;
-            Ok((decl, req, key))
-        })
-        .collect::<Result<_, CodegenError>>()
-        .map_err(|e| vec![e])?;
-    let host_reqs: Vec<&ExternRequirement> = host.iter().map(|(_, r, _)| *r).collect();
+    let capability_ids: HashMap<&str, &str> =
+        assurance.capabilities.iter().map(|c| (c.name.as_str(), c.id.as_str())).collect();
+    // The operations the host implements, grouped by capability: capabilities by identifier,
+    // operations by declaration. Their order is the order of their indices.
+    let mut grouped: std::collections::BTreeMap<&str, Vec<(&Declaration, &ExternRequirement, String, &str)>> =
+        std::collections::BTreeMap::new();
+    for (d, r) in &input.externs.resolutions {
+        let Resolution::Application { key, .. } = r else { continue };
+        let decl = input
+            .program
+            .declaration(d)
+            .ok_or_else(|| vec![CodegenError::internal(format!("extern {d} missing"))])?;
+        let req = requirements
+            .get(d.as_str())
+            .copied()
+            .ok_or_else(|| vec![CodegenError::internal(format!("no extern requirement for {d}"))])?;
+        let capability = &req
+            .operation
+            .as_ref()
+            .ok_or_else(|| vec![CodegenError::internal(format!("{d} is implemented by the host but is no operation"))])?
+            .capability;
+        let id = capability_ids
+            .get(capability.as_str())
+            .copied()
+            .ok_or_else(|| vec![CodegenError::internal(format!("the capability {capability} has no record"))])?;
+        grouped.entry(id).or_default().push((decl, req, key.clone(), capability.as_str()));
+    }
+    let host_reqs: Vec<&ExternRequirement> = grouped.values().flatten().map(|(_, r, _, _)| *r).collect();
     let reachable = reachable_types(&interface.types, &interface.exports, &host_reqs, &|_| false);
     let types: Vec<&TypeDecl> = interface.types.iter().filter(|t| reachable.contains(t.name.as_str())).collect();
     let t = Types { index: types.iter().enumerate().map(|(i, d)| (d.name.as_str(), i as u32)).collect() };
@@ -411,19 +496,63 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
         }
     }
 
-    // Host externs.
-    let mut host_externs = Vec::new();
-    for (index, (decl, req, key)) in host.iter().enumerate() {
-        match emit_host_adapter(&mut body, &mut consts, e, &t, index, decl, req, key) {
-            Ok(h) => host_externs.push(h),
-            Err(err) => errors.push(err),
+    // Async capabilities, as the async exports ask their operations.
+    let mut async_capabilities: Vec<AsyncCapability> = Vec::new();
+    for f in &functions {
+        let Returns::Async { op, rets, .. } = &f.returns else { continue };
+        if async_capabilities.iter().any(|c| c.op_type == *op) {
+            continue;
         }
+        let op_name = &table.types[*op as usize].name;
+        let record = assurance.capabilities.iter().find(|c| {
+            matches!(&c.kind, CapabilityKind::Async { op_type, .. } if op_type == op_name)
+        });
+        let Some(record) = record else {
+            errors.push(CodegenError::external(
+                ErrorCode::AsyncInterface,
+                format!(
+                    "{} returns an async program over {op_name}, which is not the operation type of an async \
+                     capability: give its `Lungo.Async.Interface {op_name}` instance `@[lungo_capability \"ns.name\"]`",
+                    f.lean_name
+                ),
+            ));
+            continue;
+        };
+        let operations = table.types[*op as usize]
+            .ctors
+            .iter()
+            .zip(rets)
+            .enumerate()
+            .map(|(i, (c, answer))| AsyncOperation { ctor: i as u32, lean_name: c.name.clone(), answer: answer.clone() })
+            .collect();
+        async_capabilities.push(AsyncCapability {
+            id: record.id.clone(),
+            lean_name: record.name.clone(),
+            op_type: *op,
+            operations,
+        });
+    }
+    async_capabilities.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Capabilities and their operations.
+    let mut capabilities = Vec::new();
+    let mut index = 0;
+    for (id, ops) in &grouped {
+        let mut operations = Vec::new();
+        for (decl, req, key, _) in ops {
+            match emit_host_adapter(&mut body, &mut consts, e, &t, index, decl, req, key) {
+                Ok(o) => operations.push(o),
+                Err(err) => errors.push(err),
+            }
+            index += 1;
+        }
+        capabilities.push(Capability { id: (*id).to_owned(), lean_name: ops[0].3.to_owned(), operations });
     }
     if !errors.is_empty() {
         return Err(errors);
     }
 
-    // The type table, the host callbacks, and the check that every host extern is implemented.
+    // The type table, the host callbacks, and the check that every capability is provided.
     w.line(format!("#include \"{}_program.h\"", input.id));
     w.line("");
     let table_bytes = table.encode();
@@ -440,21 +569,32 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     ));
     w.close("}");
     w.line("");
-    let n = host_externs.len();
+    let n = index;
     // A zero-length array is not valid C; the table always has a slot.
     w.line(format!("static uint64_t {prefix}host_callbacks[{}];", n.max(1)));
-    w.line(comment("Registers the host's implementation of host extern `index`, before the program is initialized."));
+    w.line(comment("Registers the host's implementation of operation `index`, before the program is initialized."));
     w.open(format!("void {prefix}set_host_extern(size_t index, uint64_t callback) {{"));
-    w.line(format!("if (index >= {n} || callback == 0) lungo_panic_unreachable();"));
-    w.line(format!("{prefix}host_callbacks[index] = callback;"));
+    if n == 0 {
+        // A program without operations registers nothing.
+        w.line("(void)index;");
+        w.line("(void)callback;");
+        w.line("lungo_panic_unreachable();");
+    } else {
+        w.line(format!("if (index >= {n} || callback == 0) lungo_panic_unreachable();"));
+        w.line(format!("{prefix}host_callbacks[index] = callback;"));
+    }
     w.close("}");
-    w.open(format!("void {prefix}check_host_externs(void) {{"));
-    for h in &host_externs {
-        w.line(format!(
-            "if ({prefix}host_callbacks[{}] == 0) lungo_panic_host_extern_missing({});",
-            h.index,
-            string(h.declaration.as_bytes())
-        ));
+    w.open(format!("void {prefix}check_capabilities(void) {{"));
+    for c in &capabilities {
+        for o in &c.operations {
+            w.line(format!(
+                "if ({prefix}host_callbacks[{}] == 0) lungo_panic_capability_missing({}, {}, {});",
+                o.index,
+                string(c.id.as_bytes()),
+                string(operation_name(&o.declaration).as_bytes()),
+                string(o.declaration.as_bytes())
+            ));
+        }
     }
     w.close("}");
     w.line("");
@@ -478,13 +618,71 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
             })
             .collect(),
         functions,
-        host_externs,
+        capabilities,
+        async_capabilities,
         run_main: input.run_main.clone(),
         set_host_extern: format!("{prefix}set_host_extern"),
         types_symbol: format!("{prefix}types"),
         initialize: format!("{prefix}initialize"),
     };
     Ok((boundary, text))
+}
+
+/// The name of an operation within its capability: the last component of its declaration.
+pub fn operation_name(declaration: &str) -> &str {
+    declaration.rsplit('.').next().unwrap_or(declaration)
+}
+
+/// The name of a capability in a package: the last segment of its identifier (`clock` for
+/// `time.clock`), with `-` as `_`.
+pub fn capability_name(id: &str) -> String {
+    id.rsplit('.').next().unwrap_or(id).replace('-', "_")
+}
+
+/// A readable Lean form of wire type `ty`, for documentation.
+pub fn describe_type(types: &[NamedType], ty: &Type) -> String {
+    let paren = |t: &Type| {
+        let s = describe_type(types, t);
+        if s.contains(' ') { format!("({s})") } else { s }
+    };
+    match ty {
+        Type::Nat => "Nat".into(),
+        Type::Int => "Int".into(),
+        Type::Bool => "Bool".into(),
+        Type::UInt8 => "UInt8".into(),
+        Type::UInt16 => "UInt16".into(),
+        Type::UInt32 => "UInt32".into(),
+        Type::UInt64 => "UInt64".into(),
+        Type::USize => "USize".into(),
+        Type::Int8 => "Int8".into(),
+        Type::Int16 => "Int16".into(),
+        Type::Int32 => "Int32".into(),
+        Type::Int64 => "Int64".into(),
+        Type::ISize => "ISize".into(),
+        Type::Float => "Float".into(),
+        Type::Float32 => "Float32".into(),
+        Type::Char => "Char".into(),
+        Type::String => "String".into(),
+        Type::Unit => "Unit".into(),
+        Type::ByteArray => "ByteArray".into(),
+        Type::FloatArray => "FloatArray".into(),
+        Type::Option(t) => format!("Option {}", paren(t)),
+        Type::List(t) => format!("List {}", paren(t)),
+        Type::Array(t) => format!("Array {}", paren(t)),
+        Type::Prod(a, b) => format!("{} × {}", paren(a), paren(b)),
+        Type::Except { error, value } => format!("Except {} {}", paren(error), paren(value)),
+        Type::Function { params, result } => {
+            let mut parts: Vec<String> = params.iter().map(paren).collect();
+            parts.push(paren(result));
+            parts.join(" → ")
+        }
+        Type::Param(i) => format!("α{i}"),
+        Type::Inductive { index, args } => {
+            let name = types.get(*index as usize).map_or("?", |t| t.lean_name.as_str());
+            std::iter::once(name.to_owned()).chain(args.iter().map(paren)).collect::<Vec<_>>().join(" ")
+        }
+        Type::Opaque => "(opaque)".into(),
+    }
 }
 
 /// Emits `<prefix>call_<name>` for `export`.
@@ -585,6 +783,13 @@ fn emit_call(
             let (vb, vl) = consts.add(prefix, value);
             w.line(format!("lungo_call_write_eio(call, r, {eb}, {el}, {vb}, {vl});"));
         }
+        Returns::Async { .. } => {
+            if decl.result.is_scalar() {
+                return Err(CodegenError::internal(format!("{}: async program compiled as a scalar", export.name)));
+            }
+            let (rb, rl) = consts.returns(prefix, &returns);
+            w.line(format!("lungo_call_write_async(call, r, {rb}, {rl});"));
+        }
     }
     w.line("return lungo_call_end(call, out);");
     w.close("}");
@@ -598,7 +803,6 @@ fn emit_call(
         params,
         returns,
         source: export.source.clone(),
-        trust: export.trust.clone(),
     })
 }
 
@@ -625,15 +829,22 @@ fn opaque_params(ty: Type) -> Type {
     }
 }
 
-fn opaque_returns(r: Returns) -> Returns {
-    match r {
+fn opaque_returns(r: Returns) -> Result<Returns, CodegenError> {
+    Ok(match r {
         Returns::Value(t) => Returns::Value(opaque_params(t)),
         Returns::Io(t) => Returns::Io(opaque_params(t)),
         Returns::Eio { error, value } => Returns::Eio { error: opaque_params(error), value: opaque_params(value) },
-    }
+        Returns::Async { .. } => {
+            return Err(CodegenError::external(
+                ErrorCode::AsyncInterface,
+                "an operation of a capability returns an async program; an operation the host performs \
+                 asynchronously is a constructor of an async capability's operation type",
+            ));
+        }
+    })
 }
 
-/// Emits the adapter of host extern `decl`.
+/// Emits the adapter of operation `decl`.
 #[allow(clippy::too_many_arguments)]
 fn emit_host_adapter(
     w: &mut Writer,
@@ -644,7 +855,7 @@ fn emit_host_adapter(
     decl: &Declaration,
     req: &ExternRequirement,
     key: &str,
-) -> Result<HostExtern, CodegenError> {
+) -> Result<Operation, CodegenError> {
     let prefix = e.prefix;
     let sig = req.facade.as_ref().ok_or_else(|| {
         CodegenError::external(
@@ -659,7 +870,7 @@ fn emit_host_adapter(
     if sig.params.len() != decl.params.len() {
         return Err(CodegenError::internal(format!("extern {} signature arity mismatch", decl.name)));
     }
-    let returns = opaque_returns(t.returns(&sig.result)?);
+    let returns = opaque_returns(t.returns(&sig.result)?)?;
     w.line(comment(&format!("Lean calls the host's {key} for {}.", decl.name)));
     w.open(format!("{} {{", host_adapter_prototype(prefix, decl)));
     w.line(format!(
@@ -720,10 +931,11 @@ fn emit_host_adapter(
             let (vb, vl) = consts.add(prefix, value);
             w.line(format!("return lungo_hostcall_finish_eio(call, {eb}, {el}, {vb}, {vl});"));
         }
+        Returns::Async { .. } => unreachable!("refused by opaque_returns"),
     }
     w.close("}");
     w.line("");
-    Ok(HostExtern {
+    Ok(Operation {
         index,
         key: key.to_owned(),
         declaration: decl.name.clone(),

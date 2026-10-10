@@ -946,6 +946,28 @@ fn decode_result(table: &TypeTable, returns: &Returns, bytes: &[u8]) -> Result<R
             result::ERROR => Err(value_error(wv::decode(table, error, &mut r)?)),
             k => return Err(WireError(format!("invalid EIO result tag {k}"))),
         },
+        Returns::Async { .. } => {
+            lean_internal_panic("an async program's steps are read with decode_step, not as a result")
+        }
+    };
+    r.finish()?;
+    Ok(out)
+}
+
+/// Decodes a complete step of an async program that returns `returns`, produced by the runtime:
+/// its kind, its value (the program's result, or the operation asked), and its resumption.
+fn decode_step(table: &TypeTable, returns: &Returns, bytes: &[u8]) -> Result<(u8, Value, u64), WireError> {
+    let Returns::Async { op, value, .. } = returns else {
+        lean_internal_panic("decode_step of a function that does not return an async program")
+    };
+    let mut r = Reader::new(bytes);
+    let out = match r.u8()? {
+        wire::program::step::DONE => (wire::program::step::DONE, wv::decode(table, value, &mut r)?, 0),
+        wire::program::step::CALL => {
+            let operation = wv::decode(table, &Type::Inductive { index: *op, args: Vec::new() }, &mut r)?;
+            (wire::program::step::CALL, operation, r.u64()?)
+        }
+        k => return Err(WireError(format!("invalid step kind {k}"))),
     };
     r.finish()?;
     Ok(out)
@@ -979,14 +1001,26 @@ fn runtime_result(table: &TypeTable, returns: &Returns, bytes: &[u8], what: &str
 /// A generated call entry point: `<prefix>call_<function>`.
 pub type Entry = unsafe extern "C" fn(input: *const u8, len: usize, out: *mut Buffer) -> i32;
 
-/// Calls a program's function through its entry point `entry`, of the generated signature
-/// `sig`, instantiated with `n_types` type arguments, with `n_args` arguments (borrowed). On
-/// `LUNGO_OK` stores the result in `result`; otherwise stores the error in `error`: the Lean
-/// function's error (`LUNGO_FAILED`), or why the arguments were rejected (`LUNGO_MALFORMED`).
-#[unsafe(no_mangle)]
+/// A step of an async program (`lungo_step`).
+#[repr(C)]
+pub struct Step {
+    pub kind: u8,
+    pub value: *mut Value,
+    pub resumption: u64,
+}
+
+/// Stores a step in `step`.
+unsafe fn set_step(step: *mut Step, (kind, value, resumption): (u8, Value, u64)) {
+    unsafe { *step = Step { kind, value: give(value), resumption } };
+}
+
+/// Calls the entry point of a function of signature `sig` with type arguments and arguments
+/// (borrowed): the instantiated signature, and the entry point's status and output; or the
+/// arguments' rejection.
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn lungo_invoke(
-    types: *const TypeTable,
+unsafe fn call_entry(
+    what: &str,
+    table: &'static TypeTable,
     entry: Entry,
     sig: *const u8,
     sig_len: usize,
@@ -994,15 +1028,7 @@ pub unsafe extern "C" fn lungo_invoke(
     n_types: usize,
     args: *const *const Value,
     n_args: usize,
-    result: *mut *mut Value,
-    error: *mut *mut Error,
-) -> i32 {
-    let what = "lungo_invoke";
-    let table: &'static TypeTable = unsafe { borrow(types, what) };
-    unsafe {
-        borrow(result, what);
-        borrow(error, what);
-    }
+) -> Result<(Signature, i32, Vec<u8>), Error> {
     let sig = Signature::decode(unsafe { bytes(sig, sig_len, what) })
         .unwrap_or_else(|e| lean_internal_panic(&format!("a generated signature is invalid: {e}")));
     let type_args: Vec<&TypeExpr> = if n_types == 0 {
@@ -1035,19 +1061,162 @@ pub unsafe extern "C" fn lungo_invoke(
     for t in &tys {
         t.encode(&mut input);
     }
-    if let Err(e) = encode_args(table, &inst.params, &args, &mut input) {
-        return unsafe { complete(Err(malformed(e)), MALFORMED, result, error) };
-    }
+    encode_args(table, &inst.params, &args, &mut input).map_err(malformed)?;
     let mut out = Buffer::empty();
     let status = unsafe { entry(input.as_ptr(), input.len(), &mut out) };
-    let bytes = out.take();
-    match status {
-        OK => {
+    Ok((inst, status, out.take()))
+}
+
+/// Calls a program's function returning an async program, as `lungo_invoke` does, and stores its
+/// first step in `step`: `LUNGO_OK`, or `LUNGO_MALFORMED` with the reason in `error`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn lungo_invoke_async(
+    types: *const TypeTable,
+    entry: Entry,
+    sig: *const u8,
+    sig_len: usize,
+    type_args: *const *const TypeExpr,
+    n_types: usize,
+    args: *const *const Value,
+    n_args: usize,
+    step: *mut Step,
+    error: *mut *mut Error,
+) -> i32 {
+    let what = "lungo_invoke_async";
+    let table: &'static TypeTable = unsafe { borrow(types, what) };
+    unsafe {
+        borrow(step, what);
+        borrow(error, what);
+        *step = Step { kind: 0, value: std::ptr::null_mut(), resumption: 0 };
+        *error = std::ptr::null_mut();
+    }
+    match unsafe { call_entry(what, table, entry, sig, sig_len, type_args, n_types, args, n_args) } {
+        Err(e) => {
+            unsafe { *error = give(e) };
+            MALFORMED
+        }
+        Ok((inst, OK, bytes)) => {
+            if !matches!(inst.returns, Returns::Async { .. }) {
+                misuse(what, "the function does not return an async program; call it with lungo_invoke");
+            }
+            let s = decode_step(table, &inst.returns, &bytes)
+                .unwrap_or_else(|e| lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}")));
+            unsafe { set_step(step, s) };
+            OK
+        }
+        Ok((_, MALFORMED, bytes)) => {
+            unsafe { *error = give(malformed(String::from_utf8_lossy(&bytes))) };
+            MALFORMED
+        }
+        Ok((_, s, _)) => lean_internal_panic(&format!("{what}: a generated entry point returned status {s}")),
+    }
+}
+
+/// Answers the operation the async program waiting on `resumption` asked with `answer`
+/// (borrowed), and stores the program's next step in `step`. Returns `LUNGO_OK`;
+/// `LUNGO_MALFORMED` when the answer is not of the operation's answer type (the resumption is
+/// consumed all the same); `LUNGO_STALE` when it was resumed or cancelled already.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lungo_resume(
+    resumption: u64,
+    answer: *const Value,
+    step: *mut Step,
+    error: *mut *mut Error,
+) -> i32 {
+    let what = "lungo_resume";
+    let answer = unsafe { borrow(answer, what) };
+    unsafe {
+        borrow(step, what);
+        borrow(error, what);
+        *step = Step { kind: 0, value: std::ptr::null_mut(), resumption: 0 };
+        *error = std::ptr::null_mut();
+    }
+    let (table, ret, returns) = match wire::program::awaiting(resumption) {
+        Ok(a) => a,
+        Err(e) => {
+            unsafe { *error = give(malformed(e)) };
+            return super::boundary::STALE;
+        }
+    };
+    // The answer gives its handles to the runtime, as a host function's result does: a copy
+    // owning its own.
+    let mut copy = answer.clone();
+    retain(&mut copy);
+    let mut input = Vec::new();
+    if let Err(e) = wv::encode(table, &ret, &copy, &mut input) {
+        free_value(copy);
+        // The resumption is consumed: the program cannot continue with an answer of another type.
+        wire::program::cancel(resumption);
+        unsafe { *error = give(malformed(e)) };
+        return MALFORMED;
+    }
+    transfer(copy);
+    match wire::program::resume(resumption, &input) {
+        Ok(bytes) => {
+            let s = decode_step(table, &returns, &bytes)
+                .unwrap_or_else(|e| lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}")));
+            unsafe { set_step(step, s) };
+            OK
+        }
+        Err(e @ wire::program::ResumeError::Stale(_)) => {
+            unsafe { *error = give(malformed(e)) };
+            super::boundary::STALE
+        }
+        Err(e @ wire::program::ResumeError::Malformed(_)) => {
+            unsafe { *error = give(malformed(e)) };
+            MALFORMED
+        }
+    }
+}
+
+/// Frees the value of `step` and clears it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lungo_step_clear(step: *mut Step) {
+    let step = unsafe { out_ptr(step, "lungo_step_clear") };
+    if !step.value.is_null() {
+        free_value(*unsafe { Box::from_raw(step.value) });
+    }
+    *step = Step { kind: 0, value: std::ptr::null_mut(), resumption: 0 };
+}
+
+/// Calls a program's function through its entry point `entry`, of the generated signature
+/// `sig`, instantiated with `n_types` type arguments, with `n_args` arguments (borrowed). On
+/// `LUNGO_OK` stores the result in `result`; otherwise stores the error in `error`: the Lean
+/// function's error (`LUNGO_FAILED`), or why the arguments were rejected (`LUNGO_MALFORMED`).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn lungo_invoke(
+    types: *const TypeTable,
+    entry: Entry,
+    sig: *const u8,
+    sig_len: usize,
+    type_args: *const *const TypeExpr,
+    n_types: usize,
+    args: *const *const Value,
+    n_args: usize,
+    result: *mut *mut Value,
+    error: *mut *mut Error,
+) -> i32 {
+    let what = "lungo_invoke";
+    let table: &'static TypeTable = unsafe { borrow(types, what) };
+    unsafe {
+        borrow(result, what);
+        borrow(error, what);
+    }
+    match unsafe { call_entry(what, table, entry, sig, sig_len, type_args, n_types, args, n_args) } {
+        Err(e) => unsafe { complete(Err(e), MALFORMED, result, error) },
+        Ok((inst, OK, bytes)) => {
+            if matches!(inst.returns, Returns::Async { .. }) {
+                misuse(what, "the function returns an async program; call it with lungo_invoke_async");
+            }
             let outcome = runtime_result(table, &inst.returns, &bytes, what);
             unsafe { complete(outcome, FAILED, result, error) }
         }
-        MALFORMED => unsafe { complete(Err(malformed(String::from_utf8_lossy(&bytes))), MALFORMED, result, error) },
-        s => lean_internal_panic(&format!("{what}: a generated entry point returned status {s}")),
+        Ok((_, MALFORMED, bytes)) => unsafe {
+            complete(Err(malformed(String::from_utf8_lossy(&bytes))), MALFORMED, result, error)
+        },
+        Ok((_, s, _)) => lean_internal_panic(&format!("{what}: a generated entry point returned status {s}")),
     }
 }
 
@@ -1320,6 +1489,7 @@ unsafe extern "C" fn c_dispatch(id: u64, input: *const u8, len: usize, out: *mut
             }
             _ => lean_internal_panic("a C host function of an EIO extern raised an error that is not an error value"),
         },
+        (Returns::Async { .. }, _) => lean_internal_panic("a host function does not return an async program"),
     };
     let out = unsafe { &mut *out };
     match encoded {

@@ -1,15 +1,31 @@
+import Lungo
+
 /-!
-Externs the application implements in the host language.
+The capabilities the application provides in the host language: a scaler and a journal, each an
+`@[extern]` operation the host implements.
 -/
 namespace Polyglot
 
+/-- Scales numbers by the host's factor. -/
+@[lungo_capability "polyglot.scaler"]
+structure Scaler
+
+/-- Keeps the host's log. -/
+@[lungo_capability "polyglot.journal"]
+structure Journal
+
 /-- Scales by the host's factor (pure). -/
-@[extern "polyglot_scale"]
+@[extern "polyglot_scale", lungo_operation Scaler]
 opaque hostScale (n : Nat) : Nat
 
 /-- Records a line in the host's log; may fail. -/
-@[extern "polyglot_record"]
+@[extern "polyglot_record", lungo_operation Journal]
 opaque hostRecord (line : String) : IO Unit
+
+/-- What the program's claims assume of the host's scaler, and cannot prove: it scales a larger
+number to a larger one. -/
+@[lungo_assumption Scaler]
+def ScalesMonotonically : Prop := ∀ a b, a ≤ b → hostScale a ≤ hostScale b
 
 def scaledSum (xs : List Nat) : Nat := xs.foldl (fun acc x => acc + hostScale x) 0
 

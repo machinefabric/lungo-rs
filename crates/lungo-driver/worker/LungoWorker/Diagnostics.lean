@@ -1,4 +1,4 @@
-import Lungo.Cbor
+import LungoWorker.Cbor
 
 /-!
 Structured diagnostics reported by the worker.
@@ -7,7 +7,7 @@ Every failure the worker detects is reported as a diagnostic with an explicit ca
 the host can render Lean errors as Lean errors and backend or adapter failures as bridge
 failures; the two are never conflated.
 -/
-namespace Lungo
+namespace LungoWorker
 
 open Cbor
 
@@ -83,4 +83,4 @@ def liftIO (kind : DiagnosticKind) (context : String) (x : IO α) : WorkerM α :
   | .ok a => return a
   | .error e => fail kind s!"{context}: {e}"
 
-end Lungo
+end LungoWorker

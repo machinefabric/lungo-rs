@@ -6,9 +6,15 @@
 //! several constructors `indirect enum`s, `Nat` and `Int` `LungoNat` and `LungoInt`, `Char`
 //! `Unicode.Scalar`, polymorphic types generic types. Every function throws: `LungoIOError`
 //! (`IO`), `LungoError<ε>` (`EIO ε`), `LungoMalformed` (arguments Lean cannot represent).
+//!
+//! Each capability the host provides is a protocol `<Module><Capability>` with a method per
+//! operation, installed with `set<Capability>`; a call before every capability is installed
+//! throws `LungoMissingCapability`. An async export is an `async throws` function taking a handler
+//! of its async capability, whose `async` methods it awaits for each operation the program asks.
+//! `assurance` is the program's assurance document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Function};
+use crate::c::boundary::{Boundary, Capability, Function, capability_name, operation_name};
 use crate::core::model::value_recursive;
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
@@ -113,7 +119,7 @@ fn swift_local(name: &str, index: usize) -> String {
     let id = lower_camel_case(name);
     let id = if name.is_empty() || id.chars().all(|c| c == '_') { format!("x{index}") } else { id };
     // The generated functions' own locals and type descriptor parameters.
-    if ["w", "r", "v", "program", "host"].contains(&id.as_str()) || id.starts_with("type") {
+    if ["w", "r", "v", "program", "host", "handler", "op", "impl"].contains(&id.as_str()) || id.starts_with("type") {
         format!("{id}_")
     } else {
         escape(id)
@@ -135,21 +141,38 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
+/// The Swift names of a capability: its protocol, its installer, and its methods.
+struct CapabilityNames {
+    protocol: String,
+    setter: String,
+    methods: Vec<String>,
+}
+
+/// The Swift names of an async capability: its handler protocol, the dispatcher, the methods.
+struct AsyncNames {
+    handler: String,
+    perform: String,
+    methods: Vec<String>,
+}
+
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    host_methods: Vec<String>,
+    capabilities: Vec<CapabilityNames>,
+    asyncs: Vec<AsyncNames>,
 }
 
 impl Names {
     fn new(b: &Boundary, module: &str, externs: &BTreeMap<usize, &ExternType>) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("Swift");
         for reserved in [
-            format!("{module}Host"),
-            "setHost".into(),
             "runMain".into(),
             "program".into(),
             "entry".into(),
+            "ready".into(),
+            "installed".into(),
+            "assurance".into(),
+            "assuranceJSON".into(),
             module.into(),
         ] {
             scope.claim(reserved, "a generated declaration")?;
@@ -192,14 +215,36 @@ impl Names {
             .zip(&b.functions)
             .map(|(s, f)| scope.claim_function(&f.lean_name, s, swift_member))
             .collect::<Result<_, _>>()?;
-        let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
-        let mut methods = Scope::new("Swift");
-        let host_methods = short_names(&host_names)
-            .iter()
-            .zip(&b.host_externs)
-            .map(|(s, h)| methods.claim(swift_member(s), format!("host extern {}", h.declaration)))
-            .collect::<Result<_, _>>()?;
-        Ok(Names { types, functions, host_methods })
+        let mut capabilities = Vec::new();
+        for c in &b.capabilities {
+            let base = swift_type_name(&[capability_name(&c.id)]);
+            let protocol = scope.claim(format!("{module}{base}"), format!("capability {}", c.id))?;
+            let setter = scope.claim(format!("set{base}"), format!("the installer of capability {}", c.id))?;
+            let mut methods = Scope::new("Swift");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| methods.claim(swift_member(&[operation_name(&o.declaration).to_owned()]), format!("operation {}", o.declaration)))
+                .collect::<Result<_, _>>()?;
+            capabilities.push(CapabilityNames { protocol, setter, methods: ms });
+        }
+        let mut asyncs = Vec::new();
+        for c in &b.async_capabilities {
+            let op = types[c.op_type as usize].name.trim_matches('`').to_owned();
+            let handler = scope.claim(format!("{module}{op}Handler"), format!("the handler of async capability {}", c.id))?;
+            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async capability {}", c.id))?;
+            let mut methods = Scope::new("Swift");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| {
+                    let last = components(&o.lean_name).last().cloned().unwrap_or_default();
+                    methods.claim(swift_member(&[last]), format!("operation {}", o.lean_name))
+                })
+                .collect::<Result<_, _>>()?;
+            asyncs.push(AsyncNames { handler, perform, methods: ms });
+        }
+        Ok(Names { types, functions, capabilities, asyncs })
     }
 }
 
@@ -270,7 +315,6 @@ impl Generator for SwiftGenerator {
         let e = Emitter {
             request,
             names: &names,
-            module: &module,
             recursive: value_recursive(&b.table),
             equatable: equatable(&b.table),
             externs: &externs,
@@ -369,8 +413,6 @@ let package = Package(
 struct Emitter<'a> {
     request: &'a GenerateRequest,
     names: &'a Names,
-    /// The Swift module (the host protocol is `<module>Host`: Foundation declares `Host`).
-    module: &'a str,
     recursive: Vec<bool>,
     equatable: Vec<bool>,
     /// The extern types, by type index.
@@ -560,10 +602,11 @@ impl Emitter<'_> {
                 self.named_type(&mut w, i);
             }
         }
+        self.capabilities(&mut w);
+        self.async_capabilities(&mut w);
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
         }
-        self.host(&mut w);
         if let Some(run_main) = &b.run_main {
             w.line("");
             w.line("/// Runs the Lean program's `main` with `args`; its exit code.");
@@ -571,6 +614,25 @@ impl Emitter<'_> {
             w.line(format!("    try program.runMain({run_main}, args)"));
             w.line("}");
         }
+        let json = self.request.assurance.to_json();
+        let hashes = raw_hashes(&json);
+        w.line("");
+        w.line("/// The program's assurance document (`assurance.json`).");
+        w.line(format!("public let assuranceJSON = {hashes}\"\"\""));
+        for l in json.trim_end().lines() {
+            w.line(l);
+        }
+        w.line(format!("\"\"\"{hashes}"));
+        w.line("");
+        w.line("/// The program's assurance document: what its Lean code claims and proves of each export, what");
+        w.line("/// it trusts, and what it assumes of the host's capabilities.");
+        w.line("public let assurance: LungoAssurance = {");
+        w.line("    do {");
+        w.line("        return try LungoAssurance.decode(assuranceJSON)");
+        w.line("    } catch {");
+        w.line("        fatalError(\"lungo: the package's assurance document is invalid: \\(error)\")");
+        w.line("    }");
+        w.line("}()");
         w.finish()
     }
 
@@ -828,14 +890,24 @@ impl Emitter<'_> {
                     self.descriptor(value, Scoped::Function)
                 )
             }
+            Returns::Async { .. } => unreachable!("an async program is driven, not returned"),
         }
     }
 
     fn result_type(&self, r: &Returns) -> Option<String> {
         let t = match r {
-            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } => t,
+            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } | Returns::Async { value: t, .. } => t,
         };
         (!matches!(t, Type::Unit)).then(|| self.swift_type(t))
+    }
+
+    /// The index of the async capability whose operation type is `op`.
+    fn async_index(&self, op: u32) -> usize {
+        self.boundary()
+            .async_capabilities
+            .iter()
+            .position(|c| c.op_type == op)
+            .expect("the boundary has the async capability of every async export")
     }
 
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
@@ -847,14 +919,47 @@ impl Emitter<'_> {
             (0..n).map(|k| format!("_ type{}: LungoType<{}>", param_name(k), param_name(k))).collect();
         params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("_ {l}: {}", self.param_type(&p.ty))));
         let result = self.result_type(&f.returns);
+        let asynchronous = match &f.returns {
+            Returns::Async { op, .. } => Some((*op, self.async_index(*op))),
+            _ => None,
+        };
+        if let Some((_, i)) = asynchronous {
+            params.insert(0, format!("_ handler: some {}", self.names.asyncs[i].handler));
+        }
         w.line("");
         w.line(format!("/// Lean's {} : {}", f.lean_name, f.lean_type.replace('\n', " ")));
         w.line(format!(
-            "public func {name}{generics}({}) throws{} {{",
+            "public func {name}{generics}({}){} throws{} {{",
             params.join(", "),
+            if asynchronous.is_some() { " async" } else { "" },
             result.as_ref().map(|t| format!(" -> {t}")).unwrap_or_default()
         ));
+        if !self.boundary().capabilities.is_empty() {
+            w.line("    try ready()");
+        }
         let type_args: Vec<String> = (0..n).map(|k| format!("type{}.expr", param_name(k))).collect();
+        if let (Some((op, i)), Returns::Async { value, .. }) = (asynchronous, &f.returns) {
+            let prefix = if result.is_some() { "try await" } else { "_ = try await" };
+            w.line(format!("    {prefix} program.driveAsync("));
+            w.line(format!("        entry({}), typeArgs: [{}],", f.symbol, type_args.join(", ")));
+            if f.params.is_empty() {
+                w.line("        args: { _ in },");
+            } else {
+                w.line("        args: { w in");
+                for (p, l) in f.params.iter().zip(&locals) {
+                    w.line(format!("            try {}.encode(&w, {l})", self.descriptor(&p.ty, Scoped::Function)));
+                }
+                w.line("        },");
+            }
+            w.line(format!(
+                "        op: {}, value: {}",
+                self.descriptor(&Type::Inductive { index: op, args: Vec::new() }, Scoped::Function),
+                self.descriptor(value, Scoped::Function)
+            ));
+            w.line(format!("    ) {{ op in try await {}(handler, op) }}", self.names.asyncs[i].perform));
+            w.line("}");
+            return;
+        }
         let prefix = if result.is_some() { "try" } else { "_ = try" };
         w.line(format!("    {prefix} program.invoke("));
         w.line(format!("        entry({}), typeArgs: [{}],", f.symbol, type_args.join(", ")));
@@ -871,25 +976,54 @@ impl Emitter<'_> {
         w.line("}");
     }
 
-    fn host(&self, w: &mut Writer) {
+    /// Each capability: its protocol and installer, and `ready`, which checks that every one was
+    /// installed.
+    fn capabilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        if b.host_externs.is_empty() {
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+            self.capability(w, c, n);
+        }
+        if b.capabilities.is_empty() {
             return;
         }
         w.line("");
-        w.line("/// Implements the program's externs in Swift. Methods may run on any thread; an error of a");
-        w.line("/// method whose Lean type is not IO or EIO terminates the program.");
-        w.line(format!("public protocol {}Host: AnyObject {{", self.module));
+        w.line("private let installed = LungoInstalled()");
+        w.line("");
+        w.line("/// Throws unless the host installed every capability.");
+        w.line("private func ready() throws {");
+        for c in &b.capabilities {
+            w.line(format!(
+                "    try installed.check({}, operation: {})",
+                swift_string(&c.id),
+                swift_string(operation_name(&c.operations[0].declaration))
+            ));
+        }
+        w.line("}");
+    }
+
+    fn capability(&self, w: &mut Writer, c: &Capability, n: &CapabilityNames) {
+        let b = self.boundary();
+        w.line("");
+        w.line(format!(
+            "/// The capability {} (`{}`), which the host provides. Methods may run on any thread; an error",
+            c.id, c.lean_name
+        ));
+        w.line("/// of a method whose Lean type is not IO or EIO terminates the program.");
+        let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+        if !note.is_empty() {
+            w.line(format!("///{note}"));
+        }
+        w.line(format!("public protocol {}: AnyObject {{", n.protocol));
         let mut signatures = Vec::new();
-        for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-            let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| swift_local(&p.name, i)).collect());
+        for (o, m) in c.operations.iter().zip(&n.methods) {
+            let locals = distinct_locals(o.params.iter().enumerate().map(|(i, p)| swift_local(&p.name, i)).collect());
             let params: Vec<String> =
-                h.params.iter().zip(&locals).map(|(p, l)| format!("_ {l}: {}", self.param_type(&p.ty))).collect();
-            let result = self.result_type(&h.returns);
+                o.params.iter().zip(&locals).map(|(p, l)| format!("_ {l}: {}", self.param_type(&p.ty))).collect();
+            let result = self.result_type(&o.returns);
             w.line(format!(
                 "    /// Lean's {} : {}",
-                h.declaration,
-                h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
+                o.declaration,
+                o.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
             ));
             w.line(format!(
                 "    func {m}({}) throws{}",
@@ -900,27 +1034,100 @@ impl Emitter<'_> {
         }
         w.line("}");
         w.line("");
-        w.line("/// Installs the implementation of the program's externs; the program's first call requires it.");
-        w.line(format!("public func setHost(_ host: {}Host) {{", self.module));
-        for ((h, m), has_result) in b.host_externs.iter().zip(&self.names.host_methods).zip(signatures) {
+        w.line(format!(
+            "/// Installs the implementation of the capability {}; the program's first call requires it.",
+            c.id
+        ));
+        w.line(format!("public func {}(_ impl: {}) {{", n.setter, n.protocol));
+        for ((o, m), has_result) in c.operations.iter().zip(&n.methods).zip(signatures) {
             w.line(format!(
                 "    program.hostExtern({}, index: {}, returns: {}) {{ r in",
                 b.set_host_extern,
-                h.index,
-                self.returns(&h.returns)
+                o.index,
+                self.returns(&o.returns)
             ));
-            let args: Vec<String> = (0..h.params.len()).map(|k| format!("a{k}")).collect();
-            for (p, a) in h.params.iter().zip(&args) {
+            let args: Vec<String> = (0..o.params.len()).map(|k| format!("a{k}")).collect();
+            for (p, a) in o.params.iter().zip(&args) {
                 w.line(format!("        let {a} = try {}.decode(&r)", self.descriptor(&p.ty, Scoped::Function)));
             }
             if has_result {
-                w.line(format!("        return try host.{m}({})", args.join(", ")));
+                w.line(format!("        return try impl.{m}({})", args.join(", ")));
             } else {
-                w.line(format!("        try host.{m}({})", args.join(", ")));
+                w.line(format!("        try impl.{m}({})", args.join(", ")));
                 w.line("        return LungoUnit()");
             }
             w.line("    }");
         }
+        w.line(format!("    installed.add({})", swift_string(&c.id)));
         w.line("}");
     }
+
+    /// Each async capability: the handler protocol async exports take, and the function that
+    /// asks a handler for an operation's answer.
+    fn async_capabilities(&self, w: &mut Writer) {
+        let b = self.boundary();
+        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+            let decl = &b.table.types[c.op_type as usize];
+            let tn = &self.names.types[c.op_type as usize];
+            w.line("");
+            w.line(format!(
+                "/// Performs the operations of the async capability {} (`{}`) an async export asks. An error",
+                c.id, c.lean_name
+            ));
+            w.line("/// abandons the program, and the export throws it.");
+            let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+            if !note.is_empty() {
+                w.line(format!("///{note}"));
+            }
+            w.line(format!("public protocol {}: Sendable {{", n.handler));
+            for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
+                let fields = &tn.ctors[o.ctor as usize].1;
+                let params: Vec<String> =
+                    ctor.fields.iter().zip(fields).map(|(f, l)| format!("_ {l}: {}", self.param_type(&f.ty))).collect();
+                w.line(format!("    /// Performs {}.", o.lean_name));
+                w.line(format!("    func {m}({}) async throws -> {}", params.join(", "), self.swift_type(&o.answer)));
+            }
+            w.line("}");
+            w.line("");
+            w.line(format!(
+                "private func {}(_ handler: some {}, _ op: {}) async throws -> LungoAnswer {{",
+                n.perform, n.handler, tn.name
+            ));
+            let answer = |w: &mut Writer, indent: &str, k: usize, args: Vec<String>| {
+                let o = &c.operations[k];
+                w.line(format!("{indent}let answer = try await handler.{}({})", n.methods[k], args.join(", ")));
+                w.line(format!(
+                    "{indent}return LungoAnswer {{ w in try {}.encode(&w, answer) }}",
+                    self.descriptor(&o.answer, Scoped::Function)
+                ));
+            };
+            if decl.ctors.len() == 1 {
+                let args = tn.ctors[0].1.iter().map(|f| format!("op.{f}")).collect();
+                answer(w, "    ", 0, args);
+            } else {
+                w.line("    switch op {");
+                for (k, (case, fields)) in tn.ctors.iter().enumerate() {
+                    if fields.is_empty() {
+                        w.line(format!("    case .{}:", case.trim_matches('`')));
+                    } else {
+                        let binds: Vec<String> = fields.iter().map(|f| format!("let {f}")).collect();
+                        w.line(format!("    case .{}({}):", case.trim_matches('`'), binds.join(", ")));
+                    }
+                    answer(w, "        ", k, fields.clone());
+                }
+                w.line("    }");
+            }
+            w.line("}");
+        }
+    }
+}
+
+/// The number of `#` a raw string literal of `text` needs: no `"` or `\\` in it is followed by
+/// as many.
+fn raw_hashes(text: &str) -> String {
+    let mut n = 1;
+    while text.contains(&format!("\"{}", "#".repeat(n))) || text.contains(&format!("\\{}", "#".repeat(n))) {
+        n += 1;
+    }
+    "#".repeat(n)
 }

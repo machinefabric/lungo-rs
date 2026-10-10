@@ -91,17 +91,37 @@ pub fn validate_project(project: &Path) -> Result<LakeProject> {
 
 /// Builds the root modules (and everything they import) with Lake: the given modules, or the
 /// package's default targets.
-pub fn build(toolchain: &Toolchain, project: &Path, roots: &Roots, offline: bool) -> Result<()> {
+pub fn build(
+    toolchain: &Toolchain,
+    project: &Path,
+    roots: &Roots,
+    assurance_modules: &[String],
+    offline: bool,
+) -> Result<()> {
+    // Naming modules replaces the default targets, so the default targets are one build and the
+    // assurance modules another.
+    match roots {
+        Roots::Modules(modules) => {
+            let all: Vec<String> = modules.iter().chain(assurance_modules).cloned().collect();
+            build_targets(toolchain, project, &all, offline)
+        }
+        Roots::DefaultTargets => {
+            build_targets(toolchain, project, &[], offline)?;
+            if assurance_modules.is_empty() { Ok(()) } else { build_targets(toolchain, project, assurance_modules, offline) }
+        }
+    }
+}
+
+/// `lake build` of `modules`, or of the default targets when there are none.
+fn build_targets(toolchain: &Toolchain, project: &Path, modules: &[String], offline: bool) -> Result<()> {
     let before = snapshot(project)?;
     let mut cmd = Command::new(&toolchain.lake);
     cmd.arg("build");
     if offline {
         cmd.arg("--no-cache");
     }
-    if let Roots::Modules(modules) = roots {
-        for r in modules {
-            cmd.arg(format!("+{r}"));
-        }
+    for r in modules {
+        cmd.arg(format!("+{r}"));
     }
     cmd.current_dir(project);
     for var in ["LEAN_PATH", "LEAN_SRC_PATH", "LEAN_SYSROOT", "LAKE", "LAKE_HOME", "ELAN_TOOLCHAIN"] {

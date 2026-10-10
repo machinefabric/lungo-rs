@@ -1,6 +1,8 @@
 import Polyglot.Types
 import Polyglot.Functions
 import Polyglot.Host
+import Polyglot.Claims
+import Polyglot.Async
 
 /-- The program's entry point. -/
 def main (args : List String) : IO UInt32 := do

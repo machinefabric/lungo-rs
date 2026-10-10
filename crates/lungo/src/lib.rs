@@ -32,7 +32,10 @@ pub use io::{IoError, IoErrorType};
 pub use layout::LeanLayout;
 #[doc(hidden)]
 pub use layout::assert_layout;
-pub use meta::{DeclarationInfo, ExportTrust, SourcePosition, SourceRange};
+pub use meta::{
+    Assumption, Assurance, Capability, Claim, ClaimStatus, DeclarationInfo, ExportAssurance, ExportTrust, Role,
+    SourcePosition, SourceRange, Specification,
+};
 pub use nat::Nat;
 pub use value::{LeanClosure, LeanValue, RustClosure};
 

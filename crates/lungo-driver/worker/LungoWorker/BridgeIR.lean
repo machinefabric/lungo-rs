@@ -1,6 +1,6 @@
 import Lean
-import Lungo.Cbor
-import Lungo.Diagnostics
+import LungoWorker.Cbor
+import LungoWorker.Diagnostics
 
 /-!
 Serialization of Lean's final compiler representation as lungo Bridge IR (BIR).
@@ -10,9 +10,9 @@ the lowering of its final impure LCNF (`Lean.IR.ToIR`), which Lean persists per 
 its interpreter executes. BIR mirrors that representation instruction for instruction, but
 flattens straight-line code into blocks so that consumers do not recurse once per statement.
 -/
-namespace Lungo.BridgeIR
+namespace LungoWorker.BridgeIR
 
-open Lean Lean.IR Lungo.Cbor
+open Lean Lean.IR LungoWorker.Cbor
 
 /-- Version of the BIR data model, independent of the protocol version. -/
 def version : Nat := 3
@@ -131,4 +131,4 @@ def externEntry : ExternEntry → Value
   | .standard backend symbol => variant "standard" [("backend", name backend), ("symbol", str symbol)]
   | .opaque => unitVariant "opaque"
 
-end Lungo.BridgeIR
+end LungoWorker.BridgeIR

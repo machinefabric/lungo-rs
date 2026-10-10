@@ -2,17 +2,33 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as L from "lungo-ts";
-import { load } from "polyglot";
+import { spawnSync } from "node:child_process";
+import { ASSURANCE, load } from "polyglot";
 
 const lines = [];
 const p = await load({
-  host: {
-    hostScale: (n) => n * 10n,
-    hostRecord: (line) => {
-      if (line === "fail") throw new L.LeanIOError("the host refuses to record `fail`");
-      lines.push(line);
+  capabilities: {
+    scaler: { hostScale: (n) => n * 10n },
+    journal: {
+      hostRecord: (line) => {
+        if (line === "fail") throw new L.LeanIOError("the host refuses to record `fail`");
+        lines.push(line);
+      },
     },
   },
+});
+
+/** Answers the program's operations: `get` waits for `release` when the url is "slow", and
+ * rejects for "broken". */
+const fetcher = (release) => ({
+  async get(url) {
+    if (url === "slow") await release;
+    if (url === "broken") throw new Error("the network is down");
+    if (url === "missing") return { ok: false, error: "not found" };
+    return { ok: true, value: `body:${url}` };
+  },
+  stamp: (t) => t,
+  scaler: (k) => (x) => x * k,
 });
 
 // TEST0048: numbers
@@ -91,8 +107,8 @@ test("TEST0055 opaque values", () => {
   assert.throws(() => p.bump(counter), L.MalformedError);
 });
 
-// TEST0056: host externs
-test("TEST0056 host externs", () => {
+// TEST0056: host capabilities
+test("TEST0056 host capabilities", () => {
   assert.equal(p.scaledSum([1n, 2n, 3n]), 60n);
   lines.length = 0;
   assert.equal(p.recordAll(["a", "b"]), 2n);
@@ -111,9 +127,107 @@ test("TEST0062 the browser WASI runs the program too", async () => {
   const out = [];
   const q = await load({
     wasi: new BrowserWasi({ stdout: (b) => out.push(new TextDecoder().decode(b)) }),
-    host: { hostScale: (n) => n, hostRecord: () => {} },
+    capabilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } },
   });
   assert.equal(q.factorial(20n), 2432902008176640000n);
   assert.equal(q.runMain([]), 0);
   assert.match(out.join(""), /polyglot \[\]/);
+});
+
+// TEST0297: loading without every capability fails, naming the capability and an operation of it
+test("TEST0297 a missing capability is named", async () => {
+  await assert.rejects(
+    load({ capabilities: { journal: { hostRecord: () => {} } } }),
+    (e) => e instanceof L.MissingCapabilityError && e.capability === "polyglot.scaler" && e.operation === "hostScale",
+  );
+  await assert.rejects(
+    load({ capabilities: { journal: { hostRecord: () => {} }, scaler: {} } }),
+    (e) => e instanceof L.MissingCapabilityError && e.capability === "polyglot.scaler",
+  );
+});
+
+// TEST0298: the package's assurance document is the program's: its claims, what they assume, and
+// the capabilities each export needs
+test("TEST0298 assurance is the program's assurance", () => {
+  const a = ASSURANCE;
+  assert.deepEqual([a.program, a.schema_version, a.provenance.lean_version], ["polyglot", 1, "4.34.1"]);
+  const claim = (name) => a.claims.find((c) => c.name === name);
+  const exp = (name) => a.exports.find((e) => e.name === name);
+  const c = claim("Polyglot.factorial_pos");
+  assert.deepEqual([c.status, c.relation, c.assumptions], ["proved", "lungo.law", []]);
+  assert.equal(claim("Polyglot.Tree.mirror_mirror").relation, "lungo.roundtrip");
+  assert.deepEqual(claim("Polyglot.divide_ok").specifications, ["Polyglot.natDiv"]);
+  // Proved, and conditional on what the host's scaler is assumed to do.
+  const mono = claim("Polyglot.scaledSum_singleton_mono");
+  assert.deepEqual([mono.status, mono.assumptions], ["proved", ["Polyglot.ScalesMonotonically"]]);
+  assert.deepEqual(exp("Polyglot.scaledSum").capabilities, ["Polyglot.Scaler"]);
+  assert.deepEqual(exp("Polyglot.scaledSum").assumptions, ["Polyglot.ScalesMonotonically"]);
+  assert.deepEqual([exp("Polyglot.fetchAll").async, exp("Polyglot.fetchAll").capabilities], [true, ["Polyglot.fetchInterface"]]);
+  // Sorted by Lean name.
+  assert.deepEqual(
+    a.capabilities.map((c) => `${c.id}/${c.form}`),
+    ["polyglot.journal/extern", "polyglot.scaler/extern", "polyglot.fetch/async"],
+  );
+  assert.deepEqual(exp("Polyglot.negate").claims, []);
+  assert.ok(Object.isFrozen(a) && Object.isFrozen(a.claims[0]), "the document is frozen");
+});
+
+// TEST0299: an async program runs on its handler's answers: data, an opaque handle passed back,
+// and a host function the program calls
+test("TEST0299 an async program runs on the handler's answers", async () => {
+  const h = fetcher();
+  assert.deepEqual(await p.fetchAll(h, ["a", "missing", "b"]), ["body:a", "error: not found", "body:b"]);
+  const token = p.mkToken(5n);
+  assert.ok(token !== null);
+  assert.equal(await p.stampToken(h, token), 6n);
+  assert.equal(await p.applyScaler(h, 7n, 6n), 42n);
+  assert.equal(p.outstanding(), 0);
+});
+
+// TEST0300: a rejection of the handler abandons the program: the call rejects with it, and nothing
+// waits
+test("TEST0300 a handler's error abandons the program", async () => {
+  await assert.rejects(p.fetchAll(fetcher(), ["a", "broken", "b"]), /the network is down/);
+  assert.equal(p.outstanding(), 0);
+});
+
+// TEST0301: aborting the signal abandons a program waiting for an answer
+test("TEST0301 cancellation abandons the program", async () => {
+  const controller = new AbortController();
+  const call = p.fetchAll(fetcher(new Promise(() => {})), ["slow"], { signal: controller.signal });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(p.outstanding(), 1);
+  controller.abort();
+  await assert.rejects(call, (e) => e.name === "AbortError");
+  assert.equal(p.outstanding(), 0);
+});
+
+// TEST0302: many async programs waiting at once resume independently, answered in any order
+test("TEST0302 concurrent async programs resume independently", async () => {
+  let open;
+  const release = new Promise((r) => (open = r));
+  const h = fetcher(release);
+  const calls = Array.from({ length: 100 }, async (_, i) => {
+    await new Promise((r) => setTimeout(r, Math.random() * 20));
+    return p.fetchAll(h, ["slow", "x".repeat(i)]);
+  });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(p.outstanding(), 100);
+  open();
+  (await Promise.all(calls)).forEach((got, i) => assert.deepEqual(got, ["body:slow", `body:${"x".repeat(i)}`]));
+  assert.equal(p.outstanding(), 0);
+});
+
+// TEST0303: a process may end while a program waits for an answer
+test("TEST0303 a process ends with a program waiting", () => {
+  const script = `
+    import { load } from "polyglot";
+    const p = await load({ capabilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } } });
+    p.fetchAll({ get: () => new Promise(() => {}) }, ["slow"]);
+    await new Promise((r) => setTimeout(r, 10));
+    console.log("waiting:", p.outstanding());
+    process.exit(0);
+  `;
+  const out = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.deepEqual([out.status, out.stdout], [0, "waiting: 1\n"], out.stderr);
 });

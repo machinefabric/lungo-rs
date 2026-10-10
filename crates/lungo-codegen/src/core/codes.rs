@@ -2,7 +2,7 @@
 //!
 //! Every error lungo reports carries one code, printed as `error[LNG0401]: …`. Codes are
 //! stable identifiers: a code is never reused for a different condition. They are grouped by
-//! the stage that detects the error, and each one is described in `docs/src/content/reference/errors.md` of the lungo repository.
+//! the stage that detects the error, and each one is described in `docs/reference/errors.md` of lungo-rs.
 
 use std::fmt;
 
@@ -109,9 +109,45 @@ codes! {
     /// A generator plugin (`lungo-gen-<language>`) failed, or its response is malformed.
     PluginFailed = "LNG0504", "generator plugin failed";
 
-    // Trust policy (06xx).
-    /// An export violates `deny_sorry`, `deny_axioms`, or `deny_unsafe`.
+    // Trust and assurance policy (06xx).
+    /// An export, or the evidence of a claim, violates `deny_sorry`, `deny_axioms`, or
+    /// `deny_unsafe`.
     TrustPolicy = "LNG0601", "trust policy violation";
+    /// An export `require-claims` selects has no proved claim.
+    ExportWithoutClaim = "LNG0602", "export without a proved claim";
+    /// A proved claim, or an export, depends on an assumption or capability
+    /// `forbid-assumptions` names.
+    ForbiddenAssumption = "LNG0603", "forbidden assumption";
+
+    // Assurance records (07xx).
+    /// A record is not in the form lungo's Lean library writes, or names an invalid kind,
+    /// relation, role or identifier.
+    MalformedAssuranceRecord = "LNG0701", "malformed assurance record";
+    /// A record names a declaration that does not exist or is not registered as it must be.
+    DanglingAssuranceReference = "LNG0702", "dangling assurance reference";
+    /// A claim's evidence is not a theorem, its subject is a theorem, or its statement does not
+    /// have the shape of its relation.
+    InvalidClaim = "LNG0703", "invalid claim";
+    /// The statement of a claim's evidence does not mention one of its subjects or
+    /// specifications.
+    ClaimNotInStatement = "LNG0704", "claim subject not in its statement";
+    /// Two records carry the same identifier.
+    DuplicateAssuranceId = "LNG0705", "duplicate assurance identifier";
+    /// An operation of a capability is not an extern the host can implement, or a `rust_extern`
+    /// mapping names an extern that is not an operation.
+    CapabilityMismatch = "LNG0706", "capability mismatch";
+    /// An async capability's interface, or an async export, cannot cross to the host.
+    AsyncInterface = "LNG0707", "invalid async interface";
+    /// `lungo assurance --compose`: two packages describe the same record differently.
+    FingerprintMismatch = "LNG0708", "assurance fingerprint mismatch";
+    /// lungo's Lean library writes records in a format this lungo does not read.
+    AssuranceLibraryVersion = "LNG0709", "incompatible assurance library";
+    /// The program uses a value computed by the initializer of a module it does not link: one
+    /// loaded only for its assurance records, or reached only through lungo's compile-time
+    /// attributes.
+    MetadataOnlyDependency = "LNG0710", "program depends on an unlinked module's initialization";
+    /// An `assurance.json` cannot be read: it is malformed or of an unknown schema version.
+    InvalidAssuranceDocument = "LNG0711", "invalid assurance document";
 }
 
 impl fmt::Display for ErrorCode {

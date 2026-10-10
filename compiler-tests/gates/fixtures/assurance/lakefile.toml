@@ -1,0 +1,11 @@
+name = "assured"
+version = "0.1.0"
+defaultTargets = ["Assured"]
+
+# The tests copy lungo's Lean library next to the project as `lungo-lib`.
+[[require]]
+name = "lungo"
+path = "../lungo-lib"
+
+[[lean_lib]]
+name = "Assured"

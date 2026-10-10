@@ -40,6 +40,13 @@ pub fn reachable_types<'t>(
                 collect(result, out);
             }
             FacadeType::Opaque { head: Some(h), .. } => out.push(h.clone()),
+            FacadeType::Async { op, rets, result } => {
+                out.push(op.clone());
+                for r in rets {
+                    collect(r, out);
+                }
+                collect(result, out);
+            }
             _ => {}
         }
     }

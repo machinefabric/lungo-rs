@@ -4,8 +4,10 @@
 //! This test program is also the plugin: run as `lungo-gen-echo`, it reads a `GenerateRequest`
 //! and answers a `GenerateResponse`, writing `functions.txt` (each exported function's Lean name,
 //! entry point and type) and `request.json` (the request). Its options: `fail` (report an
-//! error), `garbage` (write a malformed response), `exit` (exit with this status).
+//! error), `garbage` (write a malformed response), `exit` (exit with this status), `assurance`
+//! (write `assurance.json` itself).
 
+use lungo_build::codegen::core::assurance::AssuranceDocument;
 use lungo_build::codegen::plugin::{GenerateRequest, GenerateResponse, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -43,7 +45,7 @@ fn plugin() {
         response.errors.push(format!("protocol {} is not {PROTOCOL_VERSION}", request.protocol_version));
     }
     for key in request.options.keys() {
-        if !["fail", "garbage", "exit"].contains(&key.as_str()) {
+        if !["fail", "garbage", "exit", "assurance"].contains(&key.as_str()) {
             response.errors.push(format!("unknown option `{key}`"));
         }
     }
@@ -69,6 +71,9 @@ fn plugin() {
         let mut files = BTreeMap::new();
         files.insert("functions.txt".to_owned(), lines.join("\n") + "\n");
         files.insert("request.json".to_owned(), input);
+        if request.options.contains_key("assurance") {
+            files.insert("assurance.json".to_owned(), "{}".to_owned());
+        }
         response.files = files;
     }
     let out = serde_json::to_string(&response).expect("the response serializes");
@@ -125,7 +130,7 @@ fn test0268_a_plugin_receives_the_request_and_its_files_are_published() {
     assert!(functions.contains("Polyglot.factorial polyglot__call_l_Polyglot_dfactorial Nat → Nat"), "{functions}");
     let request: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("request.json")).unwrap()).unwrap();
-    assert_eq!(request["protocol_version"], 2);
+    assert_eq!(request["protocol_version"], 3);
     assert_eq!(request["program"]["name"], "polyglot");
     assert_eq!(request["extern_types"], serde_json::json!({}), "no language table names extern types");
     // Every type carries whether it is opaque and its layout fingerprint.
@@ -136,7 +141,23 @@ fn test0268_a_plugin_receives_the_request_and_its_files_are_published() {
     }
     assert!(request["program_files"]["program/lungo.h"].is_string(), "the program's C is in the request");
     assert!(request["runtime"]["distribution"]["local"]["dir"].is_string());
-    assert_eq!(request["boundary"]["host_externs"].as_array().unwrap().len(), 2);
+    // The host's capabilities, each with its operations, and the async one.
+    let capabilities: Vec<(&str, usize)> = request["boundary"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["id"].as_str().unwrap(), c["operations"].as_array().unwrap().len()))
+        .collect();
+    assert_eq!(capabilities, [("polyglot.journal", 1), ("polyglot.scaler", 1)]);
+    let asyncs = request["boundary"]["async_capabilities"].as_array().unwrap();
+    assert_eq!((asyncs.len(), asyncs[0]["id"].as_str().unwrap()), (1, "polyglot.fetch"));
+    assert_eq!(asyncs[0]["operations"].as_array().unwrap().len(), 3);
+    // The assurance document is in the request, and lungo writes it into the output itself, as
+    // the document serializes.
+    let document: AssuranceDocument = serde_json::from_value(request["assurance"].clone()).unwrap();
+    assert_eq!(document.program, "polyglot");
+    assert!(document.claims.iter().any(|c| c.name == "Polyglot.factorial_pos"), "the claims are in the request");
+    assert_eq!(std::fs::read_to_string(out.join("assurance.json")).unwrap(), document.to_json());
     // Type expressions as the protocol reference documents them.
     let mix =
         request["boundary"]["functions"].as_array().unwrap().iter().find(|f| f["lean_name"] == "Polyglot.mix").unwrap();
@@ -155,6 +176,7 @@ fn test0269_plugin_failures_are_reported_and_nothing_is_published() {
         (&["garbage=1"][..], "malformed response"),
         (&["exit=3"][..], "exiting with status 3 as asked"),
         (&["colour=blue"][..], "unknown option `colour`"),
+        (&["assurance=1"][..], "assurance.json"),
     ] {
         let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("echo-failed");
         let run = generate(&out, opts);

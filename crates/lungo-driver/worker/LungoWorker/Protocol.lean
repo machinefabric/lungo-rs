@@ -1,5 +1,5 @@
-import Lungo.Cbor
-import Lungo.Diagnostics
+import LungoWorker.Cbor
+import LungoWorker.Diagnostics
 
 /-!
 The versioned parent/worker protocol.
@@ -8,11 +8,11 @@ A frame is `"LNGF"`, a one-byte frame kind (1 = request, 2 = response), the prot
 a little-endian `u32`, the payload length as a little-endian `u64`, and a deterministic CBOR
 payload. The protocol version and the Bridge IR version are versioned independently.
 -/
-namespace Lungo.Protocol
+namespace LungoWorker.Protocol
 
 open Cbor
 
-def version : Nat := 3
+def version : Nat := 4
 
 def requestKind : UInt8 := 1
 def responseKind : UInt8 := 2
@@ -55,6 +55,9 @@ structure Request where
   hermetic : Bool
   maxErrors : Nat
   runtimeExports : Array String
+  /-- Modules loaded for their assurance records only: imported into the environment the worker
+  reads, never part of the program. -/
+  assuranceModules : Array String
 
 private def strings (v : Value) : Except String (Array String) := do
   (← v.asArray).mapM (·.asString)
@@ -62,7 +65,7 @@ private def strings (v : Value) : Except String (Array String) := do
 def decodeRequest (v : Value) : Except String Request := do
   v.checkFields ["protocol_version", "bridge_version", "project_root", "roots",
     "export_policy", "host_triple", "target", "compiler_options", "hermetic", "diagnostics",
-    "runtime_exports"]
+    "runtime_exports", "assurance_modules"]
   let protocolVersion ← (← v.field "protocol_version").asNat
   if protocolVersion != version then
     throw s!"request uses protocol version {protocolVersion}; this worker implements {version}"
@@ -110,6 +113,7 @@ def decodeRequest (v : Value) : Except String Request := do
     hermetic := ← (← v.field "hermetic").asBool
     maxErrors := ← (← diagnostics.field "max_errors").asNat
     runtimeExports := ← strings (← v.field "runtime_exports")
+    assuranceModules := ← strings (← v.field "assurance_modules")
   }
 
 private def readLE (data : ByteArray) (start count : Nat) : Nat := Id.run do
@@ -155,4 +159,4 @@ def writeAtomically (path : System.FilePath) (bytes : ByteArray) : IO Unit := do
   IO.FS.writeBinFile partialPath bytes
   IO.FS.rename partialPath path
 
-end Lungo.Protocol
+end LungoWorker.Protocol

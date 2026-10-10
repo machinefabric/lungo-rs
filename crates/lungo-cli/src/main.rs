@@ -10,6 +10,7 @@
 //! download from the lungo release (verified by SHA-256). The configuration is `lungo.toml`
 //! (see `config`); command-line options add to it.
 
+mod assurance;
 mod config;
 mod generate;
 mod plugin;
@@ -19,6 +20,7 @@ mod wasm;
 use clap::{Args, Parser, Subcommand};
 use config::{ProjectFile, validate_language_name};
 use generate::{Output, Settings};
+use lungo_build::codegen::core::assurance::{AssuranceDocument, document};
 use lungo_build::{Analysis, Builder, Environment, Error, LeanOptions, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,9 +52,10 @@ struct Options {
     /// A module whose declarations to export (repeatable).
     #[arg(long = "export-module", global = true)]
     export_modules: Vec<String>,
-    /// An extern the application implements in the host language (repeatable).
-    #[arg(long = "host-extern", global = true)]
-    host_externs: Vec<String>,
+    /// A module to read assurance records from without compiling it into the program
+    /// (repeatable).
+    #[arg(long = "assurance-module", global = true)]
+    assurance_modules: Vec<String>,
     /// The program's name (default: the Lake package's).
     #[arg(long, global = true)]
     name: Option<String>,
@@ -68,6 +71,9 @@ enum Command {
     Check,
     /// Show what lungo knows about a declaration.
     Inspect { declaration: String },
+    /// Report what the program claims, trusts and assumes, export by export; check the policies;
+    /// check that packages agree on the records they share.
+    Assurance(AssuranceArgs),
     /// Print the Bridge IR of a declaration and the compiler auxiliaries derived from it.
     Ir { declaration: String },
     /// Print the generated Rust of a declaration.
@@ -110,6 +116,40 @@ struct GenerateArgs {
     link: bool,
 }
 
+#[derive(Args)]
+struct AssuranceArgs {
+    /// Report only this export.
+    declaration: Option<String>,
+    /// `human` (default) or `json`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+    /// Only exports with a claim of this relation (repeatable).
+    #[arg(long = "claim-kind")]
+    claim_kinds: Vec<String>,
+    /// Only exports needing this capability, by Lean name or identifier (repeatable).
+    #[arg(long = "capability")]
+    capabilities: Vec<String>,
+    /// Only exports whose claims assume this, by Lean name (repeatable).
+    #[arg(long = "assumption")]
+    assumptions: Vec<String>,
+    /// Only exports with this trust issue (repeatable).
+    #[arg(long = "trust-issue", value_enum)]
+    trust_issues: Vec<assurance::TrustIssue>,
+    /// Check the trust and assurance policies; violations exit with status 2.
+    #[arg(long)]
+    policy: bool,
+    /// Another package's assurance.json to check against (repeatable); records described
+    /// differently exit with status 3. Without a configuration, the documents are only composed.
+    #[arg(long = "compose")]
+    compose: Vec<PathBuf>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Format {
+    Human,
+    Json,
+}
+
 #[derive(Subcommand)]
 enum RuntimeCommand {
     /// Download the runtime archive for a target into the cache, verifying its SHA-256.
@@ -138,7 +178,7 @@ fn main() -> ExitCode {
     };
     let cli = Cli::parse_from(args);
     match run(cli, flags) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(status) => status,
         Err(e) => {
             eprintln!("{e}");
             ExitCode::FAILURE
@@ -228,7 +268,7 @@ fn load(opts: &Options) -> Result<(PathBuf, ProjectFile)> {
     lean.root_modules.extend(opts.roots.iter().cloned());
     lean.exports.extend(opts.exports.iter().cloned());
     lean.export_modules.extend(opts.export_modules.iter().cloned());
-    lean.host_externs.extend(opts.host_externs.iter().cloned());
+    lean.assurance_modules.extend(opts.assurance_modules.iter().cloned());
     if let Some(name) = &opts.name {
         lean.name = Some(name.clone());
     }
@@ -242,7 +282,7 @@ fn environment(base: &Path) -> Environment {
     Environment::native(base.to_path_buf(), work.join("out"), work.join("work"))
 }
 
-fn run(cli: Cli, flags: LanguageFlags) -> Result<()> {
+fn run(cli: Cli, flags: LanguageFlags) -> Result<ExitCode> {
     let generating = matches!(cli.command, Command::Generate(_));
     if !generating && flags != LanguageFlags::default() {
         return Err(Error::Configuration(
@@ -250,12 +290,24 @@ fn run(cli: Cli, flags: LanguageFlags) -> Result<()> {
         ));
     }
     if let Command::Runtime { command } = &cli.command {
-        return runtime_command(command);
+        runtime_command(command)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Command::Assurance(args) = &cli.command {
+        let configured = cli.options.config.is_some()
+            || cli.options.project.is_some()
+            || std::env::current_dir().map(|d| d.join("lungo.toml").is_file()).unwrap_or(false);
+        if !configured && !args.compose.is_empty() {
+            return compose_only(&args.compose);
+        }
+        let (base, file) = load(&cli.options)?;
+        let env = environment(&base);
+        return assurance_command(&file, &env, args);
     }
     let (base, file) = load(&cli.options)?;
     let env = environment(&base);
     let project = file.project.clone();
-    let builder = || Builder::from_options(file.lean.clone(), file.rust.clone());
+    let builder = || Builder::from_options(file.lean.clone(), file.rust.clone(), file.assurance.clone());
     match cli.command {
         Command::Generate(args) => {
             let settings = generate_settings(&base, &file, &env, flags, args)?;
@@ -271,7 +323,7 @@ fn run(cli: Cli, flags: LanguageFlags) -> Result<()> {
         }
         Command::Inspect { declaration } => {
             let ctx = file.lean.context(&project, &env)?;
-            inspect(&file.lean.analyze(&project, &env)?, &declaration, &ctx.local_prefix)?
+            inspect(&file.lean.analyze(&project, &env)?, &declaration, &ctx.local_prefix, &ctx.name)?
         }
         Command::Ir { declaration } => ir(&file.lean.analyze(&project, &env)?, &declaration)?,
         Command::Rust { declaration } => {
@@ -298,9 +350,101 @@ fn run(cli: Cli, flags: LanguageFlags) -> Result<()> {
             println!("worker {} at {}", worker.identity, worker.binary.display());
         }
         Command::Setup => setup(&project, file.lean.clone(), &base, &env)?,
-        Command::Runtime { .. } => unreachable!("handled above"),
+        Command::Runtime { .. } | Command::Assurance(_) => unreachable!("handled above"),
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `lungo assurance` for the configured project.
+fn assurance_command(file: &ProjectFile, env: &Environment, args: &AssuranceArgs) -> Result<ExitCode> {
+    let ctx = file.lean.context(&file.project, env)?;
+    let analysis = file.lean.analyze_in(&ctx, env)?;
+    // Records the worker found invalid are errors whatever is asked: a report of them would mislead.
+    let record_issues = lungo_driver::assurance::record_issues(&analysis.success);
+    if !record_issues.is_empty() {
+        return Err(Error::Assurance(record_issues));
+    }
+    let doc = document(&analysis.success, &analysis.toolchain, &ctx.name);
+    let filters = assurance::Filters {
+        declaration: args.declaration.clone(),
+        claim_kinds: args.claim_kinds.clone(),
+        capabilities: args.capabilities.clone(),
+        assumptions: args.assumptions.clone(),
+        trust_issues: args.trust_issues.clone(),
+    };
+    let exports = assurance::select(&doc, &filters)?;
+    let mut violations: Vec<String> = Vec::new();
+    if args.policy {
+        if let Err(e) = file.lean.check_trust(&analysis.success) {
+            violations.push(e.to_string());
+        }
+        if let Err(e) = file.assurance.check(&analysis.success) {
+            violations.push(e.to_string());
+        }
+    }
+    let mut documents = vec![(format!("{} (this project)", ctx.name), doc.clone())];
+    for path in &args.compose {
+        documents.push((path.display().to_string(), assurance::read_document(path)?));
+    }
+    let mismatches = assurance::compose(&documents);
+    match args.format {
+        Format::Human => {
+            print!("{}", assurance::human(&doc, &exports));
+            if args.policy && violations.is_empty() {
+                println!("\npolicy: satisfied");
+            }
+            if !args.compose.is_empty() && mismatches.is_empty() {
+                println!("composition: {} documents agree on every record they share", documents.len());
+            }
+        }
+        Format::Json => {
+            let report = serde_json::json!({
+                "schema_version": doc.schema_version,
+                "program": doc.program,
+                "provenance": doc.provenance,
+                "exports": exports,
+                "claims": doc.claims.iter().filter(|c| exports.iter().any(|e| e.claims.contains(&c.name))).collect::<Vec<_>>(),
+                "policy": if args.policy { Some(&violations) } else { None },
+                "composition": mismatches,
+            });
+            println!("{}", serde_json::to_string_pretty(&report).expect("a report serializes"));
+        }
+    }
+    if !violations.is_empty() {
+        if args.format == Format::Human {
+            for v in &violations {
+                eprintln!("{v}");
+            }
+        }
+        return Ok(ExitCode::from(assurance::POLICY_FAILURE));
+    }
+    if !mismatches.is_empty() {
+        if args.format == Format::Human {
+            eprintln!("{}", Error::Assurance(assurance::mismatch_issues(&mismatches)));
+        }
+        return Ok(ExitCode::from(assurance::COMPOSITION_FAILURE));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `lungo assurance --compose` without a project: the documents checked against each other.
+fn compose_only(paths: &[PathBuf]) -> Result<ExitCode> {
+    if paths.len() < 2 {
+        return Err(Error::Configuration(
+            "--compose without a project needs at least two assurance documents to compare".into(),
+        ));
+    }
+    let documents: Vec<(String, AssuranceDocument)> = paths
+        .iter()
+        .map(|p| assurance::read_document(p).map(|d| (p.display().to_string(), d)))
+        .collect::<Result<_>>()?;
+    let mismatches = assurance::compose(&documents);
+    if mismatches.is_empty() {
+        println!("composition: {} documents agree on every record they share", documents.len());
+        return Ok(ExitCode::SUCCESS);
+    }
+    eprintln!("{}", Error::Assurance(assurance::mismatch_issues(&mismatches)));
+    Ok(ExitCode::from(assurance::COMPOSITION_FAILURE))
 }
 
 /// The outputs to generate: the language flags, else the outputs the configuration names.
@@ -387,6 +531,7 @@ fn generate_settings<'a>(
         project: &file.project,
         lean: &file.lean,
         rust: &file.rust,
+        assurance: &file.assurance,
         env,
         rust_out,
         outputs,
@@ -426,7 +571,6 @@ fn check(lean: &LeanOptions, builder: &Builder, project: &Path, env: &Environmen
         success: &analysis.success,
         toolchain: &analysis.toolchain,
         name: &ctx.name,
-        host_externs: &lean.host_externs,
         local_prefix: &ctx.local_prefix,
         target: &env.target.triple,
     })
@@ -477,15 +621,35 @@ fn report_summary(analysis: &Analysis) {
         s.extern_requirements.len(),
         s.interface.exports.len()
     );
+    let a = &s.assurance;
+    let incomplete = a.claims.iter().filter(|c| c.evidence_trust.depends_on_sorry).count();
+    let claimed = s
+        .interface
+        .exports
+        .iter()
+        .filter(|e| a.claims.iter().any(|c| !c.evidence_trust.depends_on_sorry && c.subjects.contains(&e.name)))
+        .count();
+    println!(
+        "assurance: {} specifications, {} claims ({} proved, {incomplete} incomplete), {} capabilities, {} assumptions; {claimed} of {} exports have proved claims",
+        a.specs.len(),
+        a.claims.len(),
+        a.claims.len() - incomplete,
+        a.capabilities.len(),
+        a.assumptions.len(),
+        s.interface.exports.len()
+    );
     for w in &analysis.warnings {
         println!("warning: {}", w.message);
     }
 }
 
 /// Prints what is known about `name`; source paths are shown relative to the configuration
-/// (`local_prefix` is the Lean project's path from it), as in generated code.
-fn inspect(analysis: &Analysis, name: &str, local_prefix: &str) -> Result<()> {
+/// (`local_prefix` is the Lean project's path from it), as in generated code. An export's claims,
+/// trust, assumptions and capabilities are separate sections; so are the claims a theorem is the
+/// evidence of and those a specification is cited by.
+fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -> Result<()> {
     let s = &analysis.success;
+    let doc = document(s, &analysis.toolchain, program);
     let mut found = false;
     if let Some(e) = s.interface.exports.iter().find(|e| e.name == name) {
         found = true;
@@ -495,11 +659,47 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str) -> Result<()> {
             println!("source: {}", lungo_build::codegen::display_path(&src.location, local_prefix));
         }
         println!("exported: yes");
-        println!("axioms: {}", e.trust.axioms.join(", "));
-        println!("depends on sorry: {}", e.trust.depends_on_sorry);
-        println!("unsafe dependencies: {}", e.trust.unsafe_dependencies.join(", "));
-        println!("partial dependencies: {}", e.trust.partial_dependencies.join(", "));
-        println!("extern dependencies: {}", e.trust.extern_dependencies.join(", "));
+        let summary = doc.export(name).expect("every export has a summary");
+        print!("{}", assurance::export_block(&doc, summary).split_once('\n').map(|(_, rest)| rest).unwrap_or(""));
+        let t = &e.trust;
+        println!("  == Trust, in full ==");
+        println!("    axioms: {}", t.axioms.join(", "));
+        println!("    depends on sorry: {}", t.depends_on_sorry);
+        println!("    unsafe dependencies: {}", t.unsafe_dependencies.join(", "));
+        println!("    partial dependencies: {}", t.partial_dependencies.join(", "));
+        println!("    extern dependencies: {}", t.extern_dependencies.join(", "));
+    }
+    if let Some(c) = doc.claim(name) {
+        found = true;
+        println!("{name} is the evidence of a claim:");
+        println!("  [{}] {} of {}", c.status.as_str(), c.relation, c.subjects.join(", "));
+        println!("  statement: {}", c.statement.replace('\n', " "));
+        if !c.specifications.is_empty() {
+            println!("  specifications: {}", c.specifications.join(", "));
+        }
+        println!("  assumptions: {}", if c.assumptions.is_empty() { "(none)".to_owned() } else { c.assumptions.join(", ") });
+        println!("  evidence axioms: {}", c.evidence_trust.axioms.join(", "));
+        println!("  evidence depends on sorry: {}", c.evidence_trust.depends_on_sorry);
+        println!("  fingerprint: {}", c.fingerprint);
+    }
+    if let Some(sp) = doc.specifications.iter().find(|x| x.name == name) {
+        found = true;
+        println!("{name} is a specification ({}), fingerprint {}", sp.kind, sp.fingerprint);
+        let citing: Vec<&str> =
+            doc.claims.iter().filter(|c| c.specifications.contains(&sp.name)).map(|c| c.name.as_str()).collect();
+        println!("  cited by: {}", if citing.is_empty() { "(none)".to_owned() } else { citing.join(", ") });
+    }
+    if let Some(x) = doc.assumptions.iter().find(|x| x.name == name) {
+        found = true;
+        println!("{name} is an assumption of {} — assumed, never proved: {}", x.capability, x.statement.replace('\n', " "));
+    }
+    if let Some(c) = doc.capabilities.iter().find(|c| c.name == name) {
+        found = true;
+        let ops: Vec<&str> = c.operations.iter().map(|o| o.name.as_str()).collect();
+        println!("{name} is the capability {}: operations {}", c.id, ops.join(", "));
+        if !c.assumptions.is_empty() {
+            println!("  assumed of the host's implementation: {}", c.assumptions.join(", "));
+        }
     }
     if let Some(d) = s.bir.declaration(name) {
         found = true;
@@ -520,9 +720,14 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str) -> Result<()> {
     if let Some(r) = s.extern_requirements.iter().find(|r| r.declaration == name) {
         found = true;
         println!("extern: {:?}", r.entry);
+        if let Some(op) = &r.operation {
+            println!("operation of the capability {}", op.capability);
+        }
     }
     if !found {
-        return Err(Error::Configuration(format!("{name} is neither exported nor part of the compiled program")));
+        return Err(Error::Configuration(format!(
+            "{name} is neither exported, part of the compiled program, nor an assurance record"
+        )));
     }
     Ok(())
 }

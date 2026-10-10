@@ -278,7 +278,8 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     w.line("#[doc(hidden)]");
     facade.emit_markers(&mut w);
     w.line("");
-    emit_meta(&mut w, input, &naming);
+    let document = crate::core::assurance::document(input.success, input.toolchain, input.aggregate);
+    emit_meta(&mut w, input, &naming, &document);
     if let Some(entry) = &input.success.entry_point {
         emit_entry_point(&mut w, entry, program, input.layer);
     }
@@ -302,6 +303,7 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     files.insert("externs.json".into(), to_json(&extern_report(&externs, input)));
     files.insert("sources.json".into(), to_json(&sources_report(input)));
     files.insert("manifest.json".into(), to_json(&manifest_report(input, &naming)));
+    files.insert(crate::core::assurance::FILE_NAME.into(), document.to_json());
     Ok(Generated { files })
 }
 
@@ -418,7 +420,7 @@ fn emit_entry_point(w: &mut Writer, entry: &EntryPoint, program: &lungo_bir::Pro
     w.close("}");
 }
 
-fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming) {
+fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming, document: &crate::core::assurance::AssuranceDocument) {
     let interface = &input.success.interface;
     let paths: HashMap<&str, &str> =
         naming.records.iter().map(|r| (r.lean_name.as_str(), r.rust_path.as_str())).collect();
@@ -468,9 +470,19 @@ fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming) {
         w.line(format!("partial_dependencies: {},", list(&e.trust.partial_dependencies)));
         w.line(format!("extern_dependencies: {},", list(&e.trust.extern_dependencies)));
         w.close("},");
+        let summary = document.export(&e.name).expect("the document summarizes every export");
+        w.open("assurance: ::lungo::ExportAssurance {");
+        w.line(format!("claims: {},", list(&summary.claims)));
+        w.line(format!("assumptions: {},", list(&summary.assumptions)));
+        w.line(format!("capabilities: {},", list(&summary.capabilities)));
+        w.line(format!("roles: {},", list(&summary.roles)));
+        w.line(format!("asynchronous: {},", summary.r#async));
+        w.close("},");
         w.close("},");
     }
     w.close("];");
+    w.line("");
+    emit_assurance(w, document);
     w.line("");
     w.line("/// Metadata of the exported Lean declaration with fully qualified name `lean_name`.");
     w.open("pub fn declaration(lean_name: &str) -> ::core::option::Option<&'static ::lungo::DeclarationInfo> {");
@@ -500,6 +512,97 @@ fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming) {
         w.close("}");
     }
     w.close("}");
+}
+
+/// The program's assurance as typed statics of `__meta`, and the document itself.
+fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument) {
+    use crate::core::assurance::{CapabilityForm, ClaimStatus};
+    let s = |x: &str| syntax::string(x);
+    let list = |xs: &[String]| format!("&[{}]", xs.iter().map(|x| syntax::string(x)).collect::<Vec<_>>().join(", "));
+    let opt = |x: &Option<String>| match x {
+        Some(p) => format!("Some({})", syntax::string(p)),
+        None => "None".into(),
+    };
+    w.line("/// The program's assurance document, as `assurance.json` holds it.");
+    w.line(format!("pub const ASSURANCE_JSON: &str = {};", s(&d.to_json())));
+    w.line("");
+    w.open("static ASSURANCE: ::lungo::Assurance = ::lungo::Assurance {");
+    w.line(format!("schema_version: {},", d.schema_version));
+    w.line(format!("program: {},", s(&d.program)));
+    w.open("specifications: &[");
+    for x in &d.specifications {
+        w.line(format!(
+            "::lungo::Specification {{ name: {}, kind: {}, statement: {}, package: {}, fingerprint: {} }},",
+            s(&x.name),
+            s(&x.kind),
+            s(&x.statement),
+            opt(&x.package),
+            s(&x.fingerprint)
+        ));
+    }
+    w.close("],");
+    w.open("capabilities: &[");
+    for c in &d.capabilities {
+        let ops: Vec<String> = c.operations.iter().map(|o| o.name.clone()).collect();
+        w.line(format!(
+            "::lungo::Capability {{ name: {}, id: {}, asynchronous: {}, operations: {}, assumptions: {}, package: {}, fingerprint: {} }},",
+            s(&c.name),
+            s(&c.id),
+            c.form == CapabilityForm::Async,
+            list(&ops),
+            list(&c.assumptions),
+            opt(&c.package),
+            s(&c.fingerprint)
+        ));
+    }
+    w.close("],");
+    w.open("assumptions: &[");
+    for a in &d.assumptions {
+        w.line(format!(
+            "::lungo::Assumption {{ name: {}, capability: {}, statement: {}, package: {}, fingerprint: {} }},",
+            s(&a.name),
+            s(&a.capability),
+            s(&a.statement),
+            opt(&a.package),
+            s(&a.fingerprint)
+        ));
+    }
+    w.close("],");
+    w.open("claims: &[");
+    for c in &d.claims {
+        w.open("::lungo::Claim {");
+        w.line(format!("name: {},", s(&c.name)));
+        w.line(format!("relation: {},", s(&c.relation)));
+        w.line(format!("subjects: {},", list(&c.subjects)));
+        w.line(format!("specifications: {},", list(&c.specifications)));
+        w.line(format!("statement: {},", s(&c.statement)));
+        w.line(format!(
+            "status: ::lungo::ClaimStatus::{},",
+            match c.status {
+                ClaimStatus::Proved => "Proved",
+                ClaimStatus::Incomplete => "Incomplete",
+            }
+        ));
+        w.line(format!("evidence_axioms: {},", list(&c.evidence_trust.axioms)));
+        w.line(format!("assumptions: {},", list(&c.assumptions)));
+        w.line(format!("package: {},", opt(&c.package)));
+        w.line(format!("fingerprint: {},", s(&c.fingerprint)));
+        w.close("},");
+    }
+    w.close("],");
+    w.open("roles: &[");
+    for r in &d.roles {
+        w.line(format!("::lungo::Role {{ name: {}, role: {}, exported: {} }},", s(&r.name), s(&r.role), r.exported));
+    }
+    w.close("],");
+    w.close("};");
+    w.line("");
+    w.line("/// The program's assurance: what its Lean code claims and proves of each export, and what it");
+    w.line("/// assumes of the host's capabilities.");
+    w.open("pub fn assurance() -> &'static ::lungo::Assurance {");
+    w.line("&ASSURANCE");
+    w.close("}");
+    w.line("");
 }
 
 #[derive(Serialize)]
@@ -568,7 +671,6 @@ struct ManifestExport {
     rust_path: String,
     lean_type: String,
     source: Option<String>,
-    trust: lungo_protocol::Trust,
 }
 
 #[derive(Serialize)]
@@ -598,7 +700,6 @@ fn manifest_report(input: &GenInput, naming: &Naming) -> ManifestReport {
             rust_path: paths.get(e.name.as_str()).copied().unwrap_or_default().to_owned(),
             lean_type: e.lean_type.clone(),
             source: describe_source(&e.source, input.local_prefix),
-            trust: e.trust.clone(),
         })
         .collect();
     exports.sort_by(|a, b| a.lean_name.cmp(&b.lean_name));

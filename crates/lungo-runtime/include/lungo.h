@@ -8,7 +8,7 @@
  * counting over that layout; everything else is implemented by the runtime library.
  *
  * The header and the library must be of the same lungo version: generated programs call
- * `lungo_abi_v1`, which only a runtime with this ABI defines.
+ * `lungo_abi_v2`, which only a runtime with this ABI defines.
  *
  * Copyright the lungo authors. Licensed under the Apache License, Version 2.0.
  */
@@ -29,10 +29,10 @@ extern "C" {
 /* Version and portability                                                                     */
 /* ------------------------------------------------------------------------------------------ */
 
-#define LUNGO_ABI_VERSION 1
+#define LUNGO_ABI_VERSION 2
 
-/* Defined only by a runtime library with ABI version 1; returns LUNGO_ABI_VERSION. */
-uint32_t lungo_abi_v1(void);
+/* Defined only by a runtime library with ABI version 2; returns LUNGO_ABI_VERSION. */
+uint32_t lungo_abi_v2(void);
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
@@ -362,6 +362,13 @@ typedef struct lungo_hostcall lungo_hostcall;
 #define LUNGO_OK 0
 #define LUNGO_MALFORMED 1
 #define LUNGO_FAILED 2
+/* A resumption of an async program that was resumed or cancelled already. */
+#define LUNGO_STALE 3
+
+/* The kinds of steps of an async program: done with its value, or waiting for the host to
+   perform an operation. */
+#define LUNGO_STEP_DONE 0
+#define LUNGO_STEP_CALL 1
 
 const lungo_types *lungo_types_load(const uint8_t *bytes, size_t len);
 
@@ -372,7 +379,16 @@ void lungo_call_write(lungo_call *call, lungo_obj v, const uint8_t *type, size_t
 void lungo_call_write_io(lungo_call *call, lungo_obj r, const uint8_t *type, size_t type_len);
 void lungo_call_write_eio(lungo_call *call, lungo_obj r, const uint8_t *error, size_t error_len, const uint8_t *value,
                           size_t value_len);
+void lungo_call_write_async(lungo_call *call, lungo_obj program, const uint8_t *returns, size_t returns_len);
 int32_t lungo_call_end(lungo_call *call, lungo_buffer *out);
+/* Resumes the async program waiting on `resumption` with an answer, storing its next step in
+   `out`: LUNGO_OK, LUNGO_MALFORMED (the answer is not of its type; the resumption is consumed),
+   or LUNGO_STALE (resumed or cancelled already). */
+int32_t lungo_async_resume(uint64_t resumption, const uint8_t *input, size_t len, lungo_buffer *out);
+/* Gives up the async program waiting on `resumption`: LUNGO_OK, or LUNGO_STALE. */
+int32_t lungo_async_cancel(uint64_t resumption);
+/* The number of async programs waiting for an answer. */
+size_t lungo_async_outstanding(void);
 int32_t lungo_closure_call(const lungo_types *types, uint64_t handle, const uint8_t *type, size_t type_len,
                            const uint8_t *input, size_t len, lungo_buffer *out);
 
@@ -390,7 +406,8 @@ typedef int32_t (*lungo_host_dispatch)(uint64_t callback, const uint8_t *input, 
 typedef void (*lungo_host_ref)(uint64_t callback);
 void lungo_set_host(lungo_host_dispatch dispatch, lungo_host_ref retain, lungo_host_ref release);
 
-LUNGO_NORETURN void lungo_panic_host_extern_missing(const char *declaration);
+LUNGO_NORETURN void lungo_panic_capability_missing(const char *capability, const char *operation,
+                                                   const char *declaration);
 void lungo_check_layout(const char *lean_type, const char *provider, const char *expected, const char *actual);
 void lungo_handle_release(uint64_t handle);
 uint64_t lungo_handle_clone(uint64_t handle);
@@ -550,6 +567,24 @@ int32_t lungo_invoke(const lungo_types *types, lungo_entry entry, const uint8_t 
                      lungo_value **result, lungo_error **error);
 uint64_t lungo_host_function_new(const lungo_types *types, const uint8_t *sig, size_t sig_len, lungo_function f,
                                  void *ctx, lungo_drop drop);
+
+/* A step of an async program: LUNGO_STEP_DONE and its value, or LUNGO_STEP_CALL, the operation the
+   host is asked to perform (a value of the program's operation type) and the resumption to answer
+   it with. `value` is owned; lungo_step_clear frees it. */
+typedef struct lungo_step {
+    uint8_t kind;
+    lungo_value *value;
+    uint64_t resumption;
+} lungo_step;
+/* Calls a function returning an async program, as lungo_invoke does, storing its first step. */
+int32_t lungo_invoke_async(const lungo_types *types, lungo_entry entry, const uint8_t *sig, size_t sig_len,
+                           const lungo_type *const *type_args, size_t n_types, const lungo_value *const *args,
+                           size_t n_args, lungo_step *step, lungo_error **error);
+/* Answers the operation `resumption` waits for with `answer` (borrowed), storing the next step:
+   LUNGO_OK, LUNGO_MALFORMED (the answer is not of the operation's answer type; the resumption is
+   consumed) or LUNGO_STALE. */
+int32_t lungo_resume(uint64_t resumption, const lungo_value *answer, lungo_step *step, lungo_error **error);
+void lungo_step_clear(lungo_step *step);
 
 /* ------------------------------------------------------------------------------------------ */
 /* Runtime primitives                                                                          */

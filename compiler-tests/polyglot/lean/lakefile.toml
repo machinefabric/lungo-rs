@@ -2,5 +2,9 @@ name = "polyglot"
 version = "0.1.0"
 defaultTargets = ["Polyglot"]
 
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
 [[lean_lib]]
 name = "Polyglot"

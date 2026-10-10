@@ -1,19 +1,25 @@
+import Lungo
+
 /-!
-Lean code calling back into the Rust application through `@[extern]` declarations that the
-application maps with `Builder::rust_extern`.
+Lean code calling back into the Rust application through the operations of a capability, which
+the application implements with `Builder::rust_extern`.
 -/
 namespace Host
 
+/-- The services the application provides. -/
+@[lungo_capability "test.host"]
+structure Services
+
 /-- Looks a key up in the host's table. -/
-@[extern "host_lookup"]
+@[extern "host_lookup", lungo_operation Services]
 opaque hostLookup (key : @& String) : Option Nat
 
 /-- Appends a line to the host's log. -/
-@[extern "host_log"]
+@[extern "host_log", lungo_operation Services]
 opaque hostLog (line : String) : IO Unit
 
 /-- Calls a Lean function provided by the host (a closure crossing the boundary twice). -/
-@[extern "host_transform"]
+@[extern "host_transform", lungo_operation Services]
 opaque hostTransform (f : Nat → Nat) (xs : List Nat) : List Nat
 
 /-- Resolves `keys` through the host, logging each resolution; returns the total of the

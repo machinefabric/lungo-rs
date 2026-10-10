@@ -60,8 +60,11 @@ pub enum Error {
         bir_version: u32,
         errors: Vec<CodegenError>,
     },
-    /// An export violates the configured trust policy.
+    /// An export, or the evidence of a claim, violates the configured trust policy.
     Trust(Vec<String>),
+    /// The program's assurance records are invalid, or violate the assurance policy; every
+    /// problem found is reported.
+    Assurance(Vec<crate::AssuranceIssue>),
     /// A command the bridge runs failed.
     Command {
         program: String,
@@ -103,6 +106,7 @@ impl Error {
             Error::Protocol(_) => ErrorCode::Protocol,
             Error::Codegen { errors, .. } => errors.first().map_or(ErrorCode::InternalGenerator, |e| e.code()),
             Error::Trust(_) => ErrorCode::TrustPolicy,
+            Error::Assurance(issues) => issues.first().map_or(ErrorCode::InternalGenerator, |i| i.code),
             Error::Command { .. } => ErrorCode::CommandFailed,
             Error::Environment(_) => ErrorCode::Environment,
             Error::Configuration(_) => ErrorCode::InvalidConfiguration,
@@ -154,6 +158,15 @@ impl fmt::Display for Error {
             }
             return write!(f, "Lean toolchain: {toolchain}\nBridge IR: {bir_version}");
         }
+        if let Error::Assurance(issues) = self {
+            for (i, issue) in issues.iter().enumerate() {
+                if i > 0 {
+                    f.write_str("\n\n")?;
+                }
+                write!(f, "error[{}]: {}", issue.code, issue.message)?;
+            }
+            return Ok(());
+        }
         write!(f, "error[{}]: ", self.code())?;
         match self {
             Error::Io { context, source } => write!(f, "{context}: {source}"),
@@ -200,7 +213,7 @@ impl fmt::Display for Error {
                 write!(f, "the Lean worker did not finish within {seconds} s and was terminated\n{stderr}")
             }
             Error::Protocol(msg) => write!(f, "worker protocol error: {msg}"),
-            Error::Codegen { .. } => unreachable!("rendered above"),
+            Error::Codegen { .. } | Error::Assurance(_) => unreachable!("rendered above"),
             Error::Trust(violations) => {
                 writeln!(f, "exported declarations violate the configured trust policy:")?;
                 for v in violations {

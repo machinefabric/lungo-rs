@@ -7,6 +7,7 @@
 //! `lungo` command). [`LeanOptions`] are the settings every language shares: what is compiled
 //! and exported, the trust policy, and how the worker runs.
 
+pub mod assurance;
 mod error;
 pub mod fingerprint;
 pub mod lake;
@@ -14,6 +15,7 @@ pub mod output;
 mod toolchain;
 mod worker;
 
+pub use assurance::{AssuranceIssue, AssurancePolicy};
 pub use error::{Error, Result};
 pub use lungo_codegen::{CodegenError, ErrorCode};
 pub use toolchain::{SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, read_pin};
@@ -34,14 +36,16 @@ use lungo_protocol::{
     Success, Target,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// The settings every generated language shares: what is compiled and exported, the externs the
-/// application implements, the trust policy, and how the worker runs. Loadable from the `[lean]`
-/// table of a `lungo.toml`; the Rust `Builder` of `lungo-build` includes them.
+/// The settings every generated language shares: what is compiled and exported, which modules are
+/// read for their assurance records, the trust policy, and how the worker runs. Loadable from the
+/// `[lean]` table of a `lungo.toml`; the Rust `Builder` of `lungo-build` includes them. Which
+/// externs the host implements is not a setting: the program's Lean code declares them, as the
+/// operations of capabilities (`@[lungo_operation]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LeanOptions {
@@ -53,9 +57,10 @@ pub struct LeanOptions {
     /// Modules (and their submodules) whose declarations receive public functions. When neither
     /// this nor `exports` names anything, the root modules are exported.
     pub export_modules: Vec<String>,
-    /// Extern keys (symbols, or declaration names for other extern forms) the application
-    /// implements in the host language.
-    pub host_externs: BTreeSet<String>,
+    /// Modules loaded only for the assurance records they declare (laws proved apart from the
+    /// program's code): imported into the environment the worker reads, never compiled into the
+    /// program.
+    pub assurance_modules: Vec<String>,
     /// The name of the generated program (module, package, symbol prefix). Defaults to the
     /// Lake package's name.
     pub name: Option<String>,
@@ -88,7 +93,7 @@ impl Default for LeanOptions {
             root_modules: Vec::new(),
             exports: Vec::new(),
             export_modules: Vec::new(),
-            host_externs: BTreeSet::new(),
+            assurance_modules: Vec::new(),
             name: None,
             deny_sorry: true,
             deny_axioms: false,
@@ -125,9 +130,10 @@ impl LeanOptions {
         self
     }
 
-    /// Declares that the application implements the Lean extern `key` in the host language.
-    pub fn host_extern(mut self, key: impl Into<String>) -> Self {
-        self.host_externs.insert(key.into());
+    /// Reads the assurance records of `module` (with everything it imports) without compiling it
+    /// into the program.
+    pub fn assurance_module(mut self, module: impl Into<String>) -> Self {
+        self.assurance_modules.push(module.into());
         self
     }
 
@@ -267,6 +273,7 @@ impl LeanOptions {
             hermetic: self.hermetic,
             diagnostics: DiagnosticOptions { max_errors: self.max_errors },
             runtime_exports: lungo_runtime::exports::REQUIRED.iter().map(|e| e.symbol.to_owned()).collect(),
+            assurance_modules: self.assurance_modules.clone(),
         }
     }
 
@@ -281,7 +288,7 @@ impl LeanOptions {
     /// Builds the resolved project with Lake and runs the worker.
     pub fn analyze_in(&self, ctx: &Context, env: &Environment) -> Result<Analysis> {
         let worker = self.prepare_worker(ctx, env)?;
-        lake::build(&ctx.toolchain, &ctx.project, &self.roots(), true)?;
+        lake::build(&ctx.toolchain, &ctx.project, &self.roots(), &self.assurance_modules, true)?;
         let request = self.request(ctx, env);
         let response = worker::run(
             &worker,
@@ -305,10 +312,28 @@ impl LeanOptions {
         }
     }
 
-    /// Checks the trust policy against every export of the program.
+    /// Checks the trust policy against every export of the program and against the evidence of
+    /// every claim: a claim proved with `sorry` or with an axiom the policy denies is refused as
+    /// the export would be.
     pub fn check_trust(&self, success: &Success) -> Result<()> {
         const STANDARD: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
         let mut violations = Vec::new();
+        for c in &success.assurance.claims {
+            if self.deny_sorry && c.evidence_trust.depends_on_sorry {
+                violations.push(format!("the claim {} depends on `sorry` (deny_sorry)", c.evidence));
+            }
+            if self.deny_axioms {
+                let extra: Vec<&str> =
+                    c.evidence_trust.axioms.iter().map(String::as_str).filter(|a| !STANDARD.contains(a)).collect();
+                if !extra.is_empty() {
+                    violations.push(format!(
+                        "the claim {} depends on non-standard axioms {} (deny_axioms)",
+                        c.evidence,
+                        extra.join(", ")
+                    ));
+                }
+            }
+        }
         for e in &success.interface.exports {
             if self.deny_sorry && e.trust.depends_on_sorry {
                 violations.push(format!("{} depends on `sorry` (deny_sorry)", e.name));
@@ -556,7 +581,7 @@ mod tests {
     /// TEST0136: options round trip through toml and reject unknown keys
     #[test]
     fn test0136_options_round_trip_through_toml_and_reject_unknown_keys() {
-        let options = LeanOptions::default().root_module("Formal").host_extern("host_log").deny_axioms(true);
+        let options = LeanOptions::default().root_module("Formal").assurance_module("Formal.Laws").deny_axioms(true);
         let text = toml::to_string(&options).unwrap();
         assert_eq!(toml::from_str::<LeanOptions>(&text).unwrap(), options);
         assert!(toml::from_str::<LeanOptions>("unknown = 1\n").is_err());

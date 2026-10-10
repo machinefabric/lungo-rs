@@ -143,17 +143,19 @@ pub fn output_files(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
 }
 
 /// Publishes the generated sources `files` and the platform products `products` into `out_dir`
-/// atomically: the complete set is staged and validated in `work_dir`, then swapped into place,
-/// so a failed generation never leaves a partially updated output behind.
+/// atomically: the complete set is staged and validated beside `out_dir`, then swapped into
+/// place, so a failed generation never leaves a partially updated output behind. Staging beside
+/// the output keeps the swap a rename within one file system, wherever the output is.
 pub fn publish(
     out_dir: &Path,
-    work_dir: &Path,
     files: &BTreeMap<String, String>,
     products: &BTreeMap<String, Vec<u8>>,
     info: &BuildInfo,
 ) -> Result<()> {
-    fs::create_dir_all(work_dir).map_err(|e| Error::io(format!("cannot create {}", work_dir.display()), e))?;
-    let staging = work_dir.join(format!("staging-{}", std::process::id()));
+    let parent = out_dir.parent().expect("the output directory has a parent");
+    fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
+    let name = out_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let staging = parent.join(format!(".{name}.lungo-staging-{}", std::process::id()));
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| Error::io(format!("cannot clear {}", staging.display()), e))?;
     }
@@ -181,7 +183,7 @@ pub fn publish(
     let mut record = serde_json::to_string_pretty(&info).expect("build info serializes");
     record.push('\n');
     fs::write(staging.join(BUILD_INFO), record).map_err(|e| Error::io("cannot write build-info.json", e))?;
-    let previous = work_dir.join(format!("previous-{}", std::process::id()));
+    let previous = parent.join(format!(".{name}.lungo-previous-{}", std::process::id()));
     if previous.exists() {
         fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
     }
@@ -193,14 +195,13 @@ pub fn publish(
             .next()
             .is_none();
         if !empty {
+            fs::remove_dir_all(&staging).map_err(|e| Error::io(format!("cannot remove {}", staging.display()), e))?;
             return Err(Error::Configuration(format!(
                 "refusing to replace {}: it is not a directory lungo generated (it has no {BUILD_INFO}); choose an empty or new output directory",
                 out_dir.display()
             )));
         }
     }
-    let parent = out_dir.parent().expect("the output directory has a parent");
-    fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
     let had_previous = out_dir.exists();
     if had_previous {
         fs::rename(out_dir, &previous).map_err(|e| Error::io(format!("cannot move aside {}", out_dir.display()), e))?;
@@ -317,7 +318,7 @@ mod platform_product_tests {
         let out = root.path().join("out");
         let files: BTreeMap<String, String> = [("index.js".to_string(), "js".to_string())].into();
         let products: BTreeMap<String, Vec<u8>> = [("program.wasm".to_string(), b"one".to_vec())].into();
-        publish(&out, &root.path().join("work"), &files, &products, &record()).expect("published");
+        publish(&out, &files, &products, &record()).expect("published");
 
         let info: BuildInfo = serde_json::from_slice(&fs::read(out.join(BUILD_INFO)).unwrap()).unwrap();
         assert_eq!(info.platform_products, vec!["program.wasm".to_string()]);

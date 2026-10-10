@@ -1,19 +1,23 @@
-//! `lungo.toml`: the Lake project, the settings every language shares (`[lean]`), and each
-//! generator's (`[rust]`, `[c]`, `[go]`, `[python]`, `[swift]`, `[ts]`, `[plugins.<name>]`).
+//! `lungo.toml`: the Lake project, the settings every language shares (`[lean]`), what the
+//! project requires of its assurance (`[assurance]`), and each generator's (`[rust]`, `[c]`,
+//! `[go]`, `[python]`, `[swift]`, `[ts]`, `[plugins.<name>]`).
 //!
 //! ```toml
 //! project = "lean"
 //!
 //! [lean]
 //! root-modules = ["Formal.Session"]
-//! host-externs = ["host_log"]
+//! assurance-modules = ["Formal.Laws"]
+//!
+//! [assurance]
+//! require-claims = ["."]
 //!
 //! [go]
 //! out = "gen/go"
 //! options = { package = "formal" }
 //! ```
 
-use lungo_build::{Error, LeanOptions, Result, RustOptions};
+use lungo_build::{AssurancePolicy, Error, LeanOptions, Result, RustOptions};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -31,6 +35,8 @@ pub struct ProjectFile {
     pub lean: LeanOptions,
     #[serde(default)]
     pub rust: RustOptions,
+    #[serde(default)]
+    pub assurance: AssurancePolicy,
     pub c: Option<Language>,
     pub go: Option<Language>,
     pub python: Option<Language>,
@@ -119,11 +125,13 @@ mod tests {
         let file = dir.join("lungo.toml");
         std::fs::write(
             &file,
-            "project = \"lean\"\n[lean]\nhost-externs = [\"h\"]\n[go]\nout = \"gen/go\"\noptions = { package = \"p\" }\n[plugins.kotlin]\nout = \"k\"\n",
+            "project = \"lean\"\n[lean]\nassurance-modules = [\"L\"]\n[assurance]\nrequire-claims = [\".\"]\n[go]\nout = \"gen/go\"\noptions = { package = \"p\" }\n[plugins.kotlin]\nout = \"k\"\n",
         )
         .unwrap();
         let p = ProjectFile::load(&file).unwrap();
         assert_eq!(p.go.as_ref().unwrap().options["package"], "p");
+        assert_eq!(p.assurance.require_claims, ["."]);
+        assert_eq!(p.lean.assurance_modules, ["L"]);
         assert_eq!(p.languages().iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>(), ["go", "kotlin"]);
         std::fs::write(&file, "project = \"lean\"\n[go]\npackage = \"p\"\n").unwrap();
         assert!(ProjectFile::load(&file).is_err(), "options belong in `options`");
@@ -131,6 +139,12 @@ mod tests {
         assert!(ProjectFile::load(&file).is_err(), "go is built in");
         std::fs::write(&file, "project = \"lean\"\n[plugins.Bad_Name]\nout = \"x\"\n").unwrap();
         assert!(ProjectFile::load(&file).is_err());
+        // The host implements what the Lean code declares as operations of capabilities; there is
+        // no list of host externs to configure.
+        std::fs::write(&file, "project = \"lean\"\n[lean]\nhost-externs = [\"h\"]\n").unwrap();
+        assert!(ProjectFile::load(&file).is_err(), "host-externs is not a setting");
+        std::fs::write(&file, "project = \"lean\"\n[assurance]\nrequire = [\".\"]\n").unwrap();
+        assert!(ProjectFile::load(&file).is_err(), "the assurance table rejects unknown keys");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

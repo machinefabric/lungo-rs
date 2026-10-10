@@ -9,7 +9,8 @@ use crate::runtime;
 use lungo_build::codegen::c::{ProgramInput, generate_program};
 use lungo_build::codegen::plugin::{ExternType, GenerateRequest, PROTOCOL_VERSION, ProgramInfo, RuntimeInfo, builtin};
 use lungo_build::protocol::{Endian, Target};
-use lungo_build::{Analysis, Builder, Context, Environment, Error, LeanOptions, Result, RustOptions};
+use lungo_build::codegen::core::assurance;
+use lungo_build::{AssurancePolicy, Analysis, Builder, Context, Environment, Error, LeanOptions, Result, RustOptions};
 use lungo_driver::output;
 use serde::Serialize;
 use std::cell::OnceCell;
@@ -30,6 +31,7 @@ pub struct Settings<'a> {
     pub project: &'a Path,
     pub lean: &'a LeanOptions,
     pub rust: &'a RustOptions,
+    pub assurance: &'a AssurancePolicy,
     pub env: &'a Environment,
     pub rust_out: Option<PathBuf>,
     pub outputs: Vec<Output>,
@@ -63,6 +65,7 @@ pub const WASM_TARGET: &str = "wasm32-wasip1";
 /// The analysis of the project for each target, made on first use.
 struct Analyses<'a> {
     lean: &'a LeanOptions,
+    assurance: &'a AssurancePolicy,
     host: OnceCell<Analysis>,
     wasm: OnceCell<Analysis>,
 }
@@ -75,6 +78,7 @@ impl Analyses<'_> {
         }
         let a = self.lean.analyze_in(ctx, env)?;
         self.lean.check_trust(&a.success)?;
+        self.assurance.check(&a.success)?;
         Ok(cell.get_or_init(|| a))
     }
 }
@@ -97,7 +101,10 @@ struct KeyConfig<'a> {
     runtime: &'a RuntimeInfo,
     /// A local distribution's contents: it is rebuilt in place, and its path says nothing.
     distribution_digest: Option<&'a str>,
-    host_externs: &'a std::collections::BTreeSet<String>,
+    /// What is compiled and exported, the trust policy, and the modules read for their records.
+    lean: &'a LeanOptions,
+    /// The assurance policy: a stricter one is checked again rather than an output reused.
+    assurance: &'a AssurancePolicy,
     wasi_sdk: Option<&'a str>,
 }
 
@@ -146,14 +153,14 @@ fn drift(
 
 /// Runs the generation, or with `verify` the comparison; one report line per output.
 pub fn run(s: &Settings) -> Result<Vec<String>> {
-    let analyses = Analyses { lean: s.lean, host: OnceCell::new(), wasm: OnceCell::new() };
+    let analyses = Analyses { lean: s.lean, assurance: s.assurance, host: OnceCell::new(), wasm: OnceCell::new() };
     let mut report = Vec::new();
     let mut drifts = Vec::new();
     // The Rust output has no platform products: `--link` leaves it alone.
     if let Some(dir) = s.rust_out.as_ref().filter(|_| s.mode != Mode::Link) {
         let mut rust = s.rust.clone();
         rust.out_dir = None;
-        let builder = Builder::from_options(s.lean.clone(), rust);
+        let builder = Builder::from_options(s.lean.clone(), rust, s.assurance.clone());
         if s.mode == Mode::Verify {
             // Generated beside the output and compared: the Rust module is the build's output.
             let scratch = dir.with_file_name(format!(
@@ -231,7 +238,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             extern_types: &o.extern_types,
             runtime: &runtime,
             distribution_digest: distribution_digest.as_deref(),
-            host_externs: &s.lean.host_externs,
+            lean: s.lean,
+            assurance: s.assurance,
             wasi_sdk: sdk_text.as_deref(),
         })
         .expect("key configuration serializes");
@@ -252,7 +260,6 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             success: &analysis.success,
             toolchain: &analysis.toolchain,
             name: &ctx.name,
-            host_externs: &s.lean.host_externs,
             local_prefix: &local_prefix,
             target: &env.target.triple,
         })
@@ -271,11 +278,21 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             runtime: runtime.clone(),
             options: o.options.clone(),
             extern_types: o.extern_types.clone(),
+            assurance: assurance::document(&analysis.success, &analysis.toolchain, &ctx.name),
         };
-        let files = match generator {
+        let mut files = match generator {
             Generator::Builtin(g) => g.generate(&request).map_err(|errors| codegen_error(analysis, errors))?,
             Generator::Plugin { program, .. } => crate::plugin::run(program, &request)?,
         };
+        // The assurance document is lungo's to write, the same in every output.
+        if files.contains_key(assurance::FILE_NAME) {
+            return Err(Error::Plugin(format!(
+                "the {} generator wrote {}, which lungo writes into every output itself",
+                o.language,
+                assurance::FILE_NAME
+            )));
+        }
+        files.insert(assurance::FILE_NAME.to_owned(), request.assurance.to_json());
         let work = dir.parent().expect("an absolute path has a parent").join(format!(
             ".lungo-work-{}",
             dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
@@ -309,8 +326,10 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         }
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
         let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &[])?;
-        output::publish(&dir, &work, &files, &binary, &info)?;
-        std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
+        output::publish(&dir, &files, &binary, &info)?;
+        if work.exists() {
+            std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
+        }
         report.push(format!("generated {} into {}", o.language, o.dir.display()));
     }
     finish(report, drifts)

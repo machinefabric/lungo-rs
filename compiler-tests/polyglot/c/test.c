@@ -48,7 +48,7 @@ static uint64_t nat(const lungo_value *v) {
     return x;
 }
 
-/* Host externs. */
+/* Host capabilities. */
 static char log_lines[8][64];
 static size_t log_count = 0;
 
@@ -89,20 +89,101 @@ static void drop_counter(void *ctx) {
     dropped++;
 }
 
+/* The scaler the async program asks for: x ↦ k·x. */
+static int32_t multiply(void *ctx, const lungo_value *const *args, size_t n, lungo_value **result, lungo_error **error) {
+    (void)error;
+    CHECK(n == 1);
+    *result = lungo_value_nat(nat(args[0]) * *(uint64_t *)ctx);
+    return LUNGO_OK;
+}
+
+/* The contents of the file `path`, NUL-terminated. */
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "cannot open %s\n", path);
+        exit(1);
+    }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *text = malloc((size_t)len + 1);
+    CHECK(fread(text, 1, (size_t)len, f) == (size_t)len);
+    text[len] = 0;
+    fclose(f);
+    return text;
+}
+
+/* Answers the operation of `step`, a call: get answers "body:<url>", or an error for "missing";
+   stamp answers its token; scaler answers x ↦ k·x. */
+static int32_t answer(lungo_step *step, const lungo_type *fn_type) {
+    static uint64_t k;
+    const lungo_value *op = step->value;
+    lungo_value *a;
+    switch (lungo_value_ctor_index(op)) {
+    case 0: {
+        size_t len;
+        const char *url = lungo_value_get_string(polyglot_fetch_op_get_url(op), &len);
+        char body[160];
+        if (len == 7 && memcmp(url, "missing", 7) == 0) {
+            a = lungo_value_error(lungo_value_cstring("not found"));
+        } else {
+            snprintf(body, sizeof body, "body:%.*s", (int)len, url);
+            a = lungo_value_ok(lungo_value_cstring(body));
+        }
+        break;
+    }
+    case 1:
+        a = lungo_value_clone(polyglot_fetch_op_stamp_t(op));
+        break;
+    default:
+        k = nat(polyglot_fetch_op_scaler_k(op));
+        a = lungo_value_function(fn_type, multiply, &k, NULL);
+        break;
+    }
+    uint64_t resumption = step->resumption;
+    lungo_step_clear(step);
+    int32_t status = lungo_resume(resumption, a, step, &error_);
+    lungo_value_free(a);
+    return status;
+}
+
+/* Runs the async program whose first step is `step` to its end; its value. */
+static lungo_value *drive(lungo_step *step, const lungo_type *fn_type) {
+    while (step->kind == LUNGO_STEP_CALL) {
+        if (answer(step, fn_type) != LUNGO_OK) {
+            fprintf(stderr, "resuming failed: %s\n", error_ ? lungo_error_message(error_) : "no error");
+            exit(1);
+        }
+    }
+    lungo_value *v = step->value;
+    step->value = NULL;
+    return v;
+}
+
 static lungo_value *point(double x, double y, const char *label, uint8_t tag) {
     return polyglot_point_mk(lungo_value_float(x), lungo_value_float(y), lungo_value_cstring(label),
                              lungo_value_uint8(tag));
 }
 
-int main(void) {
+int main(int argc, char **argv) {
 #ifdef _WIN32
     /* The program's output is compared byte for byte: the Lean program's lines are written as
        bytes, so this program's are too (a text-mode stream would end them with "\r\n"). */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
+    /* TEST0297: a call before every capability is implemented ends the process, naming the
+       capability and the operation (the test runs this case in a process of its own). */
+    if (argc == 2 && strcmp(argv[1], "without-capabilities") == 0) {
+        polyglot_implement_journal_host_record(record, NULL, NULL);
+        lungo_value *three = lungo_value_nat(3);
+        polyglot_factorial(three, &result_, &error_);
+        fprintf(stderr, "the call returned\n");
+        return 0;
+    }
     static uint64_t factor = 10;
-    polyglot_implement_host_scale(scale, &factor, NULL);
-    polyglot_implement_host_record(record, NULL, NULL);
+    polyglot_implement_scaler_host_scale(scale, &factor, NULL);
+    polyglot_implement_journal_host_record(record, NULL, NULL);
 
     /* Nat beyond 64 bits. */
     lungo_value *n = lungo_value_nat(25);
@@ -293,7 +374,7 @@ int main(void) {
     lungo_value_free(v2);
     lungo_value_free(copy);
 
-    /* Host externs. */
+    /* TEST0056: host capabilities. */
     lungo_value *nums[3] = {lungo_value_nat(1), lungo_value_nat(2), lungo_value_nat(3)};
     lungo_value *numbers = lungo_value_list(nums, 3);
     lungo_value *scaled = OK(polyglot_scaled_sum(numbers, &result_, &error_));
@@ -319,8 +400,111 @@ int main(void) {
     lungo_type_free(nat_type);
 
     /* main. */
-    const char *argv[2] = {"one", "two"};
-    CHECK(polyglot_run_main(2, argv) == 2);
+    const char *main_args[2] = {"one", "two"};
+    CHECK(polyglot_run_main(2, main_args) == 2);
+
+    /* TEST0298: the package's assurance document is the program's, byte for byte. */
+    char *document = read_file(POLYGLOT_ASSURANCE);
+    CHECK(strcmp(polyglot_assurance_json(), document) == 0);
+    CHECK(strstr(document, "\"name\": \"Polyglot.scaledSum_singleton_mono\"") != NULL);
+    free(document);
+
+    /* TEST0299: an async program runs on the host's answers: data, an opaque handle passed back,
+       and a host function the program calls. */
+    lungo_type *nat_t = lungo_type_simple(LUNGO_NAT);
+    const lungo_type *scaler_params[1] = {nat_t};
+    lungo_type *scaler_type = lungo_type_function(scaler_params, 1, nat_t);
+    lungo_step step = {0};
+    lungo_value *urls_in[3] = {lungo_value_cstring("a"), lungo_value_cstring("missing"), lungo_value_cstring("b")};
+    lungo_value *urls = lungo_value_list(urls_in, 3);
+    CHECK(polyglot_fetch_all(urls, &step, &error_) == LUNGO_OK);
+    CHECK(step.kind == LUNGO_STEP_CALL && lungo_async_outstanding() == 1);
+    lungo_value *bodies = drive(&step, scaler_type);
+    CHECK(lungo_value_count(bodies) == 3 && string_is(lungo_value_item(bodies, 0), "body:a") &&
+          string_is(lungo_value_item(bodies, 1), "error: not found") && string_is(lungo_value_item(bodies, 2), "body:b"));
+    lungo_value_free(bodies);
+    lungo_value *a_five = lungo_value_nat(5);
+    lungo_value *token = OK(polyglot_mk_token(a_five, &result_, &error_));
+    CHECK(polyglot_stamp_token(lungo_value_get_option(token), &step, &error_) == LUNGO_OK);
+    lungo_value *stamped = drive(&step, scaler_type);
+    CHECK(nat(stamped) == 6);
+    lungo_value *a_seven = lungo_value_nat(7), *a_six = lungo_value_nat(6);
+    CHECK(polyglot_apply_scaler(a_seven, a_six, &step, &error_) == LUNGO_OK);
+    lungo_value *product = drive(&step, scaler_type);
+    CHECK(nat(product) == 42);
+    CHECK(lungo_async_outstanding() == 0);
+    lungo_value_free(product);
+    lungo_value_free(stamped);
+    lungo_value_free(token);
+    lungo_value_free(a_five);
+
+    /* TEST0300: the host gives up a program waiting for an answer: nothing waits, and its
+       resumption is stale. */
+    CHECK(polyglot_fetch_all(urls, &step, &error_) == LUNGO_OK);
+    uint64_t given_up = step.resumption;
+    lungo_step_clear(&step);
+    CHECK(lungo_async_cancel(given_up) == LUNGO_OK && lungo_async_outstanding() == 0);
+    CHECK(lungo_async_cancel(given_up) == LUNGO_STALE);
+    lungo_value *late = lungo_value_ok(lungo_value_cstring("late"));
+    CHECK(lungo_resume(given_up, late, &step, &error_) == LUNGO_STALE);
+    lungo_error_free(error_);
+    error_ = NULL;
+
+    /* TEST0301: a resumption answers once; an answer of another type consumes it. `step` is an
+       output, so a resumption answered again stores its (empty) step elsewhere. */
+    lungo_step stale = {0};
+    CHECK(polyglot_fetch_all(urls, &step, &error_) == LUNGO_OK);
+    uint64_t first_resumption = step.resumption;
+    lungo_step_clear(&step);
+    CHECK(lungo_resume(first_resumption, late, &step, &error_) == LUNGO_OK && step.kind == LUNGO_STEP_CALL);
+    CHECK(lungo_resume(first_resumption, late, &stale, &error_) == LUNGO_STALE && stale.value == NULL);
+    lungo_error_free(error_);
+    error_ = NULL;
+    CHECK(step.kind == LUNGO_STEP_CALL);
+    uint64_t second_resumption = step.resumption;
+    lungo_step_clear(&step);
+    CHECK(lungo_resume(second_resumption, a_seven, &step, &error_) == LUNGO_MALFORMED);
+    lungo_error_free(error_);
+    error_ = NULL;
+    CHECK(lungo_resume(second_resumption, late, &stale, &error_) == LUNGO_STALE && lungo_async_outstanding() == 0);
+    lungo_error_free(error_);
+    error_ = NULL;
+    lungo_value_free(late);
+
+    /* TEST0302: many async programs waiting at once resume independently, answered in any
+       order. */
+    enum { PROGRAMS = 100 };
+    static lungo_step steps[PROGRAMS];
+    static size_t order[PROGRAMS];
+    lungo_value *one_in[1] = {lungo_value_cstring("u")};
+    lungo_value *one = lungo_value_list(one_in, 1);
+    for (size_t i = 0; i < PROGRAMS; i++) {
+        CHECK(polyglot_fetch_all(one, &steps[i], &error_) == LUNGO_OK);
+        order[i] = i;
+    }
+    CHECK(lungo_async_outstanding() == PROGRAMS);
+    srand(297);
+    for (size_t i = PROGRAMS - 1; i > 0; i--) {
+        size_t j = (size_t)rand() % (i + 1), t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    for (size_t i = 0; i < PROGRAMS; i++) {
+        lungo_value *got = drive(&steps[order[i]], scaler_type);
+        CHECK(lungo_value_count(got) == 1 && string_is(lungo_value_item(got, 0), "body:u"));
+        lungo_value_free(got);
+    }
+    CHECK(lungo_async_outstanding() == 0);
+    lungo_value_free(one);
+    lungo_value_free(a_seven);
+    lungo_value_free(a_six);
+
+    /* TEST0303: the process ends while a program waits for an answer. */
+    CHECK(polyglot_fetch_all(urls, &step, &error_) == LUNGO_OK && lungo_async_outstanding() == 1);
+    lungo_step_clear(&step);
+    lungo_value_free(urls);
+    lungo_type_free(scaler_type);
+    lungo_type_free(nat_t);
 
     if (failures) {
         fprintf(stderr, "%d checks failed\n", failures);

@@ -31,6 +31,9 @@ pub const WASM_EXPORTS: &[&str] = &[
     "lungo_handle_clone",
     "lungo_handle_release",
     "lungo_closure_call",
+    "lungo_async_resume",
+    "lungo_async_cancel",
+    "lungo_async_outstanding",
 ];
 
 pub const BEGIN_PRIMITIVES: &str =

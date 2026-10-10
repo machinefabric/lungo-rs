@@ -1,11 +1,12 @@
 import Lean
-import Lungo.Cbor
-import Lungo.Diagnostics
-import Lungo.Protocol
-import Lungo.Lake
-import Lungo.BridgeIR
-import Lungo.LCNFAdapter
-import Lungo.Interface
+import LungoWorker.Cbor
+import LungoWorker.Diagnostics
+import LungoWorker.Protocol
+import LungoWorker.Lake
+import LungoWorker.BridgeIR
+import LungoWorker.LCNFAdapter
+import LungoWorker.Interface
+import LungoWorker.Assurance
 
 /-!
 The worker driver: loads the project's compiled environment through Lean's own import
@@ -14,12 +15,12 @@ machinery and produces the versioned response for the host.
 The worker runs inside `lake env` for the project, after Lake has elaborated, kernel-checked, and
 compiled the requested modules. It performs no source parsing of its own.
 -/
-namespace Lungo.Driver
+namespace LungoWorker.Driver
 
-open Lean Lungo.Cbor System
+open Lean LungoWorker.Cbor System
 
 /-- Version of this adapter for its Lean release; part of the worker identity. -/
-def adapterVersion : Nat := 1
+def adapterVersion : Nat := 2
 
 /-- The Lean release this adapter is validated against. -/
 def supportedLeanVersion : String := "4.34.1"
@@ -45,6 +46,8 @@ structure Context where
   ws : LakeInfo.Workspace
   env : Environment
   modules : Array ModuleNode
+  /-- The modules linked into the program, with the initialization phase each runs. -/
+  linked : Std.HashMap Nat IRPhases
 
 def runCore (env : Environment) (opts : Options) (x : CoreM α) : WorkerM (α × Environment) := do
   let ctx : Core.Context := {
@@ -54,6 +57,16 @@ def runCore (env : Environment) (opts : Options) (x : CoreM α) : WorkerM (α ×
   match ← (x.toIO ctx { env }).toBaseIO with
   | .ok (a, s) => return (a, s.env)
   | .error e => fail .adapter s!"Lean metaprogram failed while inspecting the environment: {e}"
+
+/-- Runs `x` over `env`, reporting a failure as its message. -/
+def coreIO (env : Environment) (opts : Options) {α : Type} (x : CoreM α) : IO (Except String α) := do
+  let ctx : Core.Context := {
+    fileName := "<lungo>", fileMap := default, options := opts
+    maxHeartbeats := 0, maxRecDepth := 8192
+  }
+  match ← (x.toIO ctx { env }).toBaseIO with
+  | .ok (a, _) => return .ok a
+  | .error e => return .error (toString e)
 
 def moduleGraph (env : Environment) (ws : LakeInfo.Workspace) : WorkerM (Array ModuleNode) := do
   let srcPath ← liftIO .project "cannot determine the Lean source search path" getSrcSearchPath
@@ -83,8 +96,13 @@ The modules linked into the program and the initialization phase each one runs, 
 module initialization Lean's C backend emits. A `module` file runs its runtime phase, which
 leaves out its `meta` imports (compile-time code); a legacy file runs every phase of all its
 imports (`.all`). A module reached in both ways runs `.all`.
+
+A `barrier` module is never linked, and nothing is reached through it: lungo's Lean library keeps
+its attributes, and the parts of Lean they need, in modules that run only while a project is
+compiled.
 -/
-def linkedPhases (env : Environment) (roots : Array Name) : Std.HashMap Nat IRPhases := Id.run do
+def linkedPhases (env : Environment) (roots : Array Name) (barrier : Nat → Bool) :
+    Std.HashMap Nat IRPhases := Id.run do
   let isModule (i : Nat) := (env.header.moduleData[i]?.map (·.isModule)).getD false
   let mut phases : Std.HashMap Nat IRPhases := {}
   let mut work : Array (Nat × IRPhases) := #[]
@@ -103,6 +121,7 @@ def linkedPhases (env : Environment) (roots : Array Name) : Std.HashMap Nat IRPh
       if p == .runtime && imp.isMeta then continue
       let some j := env.getModuleIdx? imp.module | continue
       let j := j.toNat
+      if barrier j then continue
       work := work.push (j, if p == .all || !isModule j then .all else .runtime)
   return phases
 
@@ -147,12 +166,14 @@ def selectExports (ctx : Context) (closureNames : NameSet) : CoreM (Array Name �
     (if ctx.request.exports.roots then ctx.roots.map (·.toString (escape := false)) else #[])
   for m in exportedModules do
     let prefixName := m.toName
-    let matching := ctx.modules.filter fun node => prefixName == node.name || prefixName.isPrefixOf node.name
+    -- Modules loaded only for their assurance records are not part of the program.
+    let matching := (List.range ctx.modules.size).filter fun i =>
+      let node := ctx.modules[i]!
+      (prefixName == node.name || prefixName.isPrefixOf node.name) && ctx.linked.contains i
     if matching.isEmpty then
       errors := errors.push (requestError none s!"exported module '{m}' is not imported by the root modules")
-    for node in matching do
-      let some idx := env.getModuleIdx? node.name | continue
-      let some data := env.header.moduleData[idx.toNat]? | continue
+    for i in matching do
+      let some data := env.header.moduleData[i]? | continue
       for n in data.constNames do
         if closureNames.contains n && (← Interface.isAutoExportCandidate env n |>.run') then
           out := out.insert n
@@ -211,7 +232,15 @@ def run (request : Protocol.Request) : WorkerM Value := do
   liftIO .adapter "cannot enable initializers" (unsafe enableInitializersExecution)
   let opts := request.compilerOptions.foldl (init := ({} : Options)) fun o opt =>
     o.set opt.name.toName opt.value
-  let env ← match ← (importModules (roots.map ({ module := · })) opts (level := .private) (loadExts := true)).toBaseIO with
+  -- Modules loaded only for the assurance records they hold (laws stated apart from the
+  -- program): imported into the environment, never linked into the program.
+  let assuranceModules := request.assuranceModules.map String.toName
+  for m in assuranceModules do
+    if m.isAnonymous then fail .request "an assurance module name is empty"
+    if roots.contains m then
+      fail .request s!"{m} is both a root module and an assurance module; a root module's records are read anyway"
+  let env ← match ← (importModules ((roots ++ assuranceModules).map ({ module := · })) opts
+      (level := .private) (loadExts := true)).toBaseIO with
     | .ok env => pure env
     | .error e => fail .lean s!"cannot load the compiled Lean environment of the root modules: {e}"
   let modules ← moduleGraph env ws
@@ -219,8 +248,18 @@ def run (request : Protocol.Request) : WorkerM Value := do
     let some idx := env.getModuleIdx? r | fail .request s!"root module {r} was not loaded"
     unless modules[idx.toNat]!.isLocal do
       fail .request s!"root module {r} is not a module of the project's root package"
-  let ctx : Context := { request, roots, ws, env, modules }
-  let linked := linkedPhases env roots
+  for m in assuranceModules do
+    let some idx := env.getModuleIdx? m | fail .request s!"assurance module {m} was not loaded"
+    if modules[idx.toNat]!.location.all (·.origin matches .toolchain) then
+      fail .request s!"assurance module {m} is not a module of a package of the Lake workspace"
+  let packageOf (i : Nat) : Option String := modules[i]?.bind (·.location.map (·.package))
+  let library ← liftExcept .project "cannot read lungo's Lean library" (Assurance.findLibrary env packageOf)
+  let barriers := library.map (·.barriers) |>.getD #[]
+  let linked := linkedPhases env roots (barriers.contains ·)
+  if library.isSome && env.contains `Lungo.Async.Program.done then
+    let (_, _) ← runCore env opts Interface.checkProgramLayout.run'
+  let records := library.map (Assurance.readRecords env) |>.getD {}
+  let ctx : Context := { request, roots, ws, env, modules, linked }
   -- Compilation roots: every runtime declaration of the project's linked local modules, every
   -- initializer of every linked module, and explicitly exported declarations.
   let mut idx : LCNFAdapter.IRIndex := { env }
@@ -252,7 +291,12 @@ def run (request : Protocol.Request) : WorkerM Value := do
         let (m, idx') := LCNFAdapter.moduleDecls idx modIdx.toNat
         idx := idx'
         if m.contains n then compileRoots := compileRoots.push n
-  let exportMap := LCNFAdapter.exportedSymbols env
+  -- Every operation of a capability the program's modules declare is compiled, whether or not
+  -- the program calls it, so a capability's interface does not change with what reaches it.
+  for (decl, _) in records.operations.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
+    if let some modIdx := env.getModuleIdxFor? decl then
+      if linked.contains modIdx.toNat then compileRoots := compileRoots.push decl
+  let exportMap := LCNFAdapter.exportedSymbols env (linked.contains ·)
   -- Compiled Lean functions the runtime itself calls: `IO.Error.toString` renders uncaught
   -- `IO` errors (as Lean's runtime does), and the oracle backend renders numbers and builds
   -- user errors with the others.
@@ -268,6 +312,34 @@ def run (request : Protocol.Request) : WorkerM Value := do
   let cl ← LCNFAdapter.closure idx exportMap compileRoots
   idx := cl.index
   let closureNames : NameSet := cl.decls.foldl (fun s (d, _) => s.insert d.name) {}
+  -- Lean's compiler reuses specializations compiled in any imported module, so the program may
+  -- run code of a module it does not link (one loaded only for its assurance records, or reached
+  -- only through lungo's compile-time attributes). Such code is plain compiled code and runs as
+  -- it is; what cannot run is a value the module's initializer computes, since that initializer
+  -- is not part of the program.
+  let mut metadataOnly : Array Assurance.Violation := #[]
+  let mut reported : NameSet := {}
+  -- The modules owning such code are part of the program, with nothing to initialize.
+  let mut unlinkedOwners : Std.HashSet Nat := {}
+  for (_, modIdx) in cl.decls do
+    unless linked.contains modIdx do unlinkedOwners := unlinkedOwners.insert modIdx
+  for i in unlinkedOwners.toArray.qsort (· < ·) do
+    initCbor := initCbor.push (obj [
+      ("name", BridgeIR.name modules[i]!.name),
+      ("imports", arr (modules[i]!.imports.map BridgeIR.name)),
+      ("initializers", arr #[])
+    ])
+  for (d, modIdx) in cl.decls do
+    if linked.contains modIdx then continue
+    let n := d.name
+    let initialized := isIOUnitBuiltinInitFn env n || isIOUnitInitFn env n ||
+      (getBuiltinInitFnNameFor? env n <|> getInitFnNameFor? env n).isSome
+    if initialized && !reported.contains n then
+      reported := reported.insert n
+      let message := s!"the program uses `{n}`, which module {modules[modIdx]!.name} computes when it is \
+        initialized; lungo does not link that module (it is loaded only for its assurance records, or is \
+        compile-time only), so nothing would initialize it: import the module from the program's modules"
+      metadataOnly := metadataOnly.push { kind := .metadataOnlyDependency, declaration := some n, message }
   let declsCbor ← cl.decls.mapM fun (d, modIdx) =>
     liftExcept .adapter s!"cannot represent compiler declaration '{d.name}'"
       (LCNFAdapter.encodeDecl env exportMap d modIdx)
@@ -330,7 +402,10 @@ def run (request : Protocol.Request) : WorkerM Value := do
             ]))
           catch _ => pure none
         | none => pure none
+      let operation := (o.bind records.operations.find?).map fun op =>
+        obj [("capability", BridgeIR.name op.capability)]
       externsCbor := externsCbor.push (obj [
+        ("operation", opt operation),
         ("declaration", BridgeIR.name f),
         ("entry", BridgeIR.externEntry entry),
         ("lean_type", opt (leanType.map str)),
@@ -390,8 +465,32 @@ def run (request : Protocol.Request) : WorkerM Value := do
       pure (obj [("module", BridgeIR.name r),
         ("symbol", str (mkModuleInitializationFunctionName r (env.getModulePackageByIdx? idx) phases))])))
   ]
+  -- Assurance records, checked against the environment.
+  let origin (decl : Name) : CoreM Value := do
+    let some modIdx := env.getModuleIdxFor? decl | throwError "`{decl}` belongs to no module"
+    let node := modules[modIdx.toNat]!
+    return obj [("module", BridgeIR.name node.name),
+      ("package", opt (node.location.map fun l => str l.package)),
+      ("source", opt (← sourceRange ctx decl))]
+  let exportSet : NameSet := exports.foldl (·.insert ·) {}
+  let assuranceCbor ← match library with
+    | none => pure (obj [("library", .null), ("specs", arr #[]), ("claims", arr #[]),
+        ("capabilities", arr #[]), ("operations", arr #[]), ("assumptions", arr #[]),
+        ("roles", arr #[]), ("violations", arr (metadataOnly.map (·.toCbor)))])
+    | some lib =>
+      let input : Assurance.Input := {
+        env, opts, lib, records
+        exports := exportSet
+        closureNames, origin
+        runCore := coreIO env opts
+      }
+      let out ← liftIO .adapter "cannot check the assurance records" (Assurance.analyze input)
+      let out ← liftExcept .adapter "cannot check the assurance records" out
+      let .map fields := out.value | fail .adapter "assurance records are not a map"
+      pure (.map (fields.push ("violations", arr ((out.violations ++ metadataOnly).map (·.toCbor)))))
   return obj [
     ("root_modules", arr (roots.map BridgeIR.name)),
+    ("assurance", assuranceCbor),
     ("oracle", oracleCbor),
     ("module_graph", arr (modules.map (·.toCbor))),
     ("input_files", arr (inputFiles.map str)),
@@ -440,4 +539,4 @@ def main (requestPath responsePath : FilePath) : IO UInt32 := do
     IO.eprintln s!"lungo-worker: cannot encode the response: {e}"
     return 3
 
-end Lungo.Driver
+end LungoWorker.Driver

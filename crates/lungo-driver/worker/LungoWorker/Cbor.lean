@@ -6,7 +6,7 @@ encodings, definite lengths only, and map keys ordered by the bytewise order of 
 encodings. Only the data model used by the protocol is supported: unsigned and negative
 integers, byte strings, text strings, arrays, text-keyed maps, booleans and null.
 -/
-namespace Lungo.Cbor
+namespace LungoWorker.Cbor
 
 inductive Value where
   | uint (n : Nat)
@@ -227,4 +227,4 @@ def Value.checkFields (v : Value) (allowed : List String) : Except String Unit :
   for (k, _) in entries do
     unless allowed.contains k do throw s!"unknown field '{k}'"
 
-end Lungo.Cbor
+end LungoWorker.Cbor

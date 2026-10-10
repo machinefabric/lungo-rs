@@ -22,7 +22,7 @@ use crate::{CodegenError, GENERATOR_VERSION, SourceIndex, describe_source};
 use lungo_bir::{Declaration, Initializer, IrType};
 use lungo_protocol::{Success, WorkerToolchain};
 use program::{Emitter, c_params};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use syntax::{c_type, comment, string};
 
 /// The runtime functions a program's WebAssembly module exports for the TypeScript binding.
@@ -37,8 +37,6 @@ pub struct ProgramInput<'a> {
     /// The program's name. Its C identifier (the program's *id*) followed by `__` prefixes every
     /// symbol of the program; the C binding's API uses the id followed by `_`.
     pub name: &'a str,
-    /// Extern keys the application implements in the host language.
-    pub host_externs: &'a BTreeSet<String>,
     /// Path of the Lean project relative to the package, used in source references.
     pub local_prefix: &'a str,
     /// The target triple the program is compiled for; primitives the target lacks are errors.
@@ -74,13 +72,12 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     let id = identifier(input.name);
     let prefix = format!("{id}__");
     let sources = SourceIndex::new(&input.success.source_metadata, input.local_prefix);
-    let host: BTreeMap<String, String> = input.host_externs.iter().map(|k| (k.clone(), k.clone())).collect();
-    let hint = |key: &str| {
-        format!(
-            "Declare it as a host extern (`host-externs = [{key:?}]` in the `[lean]` table of lungo.toml) and implement it in the host language"
-        )
-    };
-    let application = ApplicationExterns { implementations: &host, setting: "host-externs", hint: &hint };
+    // Every operation of a capability is the host's: the package registers an implementation of
+    // each under its key.
+    let host = crate::core::externs::operation_keys(&program.declarations, &input.success.extern_requirements)
+        .map_err(|e| vec![e])?;
+    let hint = |_: &str| String::new();
+    let application = ApplicationExterns { implementations: &host, setting: "the host's capabilities", hint: &hint };
     let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
         describe_source(&r.source, input.local_prefix)
     })?;
@@ -148,7 +145,7 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     h.line(format!("void {prefix}initialize(void);"));
     h.line(format!("const lungo_types *{prefix}types(void);"));
     h.line(format!("void {prefix}set_host_extern(size_t index, uint64_t callback);"));
-    h.line(format!("void {prefix}check_host_externs(void);"));
+    h.line(format!("void {prefix}check_capabilities(void);"));
     for f in &boundary.functions {
         h.line(format!("int32_t {}(const uint8_t *input, size_t len, lungo_buffer *out);", f.symbol));
     }
@@ -277,10 +274,10 @@ fn emit_initialize(w: &mut Writer, input: &ProgramInput, emitter: &Emitter) {
     let prefix = emitter.prefix;
     let program = &input.success.bir;
     w.open(format!("static uint64_t {prefix}initialize_once(void) {{"));
-    w.line(comment("A runtime of another C ABI version does not define lungo_abi_v1: linking fails."));
-    w.line("if (lungo_abi_v1() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
-    w.line(comment("Initializers may call host externs: every one must be registered."));
-    w.line(format!("{prefix}check_host_externs();"));
+    w.line(comment("A runtime of another C ABI version does not define lungo_abi_v2: linking fails."));
+    w.line("if (lungo_abi_v2() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
+    w.line(comment("Initializers may call the host's operations: every capability must be provided."));
+    w.line(format!("{prefix}check_capabilities();"));
     if let Ok(exports) = runtime_exports(input.success) {
         for export in exports {
             w.line(format!(

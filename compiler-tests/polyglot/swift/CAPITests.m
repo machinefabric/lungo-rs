@@ -27,12 +27,12 @@ static int32_t record(void *ctx, const lungo_value *const *args, size_t n, lungo
 @implementation CAPITests
 
 + (void)setUp {
-    polyglot_implement_host_scale(scale, NULL, NULL);
-    polyglot_implement_host_record(record, NULL, NULL);
+    polyglot_implement_scaler_host_scale(scale, NULL, NULL);
+    polyglot_implement_journal_host_record(record, NULL, NULL);
 }
 
-// TEST0059: host Externs Through The CAPI
-- (void)test0059_HostExternsThroughTheCAPI {
+// TEST0059: host Capabilities Through The CAPI
+- (void)test0059_HostCapabilitiesThroughTheCAPI {
     lungo_value *items[2] = {lungo_value_nat(1), lungo_value_nat(2)};
     lungo_value *list = lungo_value_list(items, 2);
     lungo_value *result = NULL;

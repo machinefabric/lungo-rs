@@ -8,11 +8,12 @@
 
 use crate::CodegenError;
 use crate::c::boundary::Boundary;
+use crate::core::assurance::AssuranceDocument;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// The version of the request and response formats.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// The program the package is generated for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +92,10 @@ pub struct GenerateRequest {
     /// The program's types other packages provide, by Lean name (the language's
     /// `extern-types` table of `lungo.toml`).
     pub extern_types: BTreeMap<String, ExternType>,
+    /// The program's assurance document. lungo writes it into the package as `assurance.json`
+    /// itself; a generator that exposes it in the language (as every built-in generator does)
+    /// embeds exactly [`AssuranceDocument::to_json`].
+    pub assurance: AssuranceDocument,
 }
 
 /// What a generator generated: the package's files, or why it could not.

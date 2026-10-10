@@ -6,10 +6,12 @@
 //! which it downloads from the lungo release (verified by SHA-256) or finds installed.
 //!
 //! Every Lean value is a `lungo_value`; the API adds, per type, its type expression, named
-//! constructors and field accessors, and per exported function a C function checking and
-//! passing its arguments. Objective-C uses the same API.
+//! constructors and field accessors, per exported function a C function checking and passing its
+//! arguments, per operation of a capability a function the host implements it with, and the
+//! program's assurance document. An async export returns its program's first step
+//! (`lungo_step`), answered with `lungo_resume`. Objective-C uses the same API.
 
-use super::boundary::{Boundary, byte_array};
+use super::boundary::{Boundary, byte_array, capability_name, describe_type, operation_name};
 use super::syntax::comment;
 use crate::CodegenError;
 use crate::core::names::{components, snake_case};
@@ -36,6 +38,8 @@ impl Generator for CGenerator {
         let mut files = request.program_files.clone();
         files.insert(format!("include/{}.h", b.id), h);
         files.insert(format!("src/{}.c", b.id), c);
+        // `assurance.json` itself is written by lungo; the package reads it through
+        // `<id>_assurance_json`, embedded in its source.
         files.insert("CMakeLists.txt".to_owned(), cmake(request, embed).map_err(|e| vec![e])?);
         Ok(files)
     }
@@ -84,9 +88,11 @@ struct TypeNames {
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    host_externs: Vec<String>,
+    /// Per capability, the function implementing each operation.
+    operations: Vec<Vec<String>>,
     initialize: String,
     run_main: Option<String>,
+    assurance: String,
 }
 
 fn snake(parts: &[String]) -> String {
@@ -261,20 +267,25 @@ impl Names {
             .zip(&b.functions)
             .map(|(short, f)| scope.claim_function(&f.lean_name, short, |suffix| format!("{id}_{}", snake(suffix))))
             .collect::<Result<_, _>>()?;
-        let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
-        let host_externs = short_names(&host_names)
-            .iter()
-            .zip(&b.host_externs)
-            .map(|(short, h)| {
-                scope.claim(format!("{id}_implement_{}", snake(short)), format!("host extern {}", h.declaration))
-            })
-            .collect::<Result<_, _>>()?;
+        let mut operations = Vec::new();
+        for c in &b.capabilities {
+            let cap = snake_case(&capability_name(&c.id));
+            let mut ops = Vec::new();
+            for o in &c.operations {
+                ops.push(scope.claim(
+                    format!("{id}_implement_{cap}_{}", snake_case(operation_name(&o.declaration))),
+                    format!("operation {} of capability {}", o.declaration, c.id),
+                )?);
+            }
+            operations.push(ops);
+        }
         let initialize = scope.claim(format!("{id}_initialize"), "the program's initializer")?;
         let run_main = match &b.run_main {
             Some(_) => Some(scope.claim(format!("{id}_run_main"), "the program's `main`")?),
             None => None,
         };
-        Ok(Names { types, functions, host_externs, initialize, run_main })
+        let assurance = scope.claim(format!("{id}_assurance_json"), "the program's assurance document")?;
+        Ok(Names { types, functions, operations, initialize, run_main, assurance })
     }
 }
 
@@ -300,7 +311,11 @@ fn function_prototype(name: &str, f: &super::boundary::Function) -> String {
     let (types, values) = function_params(f);
     let mut ps: Vec<String> = types.iter().map(|t| format!("const lungo_type *{t}")).collect();
     ps.extend(values.iter().map(|v| format!("const lungo_value *{v}")));
-    ps.push("lungo_value **result".to_owned());
+    if matches!(f.returns, Returns::Async { .. }) {
+        ps.push("lungo_step *step".to_owned());
+    } else {
+        ps.push("lungo_value **result".to_owned());
+    }
     ps.push("lungo_error **error".to_owned());
     format!("int32_t {name}({})", ps.join(", "))
 }
@@ -318,6 +333,9 @@ fn describe_returns(r: &Returns) -> &'static str {
         }
         Returns::Eio { .. } => {
             "Returns LUNGO_OK with the result, LUNGO_FAILED with the error value, or LUNGO_MALFORMED if the arguments do not match."
+        }
+        Returns::Async { .. } => {
+            "An async program. Returns LUNGO_OK with its first step (answer an operation with lungo_resume, give the program up with lungo_async_cancel), or LUNGO_MALFORMED if the arguments do not match."
         }
     }
 }
@@ -369,15 +387,37 @@ fn header(request: &GenerateRequest, names: &Names) -> String {
         w.line(format!("{};", function_prototype(name, f)));
         w.line("");
     }
-    for (h, name) in b.host_externs.iter().zip(&names.host_externs) {
-        let ty = h.lean_type.as_deref().unwrap_or("unknown type");
+    for (c, ops) in b.capabilities.iter().zip(&names.operations) {
         w.line(comment(&format!(
-            "Implements the Lean extern {} : {ty}. Required before the program initializes; `f` may run on any thread.",
-            h.declaration
+            "The capability {} ({}): the host implements every operation before the program initializes.{}",
+            c.id,
+            c.lean_name,
+            assumptions_note(request, &c.lean_name)
         )));
-        w.line(format!("void {name}(lungo_function f, void *ctx, lungo_drop drop);"));
+        for (o, name) in c.operations.iter().zip(ops) {
+            let ty = o.lean_type.as_deref().unwrap_or("unknown type");
+            w.line(comment(&format!("Implements the operation {} : {ty}; `f` may run on any thread.", o.declaration)));
+            w.line(format!("void {name}(lungo_function f, void *ctx, lungo_drop drop);"));
+        }
         w.line("");
     }
+    for c in &b.async_capabilities {
+        let op = &b.types[c.op_type as usize].lean_name;
+        w.line(comment(&format!(
+            "The async capability {} ({}): an async export asks the host to perform a {op}, the step's value, \
+             and is resumed with the answer.{}",
+            c.id,
+            c.lean_name,
+            assumptions_note(request, &c.lean_name)
+        )));
+        for o in &c.operations {
+            w.line(comment(&format!("{} is answered with a {}.", o.lean_name, describe_type(&b.types, &o.answer))));
+        }
+        w.line("");
+    }
+    w.line(comment("The program's assurance document (assurance.json): its claims, trust and assumptions."));
+    w.line(format!("const char *{}(void);", names.assurance));
+    w.line("");
     w.line("#ifdef __cplusplus");
     w.line("}");
     w.line("#endif");
@@ -405,11 +445,20 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
             w.line(l);
         }
     }
-    for (i, h) in b.host_externs.iter().enumerate() {
-        for l in byte_array(&format!("host_sig_{i}"), &h.signature().encode()) {
+    for (i, o) in b.capabilities.iter().flat_map(|c| &c.operations).enumerate() {
+        for l in byte_array(&format!("host_sig_{i}"), &o.signature().encode()) {
             w.line(l);
         }
     }
+    let mut document = request.assurance.to_json().into_bytes();
+    document.push(0);
+    for l in byte_array("assurance_json", &document) {
+        w.line(l);
+    }
+    w.line("");
+    w.open(format!("const char *{}(void) {{", names.assurance));
+    w.line("return (const char *)assurance_json;");
+    w.close("}");
     w.line("");
     if !externs.is_empty() {
         w.line(comment("The packages providing extern types were generated for the layouts this program was."));
@@ -488,23 +537,45 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
             w.line(format!("const lungo_value *args[{}] = {{{}}};", values.len(), values.join(", ")));
             format!("args, {}", values.len())
         };
+        let (invoke, out) =
+            if matches!(f.returns, Returns::Async { .. }) { ("lungo_invoke_async", "step") } else { ("lungo_invoke", "result") };
         w.line(format!(
-            "return lungo_invoke({}(), {}, sig_{i}, sizeof sig_{i}, {type_args}, {args}, result, error);",
+            "return {invoke}({}(), {}, sig_{i}, sizeof sig_{i}, {type_args}, {args}, {out}, error);",
             b.types_symbol, f.symbol
         ));
         w.close("}");
         w.line("");
     }
-    for (i, (h, name)) in b.host_externs.iter().zip(&names.host_externs).enumerate() {
+    let operations = b.capabilities.iter().flat_map(|c| &c.operations);
+    for (i, (o, name)) in operations.zip(names.operations.iter().flatten()).enumerate() {
         w.open(format!("void {name}(lungo_function f, void *ctx, lungo_drop drop) {{"));
         w.line(format!(
             "{prefix}set_host_extern({}, lungo_host_function_new({}(), host_sig_{i}, sizeof host_sig_{i}, f, ctx, drop));",
-            h.index, b.types_symbol
+            o.index, b.types_symbol
         ));
         w.close("}");
         w.line("");
     }
     w.finish()
+}
+
+/// A sentence naming what the program's claims assume of capability `lean_name`, or nothing.
+pub(crate) fn assumptions_note(request: &GenerateRequest, lean_name: &str) -> String {
+    let assumed: Vec<&str> = request
+        .assurance
+        .capabilities
+        .iter()
+        .find(|c| c.name == lean_name)
+        .map(|c| c.assumptions.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+    if assumed.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " The program's claims assume, and do not prove, that the host's implementation satisfies {}.",
+            assumed.join(", ")
+        )
+    }
 }
 
 /// A CMake string literal.

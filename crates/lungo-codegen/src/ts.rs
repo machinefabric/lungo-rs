@@ -7,9 +7,16 @@
 //! instantiates the module and returns an object whose methods are the program's functions; they
 //! throw `LeanIOError` (`IO`), `LeanError` (`EIO ε`) and `MalformedError` (arguments Lean cannot
 //! represent).
+//!
+//! The capabilities the host provides are given to `load` (`options.capabilities`), one object
+//! per capability with a method per operation; `load` rejects with `MissingCapabilityError` when
+//! one is missing. An async export returns a `Promise`: it takes a handler of its async
+//! capability, whose methods (returning answers or promises of them) it awaits for each operation
+//! the program asks, and an optional `AbortSignal`. `ASSURANCE` is the program's assurance
+//! document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Function};
+use crate::c::boundary::{Boundary, Function, capability_name, operation_name};
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
@@ -98,7 +105,7 @@ fn pascal(parts: &[String]) -> String {
 fn js_local(name: &str, index: usize) -> String {
     let id = lower_camel_case(name);
     let id = if name.is_empty() || id.chars().all(|c| c == '_') { format!("x{index}") } else { id };
-    if id.starts_with("type") || ["w", "r", "v", "options", "host"].contains(&id.as_str()) {
+    if id.starts_with("type") || ["w", "r", "v", "options", "host", "handler", "op"].contains(&id.as_str()) {
         format!("{id}_")
     } else {
         escape(id)
@@ -118,11 +125,28 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
+/// The TypeScript names of a capability: its key in `options.capabilities`, its interface, and
+/// its methods.
+struct CapabilityNames {
+    key: String,
+    interface: String,
+    methods: Vec<String>,
+}
+
+/// The TypeScript names of an async capability: its handler interface, the dispatcher, the
+/// methods.
+struct AsyncNames {
+    handler: String,
+    perform: String,
+    methods: Vec<String>,
+}
+
 struct Names {
     class: String,
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    host_methods: Vec<String>,
+    capabilities: Vec<CapabilityNames>,
+    asyncs: Vec<AsyncNames>,
 }
 
 /// The namespace alias of every module providing an extern type (`ext<k>`).
@@ -166,9 +190,14 @@ impl Names {
         aliases: &BTreeMap<String, String>,
     ) -> Result<Names, CodegenError> {
         let mut scope = Scope::new("TypeScript");
-        for reserved in
-            [class.to_owned(), format!("{class}Host"), "load".into(), "LoadOptions".into(), "leanTypes".into()]
-        {
+        for reserved in [
+            class.to_owned(),
+            format!("{class}Capabilities"),
+            "load".into(),
+            "LoadOptions".into(),
+            "leanTypes".into(),
+            "ASSURANCE".into(),
+        ] {
             scope.claim(reserved, "a generated declaration")?;
         }
         let type_names: Vec<&str> = b.types.iter().map(|t| t.lean_name.as_str()).collect();
@@ -218,6 +247,9 @@ impl Names {
         }
         let mut methods = Scope::new("TypeScript");
         methods.claim("runMain".into(), "the program's `main`")?;
+        if !b.async_capabilities.is_empty() {
+            methods.claim("outstanding".into(), "the count of waiting async programs")?;
+        }
         let fn_names: Vec<&str> = b.functions.iter().map(|f| f.lean_name.as_str()).collect();
         let functions = short_names(&fn_names)
             .iter()
@@ -226,16 +258,42 @@ impl Names {
                 methods.claim_function(&f.lean_name, s, |suffix| camel(suffix).trim_end_matches('_').to_owned())
             })
             .collect::<Result<_, _>>()?;
-        let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
-        let mut host = Scope::new("TypeScript");
-        let host_methods = short_names(&host_names)
-            .iter()
-            .zip(&b.host_externs)
-            .map(|(s, h)| {
-                host.claim(camel(s).trim_end_matches('_').to_owned(), format!("host extern {}", h.declaration))
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Names { class: class.to_owned(), types, functions, host_methods })
+        let mut keys = Scope::new("TypeScript");
+        let mut capabilities = Vec::new();
+        for c in &b.capabilities {
+            let base = capability_name(&c.id);
+            let key = keys.claim(camel(&[base.clone()]).trim_end_matches('_').to_owned(), format!("capability {}", c.id))?;
+            let interface = scope.claim(format!("{class}{}", pascal(&[base])), format!("capability {}", c.id))?;
+            let mut methods = Scope::new("TypeScript");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| {
+                    methods.claim(
+                        camel(&[operation_name(&o.declaration).to_owned()]).trim_end_matches('_').to_owned(),
+                        format!("operation {}", o.declaration),
+                    )
+                })
+                .collect::<Result<_, _>>()?;
+            capabilities.push(CapabilityNames { key, interface, methods: ms });
+        }
+        let mut asyncs = Vec::new();
+        for c in &b.async_capabilities {
+            let op = types[c.op_type as usize].name.clone();
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
+            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async capability {}", c.id))?;
+            let mut methods = Scope::new("TypeScript");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| {
+                    let last = components(&o.lean_name).last().cloned().unwrap_or_default();
+                    methods.claim(camel(&[last]).trim_end_matches('_').to_owned(), format!("operation {}", o.lean_name))
+                })
+                .collect::<Result<_, _>>()?;
+            asyncs.push(AsyncNames { handler, perform, methods: ms });
+        }
+        Ok(Names { class: class.to_owned(), types, functions, capabilities, asyncs })
     }
 }
 
@@ -296,7 +354,7 @@ fn package_json(request: &GenerateRequest, package: &str, version: &str) -> Stri
         "main": "./index.js",
         "types": "./index.d.ts",
         "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } },
-        "files": ["index.js", "index.d.ts", "program.wasm"],
+        "files": ["index.js", "index.d.ts", "program.wasm", "assurance.json"],
         "engines": { "node": ">=20" },
         "dependencies": { "lungo-ts": support },
     });
@@ -426,6 +484,11 @@ impl Emitter<'_> {
                     self.descriptor(value, Scoped::Function)
                 )
             }
+            Returns::Async { op, value, .. } => format!(
+                "L.asyncProgram({}, {})",
+                self.descriptor(&Type::Inductive { index: *op, args: Vec::new() }, Scoped::Function),
+                self.descriptor(value, Scoped::Function)
+            ),
         }
     }
 
@@ -438,6 +501,50 @@ impl Emitter<'_> {
                     self.ts_type(t)
                 }
             }
+            Returns::Async { value, .. } => {
+                format!("Promise<{}>", if matches!(value, Type::Unit) { "void".into() } else { self.ts_type(value) })
+            }
+        }
+    }
+
+    /// The index of the async capability whose operation type is `op`.
+    fn async_index(&self, op: u32) -> usize {
+        self.boundary()
+            .async_capabilities
+            .iter()
+            .position(|c| c.op_type == op)
+            .expect("the boundary has the async capability of every async export")
+    }
+
+    /// The dispatchers of the async capabilities: each asks a handler for an operation's answer.
+    fn js_perform(&self, w: &mut Writer) {
+        let b = self.boundary();
+        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+            let decl = &b.table.types[c.op_type as usize];
+            let tn = &self.names.types[c.op_type as usize];
+            w.line("");
+            w.line(format!("/** Asks `handler` for the answer to `op`, an operation of {}. */", c.id));
+            w.line(format!("function {}(handler, op) {{", n.perform));
+            let call = |k: usize, x: &str| {
+                let args: Vec<String> = tn.ctors[k].1.iter().map(|f| format!("{x}.{f}")).collect();
+                format!(
+                    "return [{}, handler.{}({})];",
+                    self.descriptor(&c.operations[k].answer, Scoped::Function),
+                    n.methods[k],
+                    args.join(", ")
+                )
+            };
+            if decl.ctors.len() == 1 {
+                w.line(format!("  {}", call(0, "op")));
+            } else {
+                w.line("  switch (op.kind) {");
+                for (k, (kind, _)) in tn.ctors.iter().enumerate() {
+                    w.line(format!("    case {}: {}", js_string(kind), call(k, "op")));
+                }
+                w.line("  }");
+                w.line(format!("  throw new L.MalformedError(`an operation that is not a {}: ${{op?.kind}}`);", tn.name));
+            }
+            w.line("}");
         }
     }
 
@@ -486,6 +593,11 @@ impl Emitter<'_> {
                 self.js_type(&mut w, i);
             }
         }
+        self.js_perform(&mut w);
+        w.line("");
+        w.line("/** The program's assurance document: what its Lean code claims and proves of each export, what it");
+        w.line(" *  trusts, and what it assumes of the host's capabilities. */");
+        w.line(format!("export const ASSURANCE = L.parseAssurance({});", self.request.assurance.to_json().trim_end()));
         w.line("");
         w.line("/** The layout fingerprint and descriptor of each type, by Lean name, for modules using them. */");
         w.line("export const leanTypes = Object.freeze({");
@@ -513,27 +625,42 @@ impl Emitter<'_> {
             w.line(format!("    return this.#program.runMain({}, args);", js_string(run_main)));
             w.line("  }");
         }
+        if !b.async_capabilities.is_empty() {
+            w.line("  outstanding() {");
+            w.line("    return this.#program.outstanding();");
+            w.line("  }");
+        }
         w.line("}");
         w.line("");
-        w.line("/** Instantiates the program; `options.host` implements its externs. */");
+        w.line("/** Instantiates the program; `options.capabilities` provides the capabilities it needs. */");
         w.line("export async function load(options = {}) {");
+        if !b.capabilities.is_empty() {
+            // Every capability, with every operation, before anything is instantiated.
+            w.line("  const capabilities = options.capabilities ?? {};");
+            for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+                for (o, m) in c.operations.iter().zip(&n.methods) {
+                    w.line(format!(
+                        "  if (typeof capabilities.{}?.{m} !== \"function\") throw new L.MissingCapabilityError({}, {});",
+                        n.key,
+                        js_string(&c.id),
+                        js_string(operation_name(&o.declaration))
+                    ));
+                }
+            }
+        }
         w.line("  const program = await L.Program.load(options.module ?? (await programModule()), { wasi: options.wasi });");
         w.line(format!("  program.types({});", js_string(&b.types_symbol)));
-        if !b.host_externs.is_empty() {
-            w.line("  const host = options.host;");
-            let methods: Vec<String> = self.names.host_methods.iter().map(|m| format!("`{m}`")).collect();
-            w.line(format!(
-                "  if (!host) throw new TypeError(\"load() needs options.host implementing {}\");",
-                methods.join(", ").replace('"', "\\\"")
-            ));
-            for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-                let ps: Vec<String> = h.params.iter().map(|p| self.descriptor(&p.ty, Scoped::Function)).collect();
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+            w.line(format!("  const {} = capabilities.{};", n.key, n.key));
+            for (o, m) in c.operations.iter().zip(&n.methods) {
+                let ps: Vec<String> = o.params.iter().map(|p| self.descriptor(&p.ty, Scoped::Function)).collect();
                 w.line(format!(
-                    "  program.hostExtern({}, {}, [{}], {}, (...args) => host.{m}(...args));",
+                    "  program.hostExtern({}, {}, [{}], {}, (...args) => {}.{m}(...args));",
                     js_string(&b.set_host_extern),
-                    h.index,
+                    o.index,
                     ps.join(", "),
-                    self.returns(&h.returns)
+                    self.returns(&o.returns),
+                    n.key
                 ));
             }
         }
@@ -688,6 +815,23 @@ impl Emitter<'_> {
             .zip(&locals)
             .map(|(p, l)| format!("[{}, {l}]", self.descriptor(&p.ty, Scoped::Function)))
             .collect();
+        if let Returns::Async { op, .. } = &f.returns {
+            let an = &self.names.asyncs[self.async_index(*op)];
+            let mut ps = vec!["handler".to_owned()];
+            ps.extend(params);
+            ps.push("options = {}".to_owned());
+            w.line(format!("  {name}({}) {{", ps.join(", ")));
+            w.line(format!(
+                "    return this.#program.driveAsync({}, [{}], [{}], {}, (op) => {}(handler, op), options.signal);",
+                js_string(&f.symbol),
+                type_args.join(", "),
+                args.join(", "),
+                self.returns(&f.returns),
+                an.perform
+            ));
+            w.line("  }");
+            return;
+        }
         let unit = matches!(
             &f.returns,
             Returns::Value(Type::Unit) | Returns::Io(Type::Unit) | Returns::Eio { value: Type::Unit, .. }
@@ -788,6 +932,10 @@ impl Emitter<'_> {
             let mut params: Vec<String> =
                 (0..n).map(|k| format!("type{}: L.Type<{}>", param_name(k), param_name(k))).collect();
             params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.ts_type(&p.ty))));
+            if let Returns::Async { op, .. } = &f.returns {
+                params.insert(0, format!("handler: {}", self.names.asyncs[self.async_index(*op)].handler));
+                params.push("options?: { signal?: AbortSignal }".to_owned());
+            }
             w.line(format!(
                 "  /** Lean's {} : {} */",
                 f.lean_name,
@@ -799,38 +947,80 @@ impl Emitter<'_> {
             w.line("  /** Runs the Lean program's `main` with `args`; its exit code. */");
             w.line("  runMain(args: string[]): number;");
         }
+        if !b.async_capabilities.is_empty() {
+            w.line("  /** The number of this program's async calls waiting for an answer: zero once each has settled. */");
+            w.line("  outstanding(): number;");
+        }
         w.line("}");
-        let host = format!("{}Host", self.names.class);
-        if !b.host_externs.is_empty() {
+        let capabilities = format!("{}Capabilities", self.names.class);
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
             w.line("");
-            w.line(
-                "/** Implements the program's externs; a method whose Lean type is not IO or EIO must not throw. */",
-            );
-            w.line(format!("export interface {host} {{"));
-            for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-                let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| js_local(&p.name, i)).collect());
+            let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+            w.line(format!(
+                "/** The capability {} (`{}`), which the host provides; a method whose Lean type is not IO or EIO must not throw.{} */",
+                c.id,
+                c.lean_name,
+                note.replace("*/", "* /")
+            ));
+            w.line(format!("export interface {} {{", n.interface));
+            for (o, m) in c.operations.iter().zip(&n.methods) {
+                let locals = distinct_locals(o.params.iter().enumerate().map(|(i, p)| js_local(&p.name, i)).collect());
                 let params: Vec<String> =
-                    h.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.ts_type(&p.ty))).collect();
+                    o.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.ts_type(&p.ty))).collect();
                 w.line(format!(
                     "  /** Lean's {} : {} */",
-                    h.declaration,
-                    h.lean_type.as_deref().unwrap_or("?").replace('\n', " ").replace("*/", "* /")
+                    o.declaration,
+                    o.lean_type.as_deref().unwrap_or("?").replace('\n', " ").replace("*/", "* /")
                 ));
-                w.line(format!("  {m}({}): {};", params.join(", "), self.result_type(&h.returns)));
+                w.line(format!("  {m}({}): {};", params.join(", "), self.result_type(&o.returns)));
+            }
+            w.line("}");
+        }
+        if !b.capabilities.is_empty() {
+            w.line("");
+            w.line("/** The capabilities the program needs, by name. */");
+            w.line(format!("export interface {capabilities} {{"));
+            for n in &self.names.capabilities {
+                w.line(format!("  {}: {};", n.key, n.interface));
+            }
+            w.line("}");
+        }
+        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+            let decl = &b.table.types[c.op_type as usize];
+            let tn = &self.names.types[c.op_type as usize];
+            w.line("");
+            let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+            w.line(format!(
+                "/** Performs the operations of the async capability {} (`{}`) an async export asks; a rejection abandons the program.{} */",
+                c.id,
+                c.lean_name,
+                note.replace("*/", "* /")
+            ));
+            w.line(format!("export interface {} {{", n.handler));
+            for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
+                let fields = &tn.ctors[o.ctor as usize].1;
+                let params: Vec<String> =
+                    ctor.fields.iter().zip(fields).map(|(f, l)| format!("{l}: {}", self.ts_type(&f.ty))).collect();
+                let a = self.ts_type(&o.answer);
+                w.line(format!("  /** Performs {}. */", o.lean_name));
+                w.line(format!("  {m}({}): {a} | Promise<{a}>;", params.join(", ")));
             }
             w.line("}");
         }
         w.line("");
+        w.line("/** The program's assurance document. */");
+        w.line("export const ASSURANCE: L.Assurance;");
+        w.line("");
         w.line("export interface LoadOptions {");
-        if !b.host_externs.is_empty() {
-            w.line(format!("  host: {host};"));
+        if !b.capabilities.is_empty() {
+            w.line(format!("  capabilities: {capabilities};"));
         }
         w.line("  /** The program module (default: `program.wasm` next to this file). */");
         w.line("  module?: WebAssembly.Module | BufferSource;");
         w.line("  wasi?: L.Wasi;");
         w.line("}");
         w.line("");
-        let optional = if b.host_externs.is_empty() { "?" } else { "" };
+        let optional = if b.capabilities.is_empty() { "?" } else { "" };
         w.line(format!("export function load(options{optional}: LoadOptions): Promise<{}>;", self.names.class));
         w.finish()
     }

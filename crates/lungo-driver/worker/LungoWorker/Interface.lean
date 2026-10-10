@@ -1,9 +1,9 @@
 import Lean
 import Lean.Compiler.LCNF.ToImpureType
 import Lean.Util.CollectAxioms
-import Lungo.Cbor
-import Lungo.BridgeIR
-import Lungo.Diagnostics
+import LungoWorker.Cbor
+import LungoWorker.BridgeIR
+import LungoWorker.Diagnostics
 
 /-!
 The public interface of the generated Rust: which declarations receive facades, the Rust-facing
@@ -16,9 +16,9 @@ conversions agree with the representation the compiled code uses. Types that can
 represented as plain Rust data — dependent families, types carrying proofs, higher-kinded or
 otherwise non-first-order types — are exposed as opaque Lean values rather than rejected.
 -/
-namespace Lungo.Interface
+namespace LungoWorker.Interface
 
-open Lean Meta Lungo.Cbor
+open Lean Meta LungoWorker.Cbor
 
 inductive FType where
   | builtin (name : String)
@@ -34,6 +34,9 @@ inductive FType where
   | param (idx : Nat)
   | inductive (name : Name) (args : Array FType)
   | opaque (head : Option Name) (leanType : String)
+  /-- `Lungo.Async.Program op α`: a computation asking the host to perform operations of type
+  `op`, whose constructor `i` is answered with a value of `rets[i]`, ending with an `α`. -/
+  | async (op : Name) (rets : Array FType) (result : FType)
   deriving Inhabited
 
 partial def FType.toCbor : FType → Value
@@ -50,6 +53,8 @@ partial def FType.toCbor : FType → Value
   | .param i => .map #[("param", nat i)]
   | .inductive n args => variant "inductive" [("name", BridgeIR.name n), ("args", arr (args.map FType.toCbor))]
   | .opaque head t => variant "opaque" [("head", opt (head.map BridgeIR.name)), ("lean_type", str t)]
+  | .async op rets r => variant "async" [("op", BridgeIR.name op), ("rets", arr (rets.map FType.toCbor)),
+      ("result", r.toCbor)]
 
 structure State where
   /-- Inductive types referenced by facades that must be described, in discovery order. -/
@@ -138,6 +143,31 @@ partial def facade (tparams : Array FVarId) (ty : Expr) (fuel : Nat := 64) : Fac
     | ``IO, #[a] => return .io (← recur a)
     | ``EIO, #[e, a] => return .eio (← recur e) (← recur a)
     | ``BaseIO, #[a] => return .baseIO (← recur a)
+    | `Lungo.Async.Program, #[op, inst, a] =>
+      -- An async program: the host answers each operation with the type the capability's
+      -- `Interface` instance gives that constructor.
+      let .const opName [] := op.consumeMData
+        | throwError "an async program's operations must be an inductive type without parameters, not {op}"
+      let some (.inductInfo info) := (← getEnv).find? opName
+        | throwError "the operations of an async program, {opName}, are not an inductive type"
+      unless info.numParams == 0 && info.numIndices == 0 && (← isFirstOrderInductive opName) do
+        throwError "the operations of an async program, {opName}, must be an inductive type without \
+          parameters or indices whose fields a host can supply"
+      let mut rets := #[]
+      for ctor in info.ctors do
+        let cinfo ← getConstInfoCtor ctor
+        let ret ← forallTelescope cinfo.type fun xs _ => do
+          let r ← whnfD (mkApp3 (mkConst `Lungo.Async.Interface.Ret) op inst (mkAppN (mkConst ctor) xs))
+          if xs.any fun x => r.containsFVar x.fvarId! then
+            throwError "what the operation {ctor} is answered with, {r}, depends on its arguments"
+          if r.isAppOf `Lungo.Async.Interface.Ret then
+            throwError "what the operation {ctor} is answered with does not reduce to a type: {r}"
+          recur r
+        rets := rets.push ret
+      let s ← get
+      unless s.seen.contains opName do
+        set { s with seen := s.seen.insert opName, pending := s.pending.push opName }
+      return .async opName rets (← recur a)
     | _, _ =>
       let env ← getEnv
       if let some (.inductInfo info) := env.find? n then
@@ -334,7 +364,21 @@ def isAutoExportCandidate (env : Environment) (n : Name) : MetaM Bool := do
   | some (.defnInfo _) | some (.opaqueInfo _) => return true
   | _ => return false
 
-/-- The standard axioms of Lean's logic, which do not count as additional trust assumptions. -/
-def standardAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound]
+/--
+Checks that Lean represents `Lungo.Async.Program` as the runtime reads it: `done` is constructor 0
+with its value as object field 0, `call` is constructor 1 with the operation and the
+continuation as object fields 0 and 1 (the parameters, the instance among them, are not stored).
+-/
+def checkProgramLayout : MetaM Unit := do
+  let done ← Compiler.LCNF.getCtorLayout `Lungo.Async.Program.done
+  let call ← Compiler.LCNF.getCtorLayout `Lungo.Async.Program.call
+  let doneOk := done.ctorInfo.cidx == 0 && match done.fieldInfo with
+    | #[.object 0 _] => true
+    | _ => false
+  let callOk := call.ctorInfo.cidx == 1 && match call.fieldInfo with
+    | #[.object 0 _, .object 1 _] => true
+    | _ => false
+  unless doneOk && callOk do
+    throwError "Lean represents `Lungo.Async.Program` in a layout this adapter does not read"
 
-end Lungo.Interface
+end LungoWorker.Interface

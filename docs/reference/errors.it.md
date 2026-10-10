@@ -14,7 +14,8 @@ non viene mai riutilizzato per una condizione diversa.
 | `LNG03xx` | Worker |
 | `LNG04xx` | Extern |
 | `LNG05xx` | Generazione del codice |
-| `LNG06xx` | Politica di fiducia |
+| `LNG06xx` | Politica di fiducia e di garanzia |
+| `LNG07xx` | Registrazioni di garanzia |
 
 Per risolvere i problemi più comuni, consulta
 [Come diagnosticare una build di lungo che fallisce](https://machinefabric.com/lungo/docs/how-to/diagnose-build-failures).
@@ -159,9 +160,11 @@ protocollo persistenti indicano un problema di installazione.
 ### LNG0401
 
 **Simbolo extern non risolto.** Una dichiarazione `@[extern]` raggiungibile dai moduli radice
-non è implementata né da una definizione Lean `@[export]`, né dal runtime di lungo, né da una
-mappatura `rust_extern`. Il messaggio indica la dichiarazione, il suo simbolo, il tipo Lean,
-la rappresentazione richiesta e la posizione nel sorgente.
+non è implementata né da una definizione Lean `@[export]` né dal runtime di lungo, e non è
+un'operazione di una capacità (`@[lungo_operation C]`), che solo l'host implementa; oppure è
+un'operazione per cui l'output Rust non ha una mappatura `rust_extern`. Il messaggio indica la
+dichiarazione, il suo simbolo, il tipo Lean, la rappresentazione richiesta e la posizione nel
+sorgente.
 
 ```text
 error[LNG0401]: unresolved Lean external symbol
@@ -239,14 +242,106 @@ generatore di codice. Indica un difetto di lungo.
 eseguirlo, è uscito con un errore, ha scritto una risposta che non è una `GenerateResponse`
 valida oppure ha segnalato errori. Il messaggio contiene il suo standard error o i suoi errori.
 
-## Politica di fiducia
+## Politica di fiducia e di garanzia
 
 ### LNG0601
 
-**Violazione della politica di fiducia.** Un export viola `deny_sorry`, `deny_axioms` o
-`deny_unsafe`. Il messaggio elenca ogni violazione con le dipendenze responsabili.
+**Violazione della politica di fiducia.** Un export, o la prova di un'affermazione su di esso,
+viola `deny_sorry`, `deny_axioms` o `deny_unsafe`. Il messaggio elenca ogni violazione con le dipendenze responsabili.
 
 ```text
 error[LNG0601]: exported declarations violate the configured trust policy:
   Formal.step depends on `sorry` (deny_sorry)
 ```
+
+### LNG0602
+
+**Export senza un'affermazione dimostrata.** `require-claims` (`[assurance]` di `lungo.toml`,
+`Builder::require_claims`) seleziona un export che non è il soggetto di alcuna affermazione
+dimostrata: nessun teorema con `@[lungo_claim … subject <export> …]` la cui prova sia priva di
+`sorry`. Enunciate che cosa fa l'export e dimostratelo, oppure restringete la politica.
+
+```text
+error[LNG0602]: the export Formal.step has no proved claim (`require-claims` selects it with "."); state what it does with `@[lungo_claim]` on a theorem about it
+```
+
+### LNG0603
+
+**Assunzione proibita.** Un'affermazione dimostrata prende come ipotesi un'assunzione che
+`forbid-assumptions` nomina (o un'assunzione di una capacità che nomina), oppure un export chiama
+un'operazione di una capacità che nomina.
+
+## Registrazioni di garanzia
+
+### LNG0701
+
+**Registrazione di garanzia malformata.** Una registrazione (`decl._lungo_…`) non è nella forma
+che scrive la libreria Lean di lungo, oppure nomina un tipo di specifica, una relazione, un ruolo
+o un identificatore di capacità che non è una stringa con spazio dei nomi ben formata, o che non è
+tra quelli che lungo definisce nello spazio dei nomi `lungo`. Le registrazioni le scrivono gli
+attributi `@[lungo_…]`; una scritta a mano è letta e verificata allo stesso modo.
+
+### LNG0702
+
+**Riferimento di garanzia pendente.** Una registrazione nomina una dichiarazione che non esiste,
+un'affermazione cita una specifica senza `@[lungo_spec]`, oppure un'operazione o un'assunzione
+nomina qualcosa che non è una capacità.
+
+### LNG0703
+
+**Affermazione non valida.** La prova di un'affermazione non è un teorema, il suo soggetto è un
+teorema, oppure l'enunciato della prova non ha la forma che la sua relazione `lungo.*` richiede
+(per `lungo.decides`, `f … = true ↔ P …`).
+
+### LNG0704
+
+**Soggetto dell'affermazione assente dal suo enunciato.** L'enunciato della prova di
+un'affermazione non menziona uno dei suoi soggetti o delle sue specifiche: il teorema non riguarda
+ciò che l'affermazione dice.
+
+### LNG0705
+
+**Identificatore di garanzia duplicato.** Due capacità hanno lo stesso identificatore.
+
+### LNG0706
+
+**Incoerenza di capacità.** Un'operazione di una capacità non è una dichiarazione `@[extern]` con
+una voce per C, appartiene a una capacità asincrona, oppure ha un simbolo che Lean (`@[export]`) o
+il runtime di lungo implementano già; oppure una mappatura `rust_extern` nomina un extern che non è
+un'operazione di una capacità.
+
+### LNG0707
+
+**Interfaccia asincrona non valida.** Un export restituisce un programma asincrono
+(`Lungo.Async.Program op α`) la cui istanza `Lungo.Async.Interface op` non è registrata con
+`@[lungo_capability]`, le cui operazioni non possono passare all'host, o il cui tipo di risposta
+dipende dagli argomenti dell'operazione; oppure un programma asincrono compare dentro un valore
+invece che come risultato di una funzione.
+
+### LNG0708
+
+**Impronta di garanzia discordante.** `lungo assurance --compose`: due documenti di garanzia
+descrivono in modo diverso una registrazione con lo stesso nome (una specifica, un'affermazione,
+una capacità o un'assunzione): da un altro pacchetto Lake, oppure con un altro significato. I
+pacchetti sono stati generati da definizioni diverse; rigenerateli dagli stessi sorgenti Lean.
+
+### LNG0709
+
+**Libreria di garanzia incompatibile.** La libreria Lean di lungo
+(`Lungo.Registry.schemaVersion`) scrive le registrazioni in un formato che questo lungo non legge.
+Usate la libreria rilasciata con questo lungo.
+
+### LNG0710
+
+**Il programma dipende dall'inizializzazione di un modulo non collegato.** Il programma usa un
+valore che un modulo calcola quando viene inizializzato (una dichiarazione `initialize` o
+`[init]`), e lungo non collega quel modulo: è caricato solo per le sue registrazioni di garanzia
+(`assurance-modules`), oppure è raggiunto solo attraverso la parte di sola compilazione della
+libreria Lean di lungo (`Lungo.Attr`), quindi nulla inizializzerebbe il valore. Importate il
+modulo dai moduli del programma. (L'altro codice di un tale modulo, che il compilatore di Lean può
+riusare, viene eseguito così com'è.)
+
+### LNG0711
+
+**Documento di garanzia non valido.** Un `assurance.json` passato a `lungo assurance --compose` non
+si può leggere, oppure ha una versione di schema che questo lungo non legge.

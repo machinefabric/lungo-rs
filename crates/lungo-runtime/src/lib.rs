@@ -48,7 +48,7 @@ pub use object::*;
 
 /// Version of the interface between generated code and this runtime. Generated code asserts it
 /// at compile time, so code generated for a different runtime fails to compile.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 /// Compile-time check that generated code targets this runtime's ABI.
 pub const fn assert_abi<const VERSION: u32>() {

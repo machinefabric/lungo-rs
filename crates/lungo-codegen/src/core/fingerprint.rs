@@ -120,6 +120,17 @@ fn ty<'t>(by_name: &HashMap<&str, &'t TypeDecl>, ft: &FacadeType, open: &mut Vec
             all.push(result);
             apply("function", &all, open, out)
         }
+        FacadeType::Async { op, rets, result } => {
+            out.push_str("(async ");
+            named(op, open, out);
+            for r in rets {
+                out.push(' ');
+                ty(by_name, r, open, out);
+            }
+            out.push(' ');
+            ty(by_name, result, open, out);
+            out.push(')');
+        }
         FacadeType::Param(i) => out.push_str(&format!("(param {i})")),
         FacadeType::Inductive { name, args } => {
             out.push_str("(inductive ");

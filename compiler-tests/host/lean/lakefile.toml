@@ -2,5 +2,9 @@ name = "host"
 version = "0.1.0"
 defaultTargets = ["Host"]
 
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
 [[lean_lib]]
 name = "Host"

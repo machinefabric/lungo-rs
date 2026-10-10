@@ -6,9 +6,15 @@
 //! constructors a base class with a subclass per constructor, `Nat` and `Int` `int`,
 //! polymorphic types `Generic`. `IO` functions raise `lungo_py.LeanIOError`, `EIO ε` functions
 //! `lungo_py.LeanError`, and arguments Lean cannot represent `lungo_py.MalformedError`.
+//!
+//! Each capability the host provides is a `Protocol` with a method per operation, installed with
+//! `set_<capability>`; a call before every capability is installed raises
+//! `lungo_py.MissingCapabilityError`. An async export is an `async def` taking a handler of its
+//! async capability, whose methods (coroutines or plain functions) it awaits for each operation
+//! the program asks. `ASSURANCE` is the program's assurance document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Function};
+use crate::c::boundary::{Boundary, Capability, Function, capability_name, operation_name};
 use crate::core::names::{components, snake_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
@@ -47,10 +53,11 @@ const GENERATED_NAMES: &[&str] = &[
     "c",
     "host",
     "args",
-    "Host",
-    "set_host",
     "run_main",
     "dataclass",
+    "handler",
+    "op",
+    "ASSURANCE",
 ];
 
 fn escape(id: String) -> String {
@@ -88,10 +95,25 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
+/// The Python names of a capability: its protocol, its installer, and its methods.
+struct CapabilityNames {
+    protocol: String,
+    setter: String,
+    methods: Vec<String>,
+}
+
+/// The Python names of an async capability: its handler protocol, the dispatcher, the methods.
+struct AsyncNames {
+    handler: String,
+    perform: String,
+    methods: Vec<String>,
+}
+
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    host_methods: Vec<String>,
+    capabilities: Vec<CapabilityNames>,
+    asyncs: Vec<AsyncNames>,
 }
 
 /// The module alias of every module providing an extern type (`_ext_<k>`, private).
@@ -152,14 +174,36 @@ impl Names {
             .zip(&b.functions)
             .map(|(s, f)| scope.claim_function(&f.lean_name, s, py_snake))
             .collect::<Result<_, _>>()?;
-        let host_names: Vec<&str> = b.host_externs.iter().map(|h| h.declaration.as_str()).collect();
-        let mut methods = Scope::new("Python");
-        let host_methods = short_names(&host_names)
-            .iter()
-            .zip(&b.host_externs)
-            .map(|(s, h)| methods.claim(py_snake(s), format!("host extern {}", h.declaration)))
-            .collect::<Result<_, _>>()?;
-        Ok(Names { types, functions, host_methods })
+        let mut capabilities = Vec::new();
+        for c in &b.capabilities {
+            let base = capability_name(&c.id);
+            let protocol = scope.claim(py_class(&[base.clone()]), format!("capability {}", c.id))?;
+            let setter = scope.claim(format!("set_{}", py_snake(&[base])), format!("the installer of capability {}", c.id))?;
+            let mut methods = Scope::new("Python");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| methods.claim(py_snake(&[operation_name(&o.declaration).to_owned()]), format!("operation {}", o.declaration)))
+                .collect::<Result<_, _>>()?;
+            capabilities.push(CapabilityNames { protocol, setter, methods: ms });
+        }
+        let mut asyncs = Vec::new();
+        for c in &b.async_capabilities {
+            let op = types[c.op_type as usize].class.clone();
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
+            let perform = format!("_perform_{}", py_snake(&[op.clone()]));
+            let mut methods = Scope::new("Python");
+            let ms = c
+                .operations
+                .iter()
+                .map(|o| {
+                    let last = components(&o.lean_name).last().cloned().unwrap_or_default();
+                    methods.claim(py_snake(&[last]), format!("operation {}", o.lean_name))
+                })
+                .collect::<Result<_, _>>()?;
+            asyncs.push(AsyncNames { handler, perform, methods: ms });
+        }
+        Ok(Names { types, functions, capabilities, asyncs })
     }
 }
 
@@ -539,10 +583,11 @@ impl Emitter<'_> {
                 self.named_type(&mut w, i);
             }
         }
+        self.capabilities(&mut w);
+        self.async_capabilities(&mut w);
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
         }
-        self.host(&mut w);
         if let Some(run_main) = &b.run_main {
             w.line("");
             w.line("");
@@ -550,6 +595,14 @@ impl Emitter<'_> {
             w.line("    \"\"\"Runs the Lean program's `main` with `args`; its exit code.\"\"\"");
             w.line(format!("    return _program.run_main({}, args)", py_string(run_main)));
         }
+        w.line("");
+        w.line("");
+        w.line("#: The program's assurance document: what its Lean code claims and proves of each export, what");
+        w.line("#: it trusts, and what it assumes of the host's capabilities.");
+        w.line(format!(
+            "ASSURANCE = lungo_py.Assurance.from_json({})",
+            py_string(&self.request.assurance.to_json())
+        ));
         let text = w.finish();
         format!("{}\n", text.trim_end())
     }
@@ -767,13 +820,29 @@ impl Emitter<'_> {
                 self.descriptor(error, Scoped::Function),
                 self.descriptor(value, Scoped::Function)
             ),
+            Returns::Async { op, value, .. } => format!(
+                "lungo_py.async_({}, {})",
+                self.descriptor(&Type::Inductive { index: *op, args: Vec::new() }, Scoped::Function),
+                self.descriptor(value, Scoped::Function)
+            ),
         }
     }
 
     fn result_hint(&self, r: &Returns) -> String {
         match r {
-            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } => self.hint(t),
+            Returns::Value(t) | Returns::Io(t) | Returns::Eio { value: t, .. } | Returns::Async { value: t, .. } => {
+                self.hint(t)
+            }
         }
+    }
+
+    /// The index of the async capability whose operation type is `op`.
+    fn async_index(&self, op: u32) -> usize {
+        self.boundary()
+            .async_capabilities
+            .iter()
+            .position(|c| c.op_type == op)
+            .expect("the boundary has the async capability of every async export")
     }
 
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
@@ -783,14 +852,25 @@ impl Emitter<'_> {
             .map(|k| format!("type_{}: lungo_py.Type[{}]", param_name(k).to_lowercase(), param_name(k)))
             .collect();
         params.extend(f.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))));
+        let asynchronous = match &f.returns {
+            Returns::Async { op, .. } => Some(self.async_index(*op)),
+            _ => None,
+        };
+        if let Some(i) = asynchronous {
+            params.insert(0, format!("handler: {}", self.names.asyncs[i].handler));
+        }
         w.line("");
         w.line("");
-        w.line(format!("def {name}({}) -> {}:", params.join(", "), self.result_hint(&f.returns)));
+        let def = if asynchronous.is_some() { "async def" } else { "def" };
+        w.line(format!("{def} {name}({}) -> {}:", params.join(", "), self.result_hint(&f.returns)));
         w.line(format!(
             "    \"\"\"Lean's {} : {}\"\"\"",
             f.lean_name,
             f.lean_type.replace('\n', " ").replace("\"\"\"", "\\\"\\\"\\\"")
         ));
+        if !self.boundary().capabilities.is_empty() {
+            w.line("    _ready()");
+        }
         let type_args: Vec<String> = (0..n).map(|k| format!("type_{},", param_name(k).to_lowercase())).collect();
         let args: Vec<String> = f
             .params
@@ -798,54 +878,150 @@ impl Emitter<'_> {
             .zip(&locals)
             .map(|(p, l)| format!("({}, {l}),", self.descriptor(&p.ty, Scoped::Function)))
             .collect();
-        w.line(format!(
-            "    return _program.invoke({}, ({}), ({}), {})",
-            py_string(&f.symbol),
-            type_args.join(" "),
-            args.join(" "),
-            self.returns(&f.returns)
-        ));
+        match asynchronous {
+            Some(i) => w.line(format!(
+                "    return await _program.drive_async({}, ({}), ({}), {}, lambda op: {}(handler, op))",
+                py_string(&f.symbol),
+                type_args.join(" "),
+                args.join(" "),
+                self.returns(&f.returns),
+                self.names.asyncs[i].perform
+            )),
+            None => w.line(format!(
+                "    return _program.invoke({}, ({}), ({}), {})",
+                py_string(&f.symbol),
+                type_args.join(" "),
+                args.join(" "),
+                self.returns(&f.returns)
+            )),
+        }
     }
 
-    fn host(&self, w: &mut Writer) {
+    /// Each capability: its protocol and installer, and `_ready`, which checks that every one was
+    /// installed.
+    fn capabilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        if b.host_externs.is_empty() {
+        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+            self.capability(w, c, n);
+        }
+        if b.capabilities.is_empty() {
             return;
         }
         w.line("");
         w.line("");
-        w.line("class Host(_t.Protocol):");
-        w.line("    \"\"\"Implements the program's externs in Python. Methods may run on any thread; an");
-        w.line("    exception of a method whose Lean type is not IO or EIO terminates the program.\"\"\"");
-        for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
-            let locals = distinct_locals(h.params.iter().enumerate().map(|(i, p)| py_local(&p.name, i)).collect());
+        w.line("_installed = set()");
+        w.line("");
+        w.line("");
+        w.line("def _ready() -> None:");
+        for c in &b.capabilities {
+            w.line(format!("    if {} not in _installed:", py_string(&c.id)));
+            w.line(format!(
+                "        raise lungo_py.MissingCapabilityError({}, {})",
+                py_string(&c.id),
+                py_string(operation_name(&c.operations[0].declaration))
+            ));
+        }
+    }
+
+    fn capability(&self, w: &mut Writer, c: &Capability, n: &CapabilityNames) {
+        let b = self.boundary();
+        w.line("");
+        w.line("");
+        w.line(format!("class {}(_t.Protocol):", n.protocol));
+        w.line(format!(
+            "    \"\"\"The capability {} ({}), which the host provides. Methods may run on any thread; an",
+            c.id, c.lean_name
+        ));
+        w.line("    exception of a method whose Lean type is not IO or EIO terminates the program.");
+        let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+        if !note.is_empty() {
+            w.line(format!("   {note}"));
+        }
+        w.line("    \"\"\"");
+        for (o, m) in c.operations.iter().zip(&n.methods) {
+            let locals = distinct_locals(o.params.iter().enumerate().map(|(i, p)| py_local(&p.name, i)).collect());
             let params: Vec<String> =
-                h.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))).collect();
+                o.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.hint(&p.ty))).collect();
             w.line("");
             let sep = if params.is_empty() { "" } else { ", " };
-            w.line(format!("    def {m}(self{sep}{}) -> {}:", params.join(", "), self.result_hint(&h.returns)));
+            w.line(format!("    def {m}(self{sep}{}) -> {}:", params.join(", "), self.result_hint(&o.returns)));
             w.line(format!(
                 "        \"\"\"Lean's {} : {}\"\"\"",
-                h.declaration,
-                h.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
+                o.declaration,
+                o.lean_type.as_deref().unwrap_or("?").replace('\n', " ")
             ));
             w.line("        ...");
         }
         w.line("");
         w.line("");
-        w.line("def set_host(host: Host) -> None:");
-        w.line("    \"\"\"Installs the implementation of the program's externs; the program's first call");
-        w.line("    requires it.\"\"\"");
-        for (h, m) in b.host_externs.iter().zip(&self.names.host_methods) {
+        w.line(format!("def {}(impl: {}) -> None:", n.setter, n.protocol));
+        w.line(format!(
+            "    \"\"\"Installs the implementation of the capability {}; the program's first call requires it.\"\"\"",
+            c.id
+        ));
+        for (o, m) in c.operations.iter().zip(&n.methods) {
             let params: Vec<String> =
-                h.params.iter().map(|p| format!("{},", self.descriptor(&p.ty, Scoped::Function))).collect();
+                o.params.iter().map(|p| format!("{},", self.descriptor(&p.ty, Scoped::Function))).collect();
             w.line(format!(
-                "    _program.set_host_extern({}, {}, ({}), {}, host.{m})",
+                "    _program.set_host_extern({}, {}, ({}), {}, impl.{m})",
                 py_string(&b.set_host_extern),
-                h.index,
+                o.index,
                 params.join(" "),
-                self.returns(&h.returns)
+                self.returns(&o.returns)
             ));
+        }
+        w.line(format!("    _installed.add({})", py_string(&c.id)));
+    }
+
+    /// Each async capability: the handler protocol async exports take, and the function that
+    /// asks a handler for an operation's answer.
+    fn async_capabilities(&self, w: &mut Writer) {
+        let b = self.boundary();
+        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+            let decl = &b.table.types[c.op_type as usize];
+            let tn = &self.names.types[c.op_type as usize];
+            w.line("");
+            w.line("");
+            w.line(format!("class {}(_t.Protocol):", n.handler));
+            w.line(format!(
+                "    \"\"\"Performs the operations of the async capability {} ({}) an async export asks. A method",
+                c.id, c.lean_name
+            ));
+            w.line("    is a coroutine or returns its answer; an exception abandons the program, and the export raises it.");
+            let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
+            if !note.is_empty() {
+                w.line(format!("   {note}"));
+            }
+            w.line("    \"\"\"");
+            for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
+                let fields = &tn.ctors[o.ctor as usize].1;
+                let params: Vec<String> =
+                    ctor.fields.iter().zip(fields).map(|(f, l)| format!("{l}: {}", self.hint(&f.ty))).collect();
+                let sep = if params.is_empty() { "" } else { ", " };
+                w.line("");
+                w.line(format!(
+                    "    def {m}(self{sep}{}) -> _t.Union[{a}, _t.Awaitable[{a}]]:",
+                    params.join(", "),
+                    a = self.hint(&o.answer)
+                ));
+                w.line(format!("        \"\"\"Performs {}.\"\"\"", o.lean_name));
+                w.line("        ...");
+            }
+            w.line("");
+            w.line("");
+            w.line(format!("def {}(handler: {}, op: {}):", n.perform, n.handler, tn.class));
+            for (k, (o, (cname, fields))) in c.operations.iter().zip(&tn.ctors).enumerate() {
+                let args: Vec<String> = fields.iter().map(|f| format!("op.{f}")).collect();
+                let test = if decl.ctors.len() == 1 { "True".to_owned() } else { format!("isinstance(op, {cname})") };
+                w.line(format!("    if {test}:"));
+                w.line(format!(
+                    "        return {}, handler.{}({})",
+                    self.descriptor(&o.answer, Scoped::Function),
+                    n.methods[k],
+                    args.join(", ")
+                ));
+            }
+            w.line(format!("    raise lungo_py.MalformedError(f\"{{op!r}} is not a {}\")", tn.class));
         }
     }
 }
