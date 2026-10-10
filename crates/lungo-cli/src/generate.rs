@@ -278,7 +278,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             runtime: runtime.clone(),
             options: o.options.clone(),
             extern_types: o.extern_types.clone(),
-            assurance: assurance::document(&analysis.success, &analysis.toolchain, &ctx.name),
+            assurance: assurance::document(&analysis.success, &analysis.toolchain, &ctx.name)
+                .map_err(|e| codegen_error(analysis, vec![e]))?,
         };
         let mut files = match generator {
             Generator::Builtin(g) => g.generate(&request).map_err(|errors| codegen_error(analysis, errors))?,
@@ -344,7 +345,7 @@ fn finish(report: Vec<String>, drifts: Vec<String>) -> Result<Vec<String>> {
     }
 }
 
-fn codegen_error(analysis: &Analysis, errors: Vec<lungo_build::CodegenError>) -> Error {
+pub(crate) fn codegen_error(analysis: &Analysis, errors: Vec<lungo_build::CodegenError>) -> Error {
     Error::Codegen {
         toolchain: format!("v{}", analysis.toolchain.lean_version),
         bir_version: analysis.success.bir.bir_version,

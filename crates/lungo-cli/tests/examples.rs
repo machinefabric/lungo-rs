@@ -253,12 +253,26 @@ fn test0344_the_semantic_model_example_from_go_composed_with_acmes_package() {
     let out = compose(&acme);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("2 documents agree"));
-    // Acme changes its model: the inventory's claim was proved against the old one.
-    let changed = work.join("acme-changed");
+    // Acme changes its model: the inventory's claim was proved against the old one. Changing the
+    // specification is noticed, and so is changing a definition it uses.
+    for (case, from, to) in [
+        ("linear", "fun a => k * size a + k", "fun a => k * size a"),
+        ("cost-bound", "∀ a, steps a ≤ bound a", "∀ a, steps a < bound a + 1"),
+    ] {
+        let changed_out = changed_acme(&work, case, from, to, &dist);
+        let out = compose(&changed_out);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(3), "{case}: {stderr}");
+        assert!(stderr.contains("error[LNG0708]") && stderr.contains("Acme.Linear"), "{case}: {stderr}");
+    }
+}
+
+/// Acme's package with `from` replaced by `to` in its model, generated for C; the output.
+fn changed_acme(work: &Path, case: &str, from: &str, to: &str, dist: &Path) -> PathBuf {
+    let changed = fresh(&work.join(format!("acme-{case}")));
     let source = std::fs::read_to_string(example("semantic-model").join("acme/Acme.lean")).unwrap();
-    let edited = source.replace("fun a => k * size a + k", "fun a => k * size a");
+    let edited = source.replace(from, to);
     assert_ne!(source, edited, "the model's definition changed: update this test");
-    std::fs::create_dir_all(&changed).unwrap();
     for f in ["lean-toolchain", "lungo.toml"] {
         std::fs::copy(example("semantic-model").join("acme").join(f), changed.join(f)).unwrap();
     }
@@ -278,10 +292,7 @@ fn test0344_the_semantic_model_example_from_go_composed_with_acmes_package() {
         ),
     )
     .unwrap();
-    let changed_out = work.join("acme-changed-out");
-    support::generate(&changed.join("lungo.toml"), "c", &changed_out, &dist);
-    let out = compose(&changed_out);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(3), "{stderr}");
-    assert!(stderr.contains("error[LNG0708]") && stderr.contains("Acme.Linear"), "{stderr}");
+    let out = work.join(format!("acme-{case}-out"));
+    support::generate(&changed.join("lungo.toml"), "c", &out, dist);
+    out
 }

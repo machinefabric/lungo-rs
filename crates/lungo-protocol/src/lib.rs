@@ -559,8 +559,21 @@ pub struct Assurance {
     pub operations: Vec<OperationRecord>,
     pub assumptions: Vec<AssumptionRecord>,
     pub roles: Vec<RoleRecord>,
+    /// Every workspace constant the records use, transitively, each once: what their fingerprints
+    /// cover besides the records themselves.
+    pub definitions: Vec<DefinitionRecord>,
     /// Problems the worker found; each is an error of the build.
     pub violations: Vec<AssuranceViolation>,
+}
+
+/// A constant of a package of the Lake workspace that a record uses, directly or through
+/// another: its canonical text, and the workspace constants it uses in turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DefinitionRecord {
+    pub name: String,
+    pub material: String,
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -588,9 +601,14 @@ pub struct SpecRecord {
     pub kind: String,
     /// The specification's type, pretty-printed.
     pub statement: String,
+    /// The specification's body, pretty-printed, when it is a definition.
+    pub definition: Option<String>,
     pub origin: RecordOrigin,
     /// The canonical text the record's fingerprint is computed from.
     pub fingerprint_material: String,
+    /// The workspace constants the record uses directly; with what they use, they are in
+    /// [`Assurance::definitions`].
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -609,6 +627,9 @@ pub struct ClaimRecord {
     pub evidence_trust: EvidenceTrust,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
+    /// The workspace constants the record uses directly; with what they use, they are in
+    /// [`Assurance::definitions`].
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -628,6 +649,9 @@ pub struct FacilityRecord {
     pub kind: FacilityKind,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
+    /// The workspace constants the record uses directly; with what they use, they are in
+    /// [`Assurance::definitions`].
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -650,6 +674,9 @@ pub struct OperationRecord {
     pub reachable: bool,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
+    /// The workspace constants the record uses directly; with what they use, they are in
+    /// [`Assurance::definitions`].
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -658,8 +685,13 @@ pub struct AssumptionRecord {
     pub name: String,
     pub facility: String,
     pub statement: String,
+    /// The assumption's body, pretty-printed, when it is a definition.
+    pub definition: Option<String>,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
+    /// The workspace constants the record uses directly; with what they use, they are in
+    /// [`Assurance::definitions`].
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

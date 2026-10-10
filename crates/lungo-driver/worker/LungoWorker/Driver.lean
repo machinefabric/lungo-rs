@@ -476,13 +476,16 @@ def run (request : Protocol.Request) : WorkerM Value := do
   let assuranceCbor ← match library with
     | none => pure (obj [("library", .null), ("specs", arr #[]), ("claims", arr #[]),
         ("facilities", arr #[]), ("operations", arr #[]), ("assumptions", arr #[]),
-        ("roles", arr #[]), ("violations", arr (metadataOnly.map (·.toCbor)))])
+        ("roles", arr #[]), ("definitions", arr #[]), ("violations", arr (metadataOnly.map (·.toCbor)))])
     | some lib =>
       let input : Assurance.Input := {
         env, opts, lib, records
         exports := exportSet
         closureNames, origin
         runCore := coreIO env opts
+        inWorkspace := fun n => match env.getModuleIdxFor? n with
+          | some i => modules[i.toNat]!.location.any fun l => !(l.origin matches .toolchain)
+          | none => false
       }
       let out ← liftIO .adapter "cannot check the assurance records" (Assurance.analyze input)
       let out ← liftExcept .adapter "cannot check the assurance records" out

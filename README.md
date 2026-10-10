@@ -25,6 +25,7 @@ them against the code, and the documentation site publishes them at each release
 
 | Path | Contents |
 | --- | --- |
+| `lean` | lungo's Lean library (Lake package `lungo`): specifications, claims, facilities, async programs, monitors; `LungoTest` checks its attributes |
 | `crates/lungo-bir` | The Bridge IR data model and its verifier |
 | `crates/lungo-protocol` | The versioned worker protocol |
 | `crates/lungo-runtime` | The Rust port of Lean's runtime, its C ABI (`include/lungo.h`) and the wire format |
@@ -37,7 +38,7 @@ them against the code, and the documentation site publishes them at each release
 | `runtimes/c` | The runtime's CMake and pkg-config files |
 | `tools/lungo-dist` | Builds the distribution: a local one for development, and each artifact of a release (runtime archives, the XCFramework, the command, `lungo-py`'s wheels, the Go and Swift release trees) |
 | `packaging/` | The templates of the `lungo` command's Homebrew formula, Debian and RPM packages |
-| `examples/session` | A Lean state machine with proofs, used from Rust |
+| `examples/` | Reference examples, each a crate with its Lake project and tests in the languages it is shown in: `session` (a state machine meeting its specification), `sort` (contracts), `codec` (round trips), `clock` (claims conditional on a facility), `ledger` (a reducer refining a protocol), `oracle-monitor` (an oracle and a runtime monitor), `async-store` (async programs against a model), `semantic-model` (another package's relation, composed across packages) |
 | `compiler-tests/` | Differential, property, integration, corpus, wire-format and polyglot (every language) tests |
 | `runtime-tests/` | Inventories of the toolchain's native interface |
 
@@ -50,10 +51,13 @@ cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
 ```
 
-The end-to-end tests of the language bindings (`crates/lungo-cli/tests/polyglot.rs`) build a
-local distribution from the support libraries beside this repository, and need CMake, Go,
-Python, Node.js and, on macOS, Swift; on Windows also MinGW-w64 GCC and the
-`x86_64-pc-windows-gnu` Rust target.
+The end-to-end tests of the language bindings (`crates/lungo-cli/tests/polyglot.rs`, and the
+examples' bindings in `crates/lungo-cli/tests/examples.rs`) build a local distribution from the
+support libraries beside this repository, and need CMake, Go, Python (with `venv`), Node.js and,
+on macOS, Swift; on Windows also MinGW-w64 GCC and the `x86_64-pc-windows-gnu` Rust target. The
+Lake projects of the examples and fixtures require the Lean library in `lean/` by path; Lake
+builds it on first use (`lake build Lungo LungoTest` in `lean/` builds it, and checks the
+attributes, on its own).
 
 ## Contributing
 

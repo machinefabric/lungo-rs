@@ -149,7 +149,7 @@ pub fn export_block(doc: &AssuranceDocument, e: &ExportSummary) -> String {
         &mut out,
         "Assumptions",
         e.assumptions.iter().map(|a| match doc.assumptions.iter().find(|x| &x.name == a) {
-            Some(x) => format!("[assumed] {a} : {} (of {})", x.statement.replace('\n', " "), x.facility),
+            Some(x) => format!("[assumed] {a} : {} (of {})", meaning(&x.statement, &x.definition), x.facility),
             None => format!("[assumed] {a}"),
         }),
     );
@@ -251,6 +251,12 @@ pub fn mismatch_issues(mismatches: &[Mismatch]) -> Vec<lungo_build::AssuranceIss
         .collect()
 }
 
+/// What an assumption or specification says, on one line: its definition when it is one (a
+/// proposition defined by its body says nothing by its type), otherwise its type.
+pub fn meaning(statement: &str, definition: &Option<String>) -> String {
+    definition.as_deref().unwrap_or(statement).split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,7 +277,8 @@ mod tests {
             specifications: vec![Specification {
                 name: "Shared.refines".into(),
                 kind: "lungo.relation".into(),
-                statement: "Prop".into(),
+                statement: "Urn → Urn → Prop".into(),
+                definition: Some("fun a b => a = b".into()),
                 package: Some("shared".into()),
                 fingerprint: spec_fp.into(),
                 source: None,

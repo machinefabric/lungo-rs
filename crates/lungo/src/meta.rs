@@ -83,6 +83,8 @@ pub struct Specification {
     pub name: &'static str,
     pub kind: &'static str,
     pub statement: &'static str,
+    /// The body, as Lean prints it, when the declaration is a definition.
+    pub definition: Option<&'static str>,
     pub package: Option<&'static str>,
     pub fingerprint: &'static str,
 }
@@ -94,6 +96,8 @@ pub struct Assumption {
     /// The facility it is assumed of.
     pub facility: &'static str,
     pub statement: &'static str,
+    /// The body, as Lean prints it, when the declaration is a definition.
+    pub definition: Option<&'static str>,
     pub package: Option<&'static str>,
     pub fingerprint: &'static str,
 }

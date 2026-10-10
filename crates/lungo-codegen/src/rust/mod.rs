@@ -278,7 +278,8 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     w.line("#[doc(hidden)]");
     facade.emit_markers(&mut w);
     w.line("");
-    let document = crate::core::assurance::document(input.success, input.toolchain, input.aggregate);
+    let document = crate::core::assurance::document(input.success, input.toolchain, input.aggregate)
+        .map_err(|e| vec![e])?;
     emit_meta(&mut w, input, &naming, &document);
     if let Some(entry) = &input.success.entry_point {
         emit_entry_point(&mut w, entry, program, input.layer);
@@ -532,10 +533,11 @@ fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument)
     w.open("specifications: &[");
     for x in &d.specifications {
         w.line(format!(
-            "::lungo::Specification {{ name: {}, kind: {}, statement: {}, package: {}, fingerprint: {} }},",
+            "::lungo::Specification {{ name: {}, kind: {}, statement: {}, definition: {}, package: {}, fingerprint: {} }},",
             s(&x.name),
             s(&x.kind),
             s(&x.statement),
+            opt(&x.definition),
             opt(&x.package),
             s(&x.fingerprint)
         ));
@@ -559,10 +561,11 @@ fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument)
     w.open("assumptions: &[");
     for a in &d.assumptions {
         w.line(format!(
-            "::lungo::Assumption {{ name: {}, facility: {}, statement: {}, package: {}, fingerprint: {} }},",
+            "::lungo::Assumption {{ name: {}, facility: {}, statement: {}, definition: {}, package: {}, fingerprint: {} }},",
             s(&a.name),
             s(&a.facility),
             s(&a.statement),
+            opt(&a.definition),
             opt(&a.package),
             s(&a.fingerprint)
         ));

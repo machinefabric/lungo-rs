@@ -253,7 +253,7 @@ def readRecords (env : Environment) (lib : Library) : Records := Id.run do
   let n := env.header.moduleNames.size
   let mut dependsOnLibrary : Array Bool := Array.replicate n false
   let mut r : Records := {}
-  for h : i in [0:n] do
+  for i in [0:n] do
     let some data := env.header.moduleData[i]? | continue
     let dep := i == lib.module || data.imports.any fun imp =>
       match env.getModuleIdx? imp.module with
@@ -409,6 +409,10 @@ structure Input where
   /-- The module owning each declaration's package, and its source, as the driver computes them. -/
   origin : Name → CoreM Value
   runCore : {α : Type} → CoreM α → IO (Except String α)
+  /-- Whether a constant is declared by a package of the Lake workspace rather than the toolchain.
+  A record's fingerprint covers the meaning of the workspace constants it uses, transitively; the
+  toolchain's are fixed by the Lean version every fingerprint names. -/
+  inWorkspace : Name → Bool
 
 def sortNames (xs : Array Name) : Array Name :=
   xs.qsort fun a b => BridgeIR.nameString a < BridgeIR.nameString b
@@ -450,6 +454,49 @@ structure Output where
   value : Value
   violations : Array Violation
 
+/-- The workspace constants `exprs` use, sorted. -/
+def workspaceUses (inWorkspace : Name → Bool) (exprs : List Expr) : Array Name :=
+  let used := exprs.foldl (fun acc e => e.getUsedConstants.foldl (·.insert ·) acc) ({} : NameSet)
+  sortNames (used.toArray.filter inWorkspace)
+
+/-- What a constant means, for its fingerprint: its kind and the expressions it is made of. A
+definition is its type and value; a theorem, an opaque constant or an axiom its type (a proof's
+or an opaque implementation's content does not change what it states); an inductive type its
+type and its constructors'. -/
+def constantExprs (env : Environment) (ci : ConstantInfo) : String × List (String × Expr) :=
+  match ci with
+  | .defnInfo d => ("def", [("type", d.type), ("value", d.value)])
+  | .thmInfo t => ("theorem", [("type", t.type)])
+  | .opaqueInfo o => ("opaque", [("type", o.type)])
+  | .axiomInfo a => ("axiom", [("type", a.type)])
+  | .inductInfo i =>
+    (s!"inductive {i.numParams} {i.numIndices}",
+      [("type", i.type)] ++ i.ctors.filterMap fun c => (env.find? c).map fun cc => (s!"constructor {escape c.toString}", cc.type))
+  | .ctorInfo c => (s!"constructor {c.cidx} {c.numParams} {c.numFields}", [("type", c.type)])
+  | .recInfo r => ("recursor", [("type", r.type)])
+  | .quotInfo q => ("quotient", [("type", q.type)])
+
+/-- The workspace constants reachable from `roots`, each with its own canonical text and the
+workspace constants it uses: what Rust fingerprints the records with, each definition once. -/
+def definitions (env : Environment) (inWorkspace : Name → Bool) (roots : Array Name) :
+    Except String (Array Value) := do
+  let mut seen : NameSet := {}
+  let mut work := roots
+  let mut out : Array (Name × Value) := #[]
+  while h : work.size > 0 do
+    let n := work[work.size - 1]
+    work := work.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    let some ci := env.find? n | throw s!"`{n}` is used and does not exist"
+    let (kind, exprs) := constantExprs env ci
+    let material ← canonText ci.levelParams s!"{kind} {escape n.toString}" exprs
+    let deps := workspaceUses inWorkspace (exprs.map (·.2))
+    work := work ++ deps.filter (!seen.contains ·)
+    out := out.push (n, obj [("name", BridgeIR.name n), ("material", str material),
+      ("dependencies", arr (deps.map BridgeIR.name))])
+  return (out.qsort fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1).map (·.2)
+
 /-- Checks the records against the environment and encodes them. -/
 def analyze (input : Input) : IO (Except String Output) := do
   let env := input.env
@@ -464,6 +511,13 @@ def analyze (input : Input) : IO (Except String Output) := do
   let run {α : Type} (x : CoreM α) : IO (Except String α) := input.runCore x
   let pretty (e : Expr) : CoreM String := return toString (← (ppExpr e).run')
   let isTheorem (n : Name) := env.find? n |>.any (· matches .thmInfo _)
+  -- The body of a definition, as Lean prints it.
+  let definitionText (ci : ConstantInfo) : CoreM (Option String) :=
+    match ci with
+    | .defnInfo d => return some (← pretty d.value)
+    | _ => return none
+  -- The workspace constants the records use directly.
+  let mut used : Array Name := #[]
   -- Specifications.
   let mut specsOut := #[]
   for (decl, s) in rec_.specs.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
@@ -475,10 +529,14 @@ def analyze (input : Input) : IO (Except String Output) := do
     let material ← match canonText ci.levelParams s!"spec {s.kind}" exprs with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
+    let deps := workspaceUses input.inWorkspace (exprs.map (·.2))
+    used := used ++ deps
     let statement ← match ← run (pretty ci.type) with | .ok s => pure s | .error e => return .error e
+    let definition ← match ← run (definitionText ci) with | .ok s => pure s | .error e => return .error e
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     specsOut := specsOut.push (obj [("name", BridgeIR.name decl), ("kind", str s.kind),
-      ("statement", str statement), ("origin", origin), ("fingerprint_material", str material)])
+      ("statement", str statement), ("definition", opt (definition.map str)), ("origin", origin),
+      ("fingerprint_material", str material), ("dependencies", arr (deps.map BridgeIR.name))])
   -- Facilities.
   let mut facilitiesOut := #[]
   let mut ids : Std.HashMap String Name := {}
@@ -521,9 +579,12 @@ def analyze (input : Input) : IO (Except String Output) := do
     let material ← match canonText ci.levelParams s!"facility {c.id}" exprs with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
+    let deps := workspaceUses input.inWorkspace (exprs.map (·.2))
+    used := used ++ deps
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     facilitiesOut := facilitiesOut.push (obj [("name", BridgeIR.name decl), ("id", str c.id),
-      ("kind", kind), ("origin", origin), ("fingerprint_material", str material)])
+      ("kind", kind), ("origin", origin), ("fingerprint_material", str material),
+      ("dependencies", arr (deps.map BridgeIR.name))])
   -- Operations.
   let mut operationsOut := #[]
   for (decl, o) in rec_.operations.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
@@ -544,11 +605,13 @@ def analyze (input : Input) : IO (Except String Output) := do
     let material ← match canonText ci.levelParams s!"operation {escape symbol}" [("type", ci.type)] with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
+    let deps := workspaceUses input.inWorkspace [ci.type]
+    used := used ++ deps
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     operationsOut := operationsOut.push (obj [("name", BridgeIR.name decl),
       ("facility", BridgeIR.name o.facility), ("symbol", str symbol),
       ("reachable", .bool (input.closureNames.contains decl)), ("origin", origin),
-      ("fingerprint_material", str material)])
+      ("fingerprint_material", str material), ("dependencies", arr (deps.map BridgeIR.name))])
   -- Assumptions.
   let mut assumptionsOut := #[]
   for (decl, a) in rec_.assumptions.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
@@ -568,11 +631,15 @@ def analyze (input : Input) : IO (Except String Output) := do
     let material ← match canonText ci.levelParams "assumption" exprs with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
+    let deps := workspaceUses input.inWorkspace (exprs.map (·.2))
+    used := used ++ deps
     let statement ← match ← run (pretty ci.type) with | .ok s => pure s | .error e => return .error e
+    let definition ← match ← run (definitionText ci) with | .ok s => pure s | .error e => return .error e
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     assumptionsOut := assumptionsOut.push (obj [("name", BridgeIR.name decl),
-      ("facility", BridgeIR.name a.facility), ("statement", str statement), ("origin", origin),
-      ("fingerprint_material", str material)])
+      ("facility", BridgeIR.name a.facility), ("statement", str statement),
+      ("definition", opt (definition.map str)), ("origin", origin),
+      ("fingerprint_material", str material), ("dependencies", arr (deps.map BridgeIR.name))])
   -- Claims.
   let mut claimsOut := #[]
   for (evidence, c) in rec_.claims.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
@@ -613,11 +680,13 @@ def analyze (input : Input) : IO (Except String Output) := do
     let axioms ← match ← run (collectAxioms evidence) with
       | .ok a => pure a
       | .error e => return .error s!"cannot collect the axioms of `{evidence}`: {e}"
-    let material ← match canonText thm.levelParams s!"claim {c.relation}"
-        ([("statement", thm.type)] ++ c.subjects.map (fun s => ("subject", mkConst s)) ++
-          c.specs.map (fun s => ("spec", mkConst s))) with
+    let claimExprs := [("statement", thm.type)] ++ c.subjects.map (fun s => ("subject", mkConst s)) ++
+      c.specs.map (fun s => ("spec", mkConst s))
+    let material ← match canonText thm.levelParams s!"claim {c.relation}" claimExprs with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{evidence}`: {e}"
+    let deps := workspaceUses input.inWorkspace (claimExprs.map (·.2))
+    used := used ++ deps
     let statement ← match ← run (pretty thm.type) with | .ok s => pure s | .error e => return .error e
     let origin ← match ← run (input.origin evidence) with | .ok o => pure o | .error e => return .error e
     claimsOut := claimsOut.push (obj [
@@ -628,7 +697,8 @@ def analyze (input : Input) : IO (Except String Output) := do
       ("evidence_trust", obj [
         ("axioms", arr (sortNames (axioms.filter (· != ``sorryAx)) |>.map BridgeIR.name)),
         ("depends_on_sorry", .bool (axioms.contains ``sorryAx))]),
-      ("origin", origin), ("fingerprint_material", str material)])
+      ("origin", origin), ("fingerprint_material", str material),
+      ("dependencies", arr (deps.map BridgeIR.name))])
   -- Roles.
   let mut rolesOut := #[]
   for (decl, r) in rec_.roles.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
@@ -640,11 +710,15 @@ def analyze (input : Input) : IO (Except String Output) := do
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     rolesOut := rolesOut.push (obj [("name", BridgeIR.name decl), ("role", str r.role),
       ("exported", .bool (input.exports.contains decl)), ("origin", origin)])
+  let definitionsOut ← match definitions env input.inWorkspace used with
+    | .ok d => pure d
+    | .error e => return .error s!"cannot fingerprint what the records use: {e}"
   return .ok {
     value := obj [
       ("library", obj [("package", str input.lib.package), ("schema_version", nat input.lib.schemaVersion)]),
       ("specs", arr specsOut), ("claims", arr claimsOut), ("facilities", arr facilitiesOut),
-      ("operations", arr operationsOut), ("assumptions", arr assumptionsOut), ("roles", arr rolesOut)]
+      ("operations", arr operationsOut), ("assumptions", arr assumptionsOut), ("roles", arr rolesOut),
+      ("definitions", arr definitionsOut)]
     violations
   }
 

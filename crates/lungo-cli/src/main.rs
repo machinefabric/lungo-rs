@@ -364,7 +364,8 @@ fn assurance_command(file: &ProjectFile, env: &Environment, args: &AssuranceArgs
     if !record_issues.is_empty() {
         return Err(Error::Assurance(record_issues));
     }
-    let doc = document(&analysis.success, &analysis.toolchain, &ctx.name);
+    let doc = document(&analysis.success, &analysis.toolchain, &ctx.name)
+        .map_err(|e| generate::codegen_error(&analysis, vec![e]))?;
     let filters = assurance::Filters {
         declaration: args.declaration.clone(),
         claim_kinds: args.claim_kinds.clone(),
@@ -649,7 +650,7 @@ fn report_summary(analysis: &Analysis) {
 /// evidence of and those a specification is cited by.
 fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -> Result<()> {
     let s = &analysis.success;
-    let doc = document(s, &analysis.toolchain, program);
+    let doc = document(s, &analysis.toolchain, program).map_err(|e| generate::codegen_error(analysis, vec![e]))?;
     let mut found = false;
     if let Some(e) = s.interface.exports.iter().find(|e| e.name == name) {
         found = true;
@@ -688,6 +689,7 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
     if let Some(sp) = doc.specifications.iter().find(|x| x.name == name) {
         found = true;
         println!("{name} is a specification ({}), fingerprint {}", sp.kind, sp.fingerprint);
+        println!("  {}", assurance::meaning(&sp.statement, &sp.definition));
         let citing: Vec<&str> =
             doc.claims.iter().filter(|c| c.specifications.contains(&sp.name)).map(|c| c.name.as_str()).collect();
         println!("  cited by: {}", if citing.is_empty() { "(none)".to_owned() } else { citing.join(", ") });
@@ -697,7 +699,7 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
         println!(
             "{name} is an assumption of {} — assumed, never proved: {}",
             x.facility,
-            x.statement.replace('\n', " ")
+            assurance::meaning(&x.statement, &x.definition)
         );
     }
     if let Some(c) = doc.facilities.iter().find(|c| c.name == name) {
