@@ -73,8 +73,11 @@ fn copy_library(dir: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<(
         let path = entry.path();
         let rel = path.strip_prefix(dir).expect("walked paths are under the root");
         // `version.txt` at its root is the workspace's record of the repository's own version,
-        // not the lungo version a release of it carries.
-        if !entry.file_type().is_some_and(|t| t.is_file()) || skip(rel) || rel == Path::new("version.txt") {
+        // not the lungo version a release of it carries. A `.wstemplate` is what the workspace
+        // renders a file of the repository from; the rendered file is the library's, the
+        // template is not.
+        let template = rel.extension().is_some_and(|e| e == "wstemplate");
+        if !entry.file_type().is_some_and(|t| t.is_file()) || skip(rel) || template || rel == Path::new("version.txt") {
             continue;
         }
         let dest = to.join(rel);
@@ -322,7 +325,8 @@ mod tests {
 
     /// TEST0265: A library copied without its repository — as a build machine's copy of the tree has
     /// none — is still exactly its files: what its `.gitignore` ignores, its hidden state, its
-    /// `version.txt` and whatever the caller skips are not, and rules outside it do not apply.
+    /// `version.txt`, the workspace's templates and whatever the caller skips are not, and rules
+    /// outside it do not apply.
     #[test]
     fn test0265_a_library_is_its_files_without_a_repository_to_ask() {
         let root = std::env::temp_dir().join(format!("lungo-dist-copy-library-{}", std::process::id()));
@@ -339,11 +343,16 @@ mod tests {
         write(&lib.join("version.txt"), "1.0.0");
         write(&lib.join("src/version.txt"), "kept: only the root one is the workspace's");
         write(&lib.join("notes/skipped.md"), "");
+        // What the workspace renders `go.mod` from, beside the rendered file: the file is the
+        // library's, the template is the workspace's — wherever in the library it sits.
+        write(&lib.join("go.mod"), "module lib");
+        write(&lib.join("go.mod.wstemplate"), "module lib // {{ project.version }}");
+        write(&lib.join("src/pkg/manifest.in.wstemplate"), "");
         assert!(!lib.join(".git").exists());
 
         let out = root.join("out");
         copy_library(&lib, &out, &|rel| rel.starts_with("notes")).unwrap();
-        assert_eq!(files(&out), ["runtime.go", "src/pkg/mod.py", "src/version.txt"]);
+        assert_eq!(files(&out), ["go.mod", "runtime.go", "src/pkg/mod.py", "src/version.txt"]);
         fs::remove_dir_all(&root).unwrap();
     }
 }
