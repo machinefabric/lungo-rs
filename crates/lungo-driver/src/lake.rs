@@ -107,7 +107,11 @@ pub fn build(
         }
         Roots::DefaultTargets => {
             build_targets(toolchain, project, &[], offline)?;
-            if assurance_modules.is_empty() { Ok(()) } else { build_targets(toolchain, project, assurance_modules, offline) }
+            if assurance_modules.is_empty() {
+                Ok(())
+            } else {
+                build_targets(toolchain, project, assurance_modules, offline)
+            }
         }
     }
 }

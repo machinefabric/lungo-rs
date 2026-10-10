@@ -139,7 +139,7 @@ mod tests {
         assert!(ProjectFile::load(&file).is_err(), "go is built in");
         std::fs::write(&file, "project = \"lean\"\n[plugins.Bad_Name]\nout = \"x\"\n").unwrap();
         assert!(ProjectFile::load(&file).is_err());
-        // The host implements what the Lean code declares as operations of capabilities; there is
+        // The host implements what the Lean code declares as operations of facilities; there is
         // no list of host externs to configure.
         std::fs::write(&file, "project = \"lean\"\n[lean]\nhost-externs = [\"h\"]\n").unwrap();
         assert!(ProjectFile::load(&file).is_err(), "host-externs is not a setting");

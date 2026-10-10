@@ -62,9 +62,7 @@ fn test0277_header_declares_every_function_of_the_c_abi() {
     assert!(missing.is_empty(), "include/lungo.h does not declare {missing:?}");
     // What a WebAssembly module exports for the TypeScript binding, but for its interface to the
     // host, is in the C ABI.
-    let absent: Vec<&&str> = lungo_runtime::header::WASM_EXPORTS
-        .iter()
-        .filter(|e| !e.starts_with("lungo_wasm_") && !declared(e))
-        .collect();
+    let absent: Vec<&&str> =
+        lungo_runtime::header::WASM_EXPORTS.iter().filter(|e| !e.starts_with("lungo_wasm_") && !declared(e)).collect();
     assert!(absent.is_empty(), "the WebAssembly exports {absent:?} are not declared in include/lungo.h");
 }

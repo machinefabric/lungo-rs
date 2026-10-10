@@ -181,11 +181,11 @@ pub struct Facade<'a> {
     shaping: &'a Selector<'a>,
     /// The layout fingerprint of every described type, by Lean name.
     fingerprints: &'a BTreeMap<String, String>,
-    /// The handler trait of each async capability emitted so far, by operation type.
+    /// The handler trait of each async facility emitted so far, by operation type.
     handlers: BTreeMap<String, Handler>,
 }
 
-/// The handler trait of an async capability.
+/// The handler trait of an async facility.
 #[derive(Clone)]
 struct Handler {
     placement: Placement,
@@ -361,8 +361,7 @@ impl<'a> Facade<'a> {
         let head = if t.ctors.len() == 1 {
             path
         } else {
-            let variants =
-                unique_idents(t.ctors.iter().map(|c| camel(components(&c.name).last().expect("ctor name"))));
+            let variants = unique_idents(t.ctors.iter().map(|c| camel(components(&c.name).last().expect("ctor name"))));
             format!("{path}::{}", variants[k])
         };
         let n = c.fields.len();
@@ -379,7 +378,7 @@ impl<'a> Facade<'a> {
         })
     }
 
-    /// Emits the handler trait of the async capability whose operations are `op`, answered with
+    /// Emits the handler trait of the async facility whose operations are `op`, answered with
     /// `rets`, once: in the module of the operation type, named after it.
     fn async_handler(
         &mut self,
@@ -401,16 +400,15 @@ impl<'a> Facade<'a> {
         let ident = format!("{}Handler", op_placement.ident.trim_start_matches("r#"));
         if self.placements.values().any(|p| p.module == op_placement.module && p.ident == ident) {
             return Err(CodegenError::Configuration(format!(
-                "the handler trait of the async capability over {op} would be named `{ident}`, which a generated item \
+                "the handler trait of the async facility over {op} would be named `{ident}`, which a generated item \
                  of the same module already is: rename the Lean declaration"
             )));
         }
         let placement = Placement { module: op_placement.module.clone(), ident };
         let depth = placement.module.len();
-        let methods =
-            unique_idents(t.ctors.iter().map(|c| snake(components(&c.name).last().expect("ctor name"))));
+        let methods = unique_idents(t.ctors.iter().map(|c| snake(components(&c.name).last().expect("ctor name"))));
         let mut w = Writer::new();
-        w.line(format!("/// Performs the operations of the async capability over `{op}`: a method per constructor,"));
+        w.line(format!("/// Performs the operations of the async facility over `{op}`: a method per constructor,"));
         w.line("/// answering it. An async function asks a handler for each operation its program waits for; a");
         w.line("/// method's error abandons the program, and the function returns it.");
         w.open(format!("pub trait {} {{", placement.ident));
@@ -1233,7 +1231,8 @@ impl<'a> Facade<'a> {
             let handler = self.async_handler(modules, op, rets)?;
             let t = *self.types.get(op.as_str()).expect("described by async_handler");
             let ret = self.rust_type(result, depth, &generics)?;
-            let op_ty = self.rust_type(&FacadeType::Inductive { name: op.clone(), args: Vec::new() }, depth, &generics)?;
+            let op_ty =
+                self.rust_type(&FacadeType::Inductive { name: op.clone(), args: Vec::new() }, depth, &generics)?;
             let mut bounds: Vec<String> = vec![format!("__H: {}", handler.placement.path_from_depth(depth))];
             bounds.extend(generics.iter().map(|g| format!("{g}: ::lungo::LeanType<{b}>")));
             let mut params = vec!["handler: &__H".to_owned()];

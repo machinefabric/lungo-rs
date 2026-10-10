@@ -45,7 +45,7 @@ use std::time::Duration;
 /// read for their assurance records, the trust policy, and how the worker runs. Loadable from the
 /// `[lean]` table of a `lungo.toml`; the Rust `Builder` of `lungo-build` includes them. Which
 /// externs the host implements is not a setting: the program's Lean code declares them, as the
-/// operations of capabilities (`@[lungo_operation]`).
+/// operations of facilities (`@[lungo_operation]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LeanOptions {

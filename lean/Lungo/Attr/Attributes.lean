@@ -23,7 +23,7 @@ open Lean Meta Elab
 
 syntax (name := lungo_spec) "lungo_spec " str : attr
 syntax (name := lungo_claim) "lungo_claim " str (ppSpace ident)+ : attr
-syntax (name := lungo_capability) "lungo_capability " str : attr
+syntax (name := lungo_facility) "lungo_facility " str : attr
 syntax (name := lungo_operation) "lungo_operation " ident : attr
 syntax (name := lungo_assumption) "lungo_assumption " ident : attr
 syntax (name := lungo_role) "lungo_role " str : attr
@@ -37,10 +37,10 @@ an axiom, so the kind is read from the module's own (unexported) view. -/
 meta def isTheorem (decl : Name) : CoreM Bool := do
   return (((← getEnv).setExporting false).findAsync? decl).any (·.kind == .thm)
 
-/-- The capability record of `cap`, or an error naming `attr`. -/
-meta def capabilityRecord (attr : String) (cap : Name) : CoreM Expr := do
-  let some r ← record? cap "capability"
-    | throwError "`@[{attr} {cap}]`: `{cap}` is not a capability; give it `@[lungo_capability \"ns.name\"]` first"
+/-- The facility record of `facility`, or an error naming `attr`. -/
+meta def facilityRecord (attr : String) (facility : Name) : CoreM Expr := do
+  let some r ← record? facility "facility"
+    | throwError "`@[{attr} {facility}]`: `{facility}` is not a facility; give it `@[lungo_facility \"ns.name\"]` first"
   return r
 
 meta def addSpec (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
@@ -117,64 +117,64 @@ meta def asyncOperations (decl : Name) : MetaM (Option Name) := do
   unless ty.isAppOfArity ``Lungo.Async.Interface 1 do return none
   let op := ty.appArg!
   let .const opName [] := op
-    | throwError "`@[lungo_capability]`: the operations of an async capability are an inductive type \
+    | throwError "`@[lungo_facility]`: the operations of an async facility are an inductive type \
         without parameters, not `{op}`"
   let .inductInfo info ← getConstInfo opName
-    | throwError "`@[lungo_capability]`: `{opName}` is not an inductive type"
+    | throwError "`@[lungo_facility]`: `{opName}` is not an inductive type"
   unless info.numParams == 0 && info.numIndices == 0 do
-    throwError "`@[lungo_capability]`: `{opName}` must have no parameters or indices"
+    throwError "`@[lungo_facility]`: `{opName}` must have no parameters or indices"
   for ctor in info.ctors do
     let cinfo ← getConstInfoCtor ctor
     forallTelescope cinfo.type fun xs _ => do
       for x in xs do
         let t ← inferType x
         if (← isProp t) || (← isTypeFormerType t) then
-          throwError "`@[lungo_capability]`: the field `{x}` of `{ctor}` is a proof or a type, which a \
+          throwError "`@[lungo_facility]`: the field `{x}` of `{ctor}` is a proof or a type, which a \
             host cannot supply"
       let ret ← whnfD (mkApp3 (mkConst ``Lungo.Async.Interface.Ret) op (mkConst decl) (mkAppN (mkConst ctor) xs))
       if ret.isAppOf ``Lungo.Async.Interface.Ret then
-        throwError "`@[lungo_capability]`: what `{ctor}` answers does not reduce to a type: {ret}"
+        throwError "`@[lungo_facility]`: what `{ctor}` answers does not reduce to a type: {ret}"
       if xs.any fun x => ret.containsFVar x.fvarId! then
-        throwError "`@[lungo_capability]`: what `{ctor}` answers depends on its arguments:\
+        throwError "`@[lungo_facility]`: what `{ctor}` answers depends on its arguments:\
           {indentExpr ret}\nThe type of each operation's answer must be fixed by the operation alone."
   return some opName
 
-meta def addCapability (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
-  ensureGlobal "lungo_capability" kind
+meta def addFacility (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
+  ensureGlobal "lungo_facility" kind
   let some id := stx[1].isStrLit?
-    | throwError "`@[lungo_capability]` expects an identifier, such as `\"time.clock\"`"
-  checkKind "capability identifier" id [] "time.clock"
+    | throwError "`@[lungo_facility]` expects an identifier, such as `\"time.clock\"`"
+  checkKind "facility identifier" id [] "time.clock"
   if ← isTheorem decl then
-    throwError "`@[lungo_capability]` names a capability by a definition, a structure or an \
+    throwError "`@[lungo_facility]` names a facility by a definition, a structure or an \
       instance of `Lungo.Async.Interface`, not by a theorem"
   let async ← (asyncOperations decl).run'
-  addRecord "lungo_capability" decl "capability" ``Lungo.Registry.Capability
-    (mkApp3 (mkConst ``Lungo.Registry.Capability.mk) (nameExpr decl) (mkStrLit id) (optionNameExpr async))
+  addRecord "lungo_facility" decl "facility" ``Lungo.Registry.Facility
+    (mkApp3 (mkConst ``Lungo.Registry.Facility.mk) (nameExpr decl) (mkStrLit id) (optionNameExpr async))
 
 meta def addOperation (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
   ensureGlobal "lungo_operation" kind
-  let cap ← realizeGlobalConstNoOverloadWithInfo stx[1]
-  let r ← capabilityRecord "lungo_operation" cap
+  let facility ← realizeGlobalConstNoOverloadWithInfo stx[1]
+  let r ← facilityRecord "lungo_operation" facility
   unless (r.getArg! 2).isAppOf ``Option.none do
-    throwError "`@[lungo_operation {cap}]`: `{cap}` is an async capability, whose operations are the \
+    throwError "`@[lungo_operation {facility}]`: `{facility}` is an async facility, whose operations are the \
       constructors of its operation type"
   unless isExtern (← getEnv) decl do
     throwError "`@[lungo_operation]` is given to the `@[extern]` declaration the host implements; \
       `{decl}` has no `@[extern]` (write `@[extern \"symbol\"]` before `@[lungo_operation …]`)"
   addRecord "lungo_operation" decl "operation" ``Lungo.Registry.Operation
-    (mkApp2 (mkConst ``Lungo.Registry.Operation.mk) (nameExpr decl) (nameExpr cap))
+    (mkApp2 (mkConst ``Lungo.Registry.Operation.mk) (nameExpr decl) (nameExpr facility))
 
 meta def addAssumption (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
   ensureGlobal "lungo_assumption" kind
-  let cap ← realizeGlobalConstNoOverloadWithInfo stx[1]
-  discard <| capabilityRecord "lungo_assumption" cap
+  let facility ← realizeGlobalConstNoOverloadWithInfo stx[1]
+  discard <| facilityRecord "lungo_assumption" facility
   let isProposition ← MetaM.run' do
     forallTelescopeReducing (← getConstVal decl).type fun _ b => return (← whnfD b).isProp
   unless isProposition do
     throwError "`@[lungo_assumption]` is given to a proposition (or a family of them, or a class \
       in `Prop`); `{decl}` is not one"
   addRecord "lungo_assumption" decl "assumption" ``Lungo.Registry.Assumption
-    (mkApp2 (mkConst ``Lungo.Registry.Assumption.mk) (nameExpr decl) (nameExpr cap))
+    (mkApp2 (mkConst ``Lungo.Registry.Assumption.mk) (nameExpr decl) (nameExpr facility))
 
 meta def addRole (decl : Name) (stx : Syntax) (kind : AttributeKind) : AttrM Unit := do
   ensureGlobal "lungo_role" kind
@@ -197,19 +197,19 @@ meta initialize
     add := addClaim
   }
   registerBuiltinAttribute {
-    name := `lungo_capability
-    descr := "a capability the host provides"
-    add := addCapability
+    name := `lungo_facility
+    descr := "a facility the host provides"
+    add := addFacility
   }
   registerBuiltinAttribute {
     name := `lungo_operation
-    descr := "an operation of a capability, implemented by the host"
+    descr := "an operation of a facility, implemented by the host"
     add := addOperation
     applicationTime := .afterCompilation
   }
   registerBuiltinAttribute {
     name := `lungo_assumption
-    descr := "a proposition assumed, never proved, of the host's implementation of a capability"
+    descr := "a proposition assumed, never proved, of the host's implementation of a facility"
     add := addAssumption
   }
   registerBuiltinAttribute {

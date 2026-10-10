@@ -291,8 +291,8 @@ def run (request : Protocol.Request) : WorkerM Value := do
         let (m, idx') := LCNFAdapter.moduleDecls idx modIdx.toNat
         idx := idx'
         if m.contains n then compileRoots := compileRoots.push n
-  -- Every operation of a capability the program's modules declare is compiled, whether or not
-  -- the program calls it, so a capability's interface does not change with what reaches it.
+  -- Every operation of a facility the program's modules declare is compiled, whether or not
+  -- the program calls it, so a facility's interface does not change with what reaches it.
   for (decl, _) in records.operations.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
     if let some modIdx := env.getModuleIdxFor? decl then
       if linked.contains modIdx.toNat then compileRoots := compileRoots.push decl
@@ -403,7 +403,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
           catch _ => pure none
         | none => pure none
       let operation := (o.bind records.operations.find?).map fun op =>
-        obj [("capability", BridgeIR.name op.capability)]
+        obj [("facility", BridgeIR.name op.facility)]
       externsCbor := externsCbor.push (obj [
         ("operation", opt operation),
         ("declaration", BridgeIR.name f),
@@ -475,7 +475,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
   let exportSet : NameSet := exports.foldl (·.insert ·) {}
   let assuranceCbor ← match library with
     | none => pure (obj [("library", .null), ("specs", arr #[]), ("claims", arr #[]),
-        ("capabilities", arr #[]), ("operations", arr #[]), ("assumptions", arr #[]),
+        ("facilities", arr #[]), ("operations", arr #[]), ("assumptions", arr #[]),
         ("roles", arr #[]), ("violations", arr (metadataOnly.map (·.toCbor)))])
     | some lib =>
       let input : Assurance.Input := {

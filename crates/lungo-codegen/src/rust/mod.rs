@@ -474,7 +474,7 @@ fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming, document: &crate
         w.open("assurance: ::lungo::ExportAssurance {");
         w.line(format!("claims: {},", list(&summary.claims)));
         w.line(format!("assumptions: {},", list(&summary.assumptions)));
-        w.line(format!("capabilities: {},", list(&summary.capabilities)));
+        w.line(format!("facilities: {},", list(&summary.facilities)));
         w.line(format!("roles: {},", list(&summary.roles)));
         w.line(format!("asynchronous: {},", summary.r#async));
         w.close("},");
@@ -516,7 +516,7 @@ fn emit_meta(w: &mut Writer, input: &GenInput, naming: &Naming, document: &crate
 
 /// The program's assurance as typed statics of `__meta`, and the document itself.
 fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument) {
-    use crate::core::assurance::{CapabilityForm, ClaimStatus};
+    use crate::core::assurance::{ClaimStatus, FacilityForm};
     let s = |x: &str| syntax::string(x);
     let list = |xs: &[String]| format!("&[{}]", xs.iter().map(|x| syntax::string(x)).collect::<Vec<_>>().join(", "));
     let opt = |x: &Option<String>| match x {
@@ -541,14 +541,14 @@ fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument)
         ));
     }
     w.close("],");
-    w.open("capabilities: &[");
-    for c in &d.capabilities {
+    w.open("facilities: &[");
+    for c in &d.facilities {
         let ops: Vec<String> = c.operations.iter().map(|o| o.name.clone()).collect();
         w.line(format!(
-            "::lungo::Capability {{ name: {}, id: {}, asynchronous: {}, operations: {}, assumptions: {}, package: {}, fingerprint: {} }},",
+            "::lungo::Facility {{ name: {}, id: {}, asynchronous: {}, operations: {}, assumptions: {}, package: {}, fingerprint: {} }},",
             s(&c.name),
             s(&c.id),
-            c.form == CapabilityForm::Async,
+            c.form == FacilityForm::Async,
             list(&ops),
             list(&c.assumptions),
             opt(&c.package),
@@ -559,9 +559,9 @@ fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument)
     w.open("assumptions: &[");
     for a in &d.assumptions {
         w.line(format!(
-            "::lungo::Assumption {{ name: {}, capability: {}, statement: {}, package: {}, fingerprint: {} }},",
+            "::lungo::Assumption {{ name: {}, facility: {}, statement: {}, package: {}, fingerprint: {} }},",
             s(&a.name),
-            s(&a.capability),
+            s(&a.facility),
             s(&a.statement),
             opt(&a.package),
             s(&a.fingerprint)
@@ -598,7 +598,7 @@ fn emit_assurance(w: &mut Writer, d: &crate::core::assurance::AssuranceDocument)
     w.close("};");
     w.line("");
     w.line("/// The program's assurance: what its Lean code claims and proves of each export, and what it");
-    w.line("/// assumes of the host's capabilities.");
+    w.line("/// assumes of the host's facilities.");
     w.open("pub fn assurance() -> &'static ::lungo::Assurance {");
     w.line("&ASSURANCE");
     w.close("}");

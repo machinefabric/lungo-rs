@@ -1,7 +1,7 @@
 //! Resolution of Lean `@[extern]` declarations, shared by every backend.
 //!
 //! Externs resolve, in order, to Lean definitions exported with `@[export]`, to runtime
-//! primitives implemented by `lungo-runtime`, and — for the operations of capabilities
+//! primitives implemented by `lungo-runtime`, and — for the operations of facilities
 //! (`@[lungo_operation]`), and only for them — to implementations the application provides (a
 //! Rust function for the Rust backend, a host function of the target language otherwise). An
 //! extern that resolves to none of them is a build error naming the Lean declaration, the symbol,
@@ -39,7 +39,7 @@ pub enum Resolution {
     },
 }
 
-/// How the application provides the operations of capabilities to a backend, for resolution and
+/// How the application provides the operations of facilities to a backend, for resolution and
 /// its diagnostics.
 pub struct ApplicationExterns<'a> {
     /// Operation key → the application's implementation.
@@ -64,8 +64,8 @@ pub fn resolution_key(decl: &Declaration) -> Result<String, CodegenError> {
     }
 }
 
-/// The extern keys of the operations of capabilities among `decls` (every extern declaration
-/// whose requirement names a capability), each mapped to itself: what the host implements, by the
+/// The extern keys of the operations of facilities among `decls` (every extern declaration
+/// whose requirement names a facility), each mapped to itself: what the host implements, by the
 /// key it is registered under.
 pub fn operation_keys(
     decls: &[Declaration],
@@ -175,8 +175,8 @@ impl ExternPlan {
             };
             let req = reqs.get(decl.name.as_str()).copied();
             let intrinsic = registry::lookup(&key);
-            if let Some(capability) = req.and_then(|r| r.operation.as_ref()).map(|o| &o.capability) {
-                // An operation of a capability: the host's, and only the host's.
+            if let Some(facility) = req.and_then(|r| r.operation.as_ref()).map(|o| &o.facility) {
+                // An operation of a facility: the host's, and only the host's.
                 let provider = match (&decl.body, intrinsic) {
                     (Body::Extern { exported_by: Some(implementation), .. }, _) => {
                         Some(format!("the Lean definition {implementation} (via @[export])"))
@@ -185,8 +185,8 @@ impl ExternPlan {
                     _ => None,
                 };
                 if let Some(provider) = provider {
-                    errors.push(CodegenError::external(ErrorCode::CapabilityMismatch, format!(
-                        "`{}` is an operation of the capability {capability}, which the host implements, but \
+                    errors.push(CodegenError::external(ErrorCode::FacilityMismatch, format!(
+                        "`{}` is an operation of the facility {facility}, which the host implements, but \
                          {provider} already implements the symbol `{key}`; give the operation a symbol of its own\n\n{}",
                         decl.name,
                         describe(req, decl, &key, source)
@@ -200,12 +200,15 @@ impl ExternPlan {
                             Resolution::Application { key: key.clone(), implementation: implementation.clone() },
                         );
                     }
-                    None => errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
-                        "the operation `{}` of the capability {capability} has no implementation\n\n{}\n{}",
-                        decl.name,
-                        describe(req, decl, &key, source),
-                        (application.hint)(&key)
-                    ))),
+                    None => errors.push(CodegenError::external(
+                        ErrorCode::UnresolvedExtern,
+                        format!(
+                            "the operation `{}` of the facility {facility} has no implementation\n\n{}\n{}",
+                            decl.name,
+                            describe(req, decl, &key, source),
+                            (application.hint)(&key)
+                        ),
+                    )),
                 }
                 continue;
             }
@@ -238,9 +241,9 @@ impl ExternPlan {
                 },
                 (None, Some(path)) => {
                     misplaced.insert(key.clone());
-                    errors.push(CodegenError::external(ErrorCode::CapabilityMismatch, format!(
-                    "{} maps `{key}` to `{path}`, but `{}` is not an operation of a capability; the host implements \
-                     only operations: mark the declaration `@[lungo_operation C]` with a capability `C`\n\n{}",
+                    errors.push(CodegenError::external(ErrorCode::FacilityMismatch, format!(
+                    "{} maps `{key}` to `{path}`, but `{}` is not an operation of a facility; the host implements \
+                     only operations: mark the declaration `@[lungo_operation C]` with a facility `C`\n\n{}",
                     application.setting,
                     decl.name,
                     describe(req, decl, &key, source)
@@ -256,8 +259,8 @@ impl ExternPlan {
                     };
                     errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
                         "unresolved Lean external symbol\n\n{}{reason}\nNothing implements it. If the host is to \
-                         implement it, make it an operation of a capability: give it `@[lungo_operation C]`, `C` \
-                         being a declaration with `@[lungo_capability \"ns.name\"]` (lungo's Lean library).",
+                         implement it, make it an operation of a facility: give it `@[lungo_operation C]`, `C` \
+                         being a declaration with `@[lungo_facility \"ns.name\"]` (lungo's Lean library).",
                         describe(req, decl, &key, source),
                     )));
                 }

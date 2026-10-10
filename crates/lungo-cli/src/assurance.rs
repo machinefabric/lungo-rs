@@ -29,8 +29,8 @@ pub enum TrustIssue {
     Unsafe,
     /// The export runs `partial` definitions.
     Partial,
-    /// The export needs a capability of the host.
-    Capability,
+    /// The export needs a facility of the host.
+    Facility,
     /// The export is the subject of no claim.
     NoClaim,
     /// A claim about the export rests on `sorry`.
@@ -44,7 +44,7 @@ pub enum TrustIssue {
 pub struct Filters {
     pub declaration: Option<String>,
     pub claim_kinds: Vec<String>,
-    pub capabilities: Vec<String>,
+    pub facilities: Vec<String>,
     pub assumptions: Vec<String>,
     pub trust_issues: Vec<TrustIssue>,
 }
@@ -55,7 +55,7 @@ fn has_issue(doc: &AssuranceDocument, e: &ExportSummary, issue: TrustIssue) -> b
         TrustIssue::Axioms => e.trust.axioms.iter().any(|a| !STANDARD_AXIOMS.contains(&a.as_str())),
         TrustIssue::Unsafe => !e.trust.unsafe_dependencies.is_empty(),
         TrustIssue::Partial => !e.trust.partial_dependencies.is_empty(),
-        TrustIssue::Capability => !e.capabilities.is_empty(),
+        TrustIssue::Facility => !e.facilities.is_empty(),
         TrustIssue::NoClaim => e.claims.is_empty(),
         TrustIssue::Incomplete => {
             e.claims.iter().any(|c| doc.claim(c).is_some_and(|c| c.status == ClaimStatus::Incomplete))
@@ -64,19 +64,17 @@ fn has_issue(doc: &AssuranceDocument, e: &ExportSummary, issue: TrustIssue) -> b
     }
 }
 
-/// The capability `name` (a Lean name or an identifier) names, if any.
-fn capability_matches(doc: &AssuranceDocument, export_capability: &str, wanted: &str) -> bool {
-    export_capability == wanted || doc.capabilities.iter().any(|c| c.name == export_capability && c.id == wanted)
+/// The facility `name` (a Lean name or an identifier) names, if any.
+fn facility_matches(doc: &AssuranceDocument, export_facility: &str, wanted: &str) -> bool {
+    export_facility == wanted || doc.facilities.iter().any(|c| c.name == export_facility && c.id == wanted)
 }
 
 impl Filters {
     fn selects(&self, doc: &AssuranceDocument, e: &ExportSummary) -> bool {
         let any = |values: &[String], test: &dyn Fn(&str) -> bool| values.is_empty() || values.iter().any(|v| test(v));
         self.declaration.as_ref().is_none_or(|d| &e.name == d)
-            && any(&self.claim_kinds, &|k| {
-                e.claims.iter().any(|c| doc.claim(c).is_some_and(|c| c.relation == k))
-            })
-            && any(&self.capabilities, &|c| e.capabilities.iter().any(|x| capability_matches(doc, x, c)))
+            && any(&self.claim_kinds, &|k| e.claims.iter().any(|c| doc.claim(c).is_some_and(|c| c.relation == k)))
+            && any(&self.facilities, &|c| e.facilities.iter().any(|x| facility_matches(doc, x, c)))
             && any(&self.assumptions, &|a| e.assumptions.iter().any(|x| x == a))
             && (self.trust_issues.is_empty() || self.trust_issues.iter().any(|i| has_issue(doc, e, *i)))
     }
@@ -111,26 +109,29 @@ pub fn human(doc: &AssuranceDocument, exports: &[&ExportSummary]) -> String {
     out
 }
 
-/// The sections of one export: claims, trust, assumptions, capabilities.
+/// The sections of one export: claims, trust, assumptions, facilities.
 pub fn export_block(doc: &AssuranceDocument, e: &ExportSummary) -> String {
     let mut out = format!("{}{}\n", e.name, if e.r#async { " (async)" } else { "" });
-    section(&mut out, "Claims", e.claims.iter().map(|name| match doc.claim(name) {
-        Some(c) => {
-            let mut line = format!("[{}] {} {}", c.status.as_str(), c.relation, c.name);
-            if !c.specifications.is_empty() {
-                line.push_str(&format!(" (of {})", c.specifications.join(", ")));
+    section(
+        &mut out,
+        "Claims",
+        e.claims.iter().map(|name| match doc.claim(name) {
+            Some(c) => {
+                let mut line = format!("[{}] {} {}", c.status.as_str(), c.relation, c.name);
+                if !c.specifications.is_empty() {
+                    line.push_str(&format!(" (of {})", c.specifications.join(", ")));
+                }
+                if !c.assumptions.is_empty() {
+                    line.push_str(&format!(" — assuming {}", c.assumptions.join(", ")));
+                }
+                line
             }
-            if !c.assumptions.is_empty() {
-                line.push_str(&format!(" — assuming {}", c.assumptions.join(", ")));
-            }
-            line
-        }
-        None => format!("[missing] {name}"),
-    }));
+            None => format!("[missing] {name}"),
+        }),
+    );
     let t = &e.trust;
     let mut trust = Vec::new();
-    let extra: Vec<&str> =
-        t.axioms.iter().map(String::as_str).filter(|a| !STANDARD_AXIOMS.contains(a)).collect();
+    let extra: Vec<&str> = t.axioms.iter().map(String::as_str).filter(|a| !STANDARD_AXIOMS.contains(a)).collect();
     if !extra.is_empty() {
         trust.push(format!("non-standard axioms: {}", extra.join(", ")));
     }
@@ -148,14 +149,14 @@ pub fn export_block(doc: &AssuranceDocument, e: &ExportSummary) -> String {
         &mut out,
         "Assumptions",
         e.assumptions.iter().map(|a| match doc.assumptions.iter().find(|x| &x.name == a) {
-            Some(x) => format!("[assumed] {a} : {} (of {})", x.statement.replace('\n', " "), x.capability),
+            Some(x) => format!("[assumed] {a} : {} (of {})", x.statement.replace('\n', " "), x.facility),
             None => format!("[assumed] {a}"),
         }),
     );
     section(
         &mut out,
-        "Capabilities",
-        e.capabilities.iter().map(|c| match doc.capabilities.iter().find(|x| &x.name == c) {
+        "Facilities",
+        e.facilities.iter().map(|c| match doc.facilities.iter().find(|x| &x.name == c) {
             Some(x) => format!("{} ({c})", x.id),
             None => c.clone(),
         }),
@@ -184,14 +185,18 @@ pub struct Mismatch {
     pub descriptions: Vec<(String, Option<String>, String)>,
 }
 
-/// Every record (specification, claim, capability, assumption) at least two of `docs` describe
+/// Every record (specification, claim, facility, assumption) at least two of `docs` describe
 /// differently: from another package, or with another meaning.
 pub fn compose(docs: &[(String, AssuranceDocument)]) -> Vec<Mismatch> {
     type Key = (&'static str, String);
     let mut seen: BTreeMap<Key, Vec<(String, Option<String>, String)>> = BTreeMap::new();
     for (label, d) in docs {
         let mut add = |kind: &'static str, name: &str, package: &Option<String>, fingerprint: &str| {
-            seen.entry((kind, name.to_owned())).or_default().push((label.clone(), package.clone(), fingerprint.to_owned()));
+            seen.entry((kind, name.to_owned())).or_default().push((
+                label.clone(),
+                package.clone(),
+                fingerprint.to_owned(),
+            ));
         };
         for s in &d.specifications {
             add("specification", &s.name, &s.package, &s.fingerprint);
@@ -199,8 +204,8 @@ pub fn compose(docs: &[(String, AssuranceDocument)]) -> Vec<Mismatch> {
         for c in &d.claims {
             add("claim", &c.name, &c.package, &c.fingerprint);
         }
-        for c in &d.capabilities {
-            add("capability", &c.name, &c.package, &c.fingerprint);
+        for c in &d.facilities {
+            add("facility", &c.name, &c.package, &c.fingerprint);
         }
         for a in &d.assumptions {
             add("assumption", &a.name, &a.package, &a.fingerprint);
@@ -214,8 +219,7 @@ pub fn compose(docs: &[(String, AssuranceDocument)]) -> Vec<Mismatch> {
 
 /// Reads an assurance document a package carries.
 pub fn read_document(path: &PathBuf) -> Result<AssuranceDocument, Error> {
-    let text =
-        std::fs::read_to_string(path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+    let text = std::fs::read_to_string(path).map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
     AssuranceDocument::from_json(&text).map_err(|e| {
         Error::Assurance(vec![lungo_build::AssuranceIssue {
             code: ErrorCode::InvalidAssuranceDocument,
@@ -272,7 +276,7 @@ mod tests {
                 fingerprint: spec_fp.into(),
                 source: None,
             }],
-            capabilities: vec![],
+            facilities: vec![],
             assumptions: vec![],
             claims: vec![Claim {
                 name: format!("{program}.thm"),

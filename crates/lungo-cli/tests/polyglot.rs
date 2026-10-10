@@ -99,11 +99,11 @@ fn test0111_c_binding() {
     let out = run(&mut Command::new(&exe));
     assert_eq!(out, "polyglot [one, two]\n20! = 2432902008176640000\nok\n");
     // TEST0297: without the scaler, the program's first call ends the process, naming it.
-    let out = Command::new(&exe).arg("without-capabilities").output().unwrap();
+    let out = Command::new(&exe).arg("without-facilities").output().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success()
-            && stderr.contains("the host does not provide the capability polyglot.scaler: its operation hostScale")
+            && stderr.contains("the host does not provide the facility polyglot.scaler: its operation hostScale")
             && !stderr.contains("the call returned"),
         "{}: {stderr}",
         out.status
@@ -173,7 +173,8 @@ fn test0113_python_binding() {
     std::fs::create_dir_all(&tests).unwrap();
     std::fs::copy(fixture("python").join("test_polyglot.py"), tests.join("test_polyglot.py")).unwrap();
     let unittest = |label: &str| {
-        let out = Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
+        let out =
+            Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
         let text = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{label}: {text}");
         assert!(text.contains("Ran 18 tests") && text.trim_end().ends_with("OK"), "{label}: {text}");
@@ -230,17 +231,23 @@ let package = Package(
     )
     .unwrap();
     let swift_test = |args: &[&str], env: &[(&str, &str)]| {
-        let out = Command::new("swift").arg("test").args(args).envs(env.iter().copied()).current_dir(&tests).output().unwrap();
+        let out = Command::new("swift")
+            .arg("test")
+            .args(args)
+            .envs(env.iter().copied())
+            .current_dir(&tests)
+            .output()
+            .unwrap();
         let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
         assert!(out.status.success(), "{text}");
         text
     };
-    // The test of a missing capability runs alone: every other test installs the capabilities.
-    let text = swift_test(&["--skip", "MissingCapabilityTests"], &[]);
+    // The test of a missing facility runs alone: every other test installs the facilities.
+    let text = swift_test(&["--skip", "MissingFacilityTests"], &[]);
     assert!(!text.contains("warning:"), "the generated package builds with warnings:\n{text}");
     assert!(text.contains("Executed 17 tests, with 0 failures"), "the Swift tests ran:\n{text}");
     assert!(text.contains("Executed 3 tests, with 0 failures"), "the Objective-C tests ran:\n{text}");
-    let text = swift_test(&["--filter", "MissingCapabilityTests"], &[("LUNGO_POLYGLOT_WITHOUT_CAPABILITIES", "1")]);
+    let text = swift_test(&["--filter", "MissingFacilityTests"], &[("LUNGO_POLYGLOT_WITHOUT_FACILITIES", "1")]);
     assert!(text.contains("Executed 1 test, with 0 failures") && !text.contains("skipped"), "TEST0297 ran:\n{text}");
 }
 
@@ -266,7 +273,10 @@ fn test0115_ts_binding() {
             .arg(mode)
             .output()
             .unwrap();
-        (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+        (
+            out.status.success(),
+            format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+        )
     };
     let module = package.join("program.wasm");
     let linked = std::fs::read(&module).unwrap();

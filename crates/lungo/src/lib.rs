@@ -33,7 +33,7 @@ pub use layout::LeanLayout;
 #[doc(hidden)]
 pub use layout::assert_layout;
 pub use meta::{
-    Assumption, Assurance, Capability, Claim, ClaimStatus, DeclarationInfo, ExportAssurance, ExportTrust, Role,
+    Assumption, Assurance, Claim, ClaimStatus, DeclarationInfo, ExportAssurance, ExportTrust, Facility, Role,
     SourcePosition, SourceRange, Specification,
 };
 pub use nat::Nat;

@@ -316,7 +316,7 @@ pub struct SourceEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternRequirement {
-    /// Set when the extern is an operation of a capability (`@[lungo_operation]`): the host
+    /// Set when the extern is an operation of a facility (`@[lungo_operation]`): the host
     /// implements it.
     pub operation: Option<OperationRef>,
     pub declaration: String,
@@ -538,8 +538,8 @@ pub enum DiagnosticKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationRef {
-    /// The capability declaration the operation belongs to.
-    pub capability: String,
+    /// The facility declaration the operation belongs to.
+    pub facility: String,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -555,7 +555,7 @@ pub struct Assurance {
     pub library: Option<AssuranceLibrary>,
     pub specs: Vec<SpecRecord>,
     pub claims: Vec<ClaimRecord>,
-    pub capabilities: Vec<CapabilityRecord>,
+    pub facilities: Vec<FacilityRecord>,
     pub operations: Vec<OperationRecord>,
     pub assumptions: Vec<AssumptionRecord>,
     pub roles: Vec<RoleRecord>,
@@ -621,18 +621,18 @@ pub struct EvidenceTrust {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CapabilityRecord {
+pub struct FacilityRecord {
     pub name: String,
-    /// The capability's namespaced identifier, such as `time.clock`.
+    /// The facility's namespaced identifier, such as `time.clock`.
     pub id: String,
-    pub kind: CapabilityKind,
+    pub kind: FacilityKind,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum CapabilityKind {
+pub enum FacilityKind {
     /// A group of `@[extern]` operations the host implements synchronously.
     Extern,
     /// An instance of `Lungo.Async.Interface op_type`: the operations are its constructors.
@@ -643,7 +643,7 @@ pub enum CapabilityKind {
 #[serde(deny_unknown_fields)]
 pub struct OperationRecord {
     pub name: String,
-    pub capability: String,
+    pub facility: String,
     /// The extern key: the symbol of `@[extern "symbol"]`, or the declaration's name.
     pub symbol: String,
     /// Whether the program's compiled code includes the operation.
@@ -656,7 +656,7 @@ pub struct OperationRecord {
 #[serde(deny_unknown_fields)]
 pub struct AssumptionRecord {
     pub name: String,
-    pub capability: String,
+    pub facility: String,
     pub statement: String,
     pub origin: RecordOrigin,
     pub fingerprint_material: String,
@@ -687,7 +687,7 @@ pub enum ViolationKind {
     InvalidClaim,
     NotInStatement,
     DuplicateId,
-    CapabilityMismatch,
+    FacilityMismatch,
     AsyncInterface,
     LibraryVersion,
     MetadataOnlyDependency,

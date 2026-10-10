@@ -350,7 +350,12 @@ impl Returns {
                     return err(format!("{} cannot be the operations of an async program", decl.name));
                 }
                 if rets.len() != decl.ctors.len() {
-                    return err(format!("{} answers for the {} operations of {}", rets.len(), decl.ctors.len(), decl.name));
+                    return err(format!(
+                        "{} answers for the {} operations of {}",
+                        rets.len(),
+                        decl.ctors.len(),
+                        decl.name
+                    ));
                 }
                 // What the host answers is fixed by the operation: it has no type parameters.
                 for r in rets {
@@ -366,7 +371,9 @@ impl Returns {
         Ok(match self {
             Returns::Value(t) => Returns::Value(t.substitute(args)?),
             Returns::Io(t) => Returns::Io(t.substitute(args)?),
-            Returns::Eio { error, value } => Returns::Eio { error: error.substitute(args)?, value: value.substitute(args)? },
+            Returns::Eio { error, value } => {
+                Returns::Eio { error: error.substitute(args)?, value: value.substitute(args)? }
+            }
             Returns::Async { op, rets, value } => {
                 Returns::Async { op: *op, rets: rets.clone(), value: value.substitute(args)? }
             }

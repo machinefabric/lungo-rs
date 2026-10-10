@@ -3,7 +3,7 @@ import Lungo
 namespace Assured
 
 /-- The host's clock. -/
-@[lungo_capability "assured.clock"]
+@[lungo_facility "assured.clock"]
 structure Clock
 
 /-- The time now, from the host. -/

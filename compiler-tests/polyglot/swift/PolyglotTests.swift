@@ -4,14 +4,14 @@ import LungoKit
 import Polyglot
 import XCTest
 
-/// The scaler capability: multiplies by ten.
+/// The scaler facility: multiplies by ten.
 final class TenfoldScaler: PolyglotScaler {
     func hostScale(_ n: LungoNat) throws -> LungoNat {
         LungoNat(n.uint64! * 10)
     }
 }
 
-/// The journal capability: records lines, refusing `fail`.
+/// The journal facility: records lines, refusing `fail`.
 final class RecordingJournal: PolyglotJournal {
     private let lock = NSLock()
     private(set) var lines: [String] = []
@@ -72,16 +72,16 @@ struct Fetcher: PolyglotFetchOpHandler {
     }
 }
 
-/// TEST0297: run alone (`swift test --filter MissingCapabilityTests`, with
-/// LUNGO_POLYGLOT_WITHOUT_CAPABILITIES set), before any capability is installed.
-final class MissingCapabilityTests: XCTestCase {
-    // TEST0297: a call before every capability is installed fails, naming the capability and an
+/// TEST0297: run alone (`swift test --filter MissingFacilityTests`, with
+/// LUNGO_POLYGLOT_WITHOUT_FACILITIES set), before any facility is installed.
+final class MissingFacilityTests: XCTestCase {
+    // TEST0297: a call before every facility is installed fails, naming the facility and an
     // operation of it
-    func test0297_AMissingCapabilityIsNamed() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["LUNGO_POLYGLOT_WITHOUT_CAPABILITIES"] != nil)
+    func test0297_AMissingFacilityIsNamed() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["LUNGO_POLYGLOT_WITHOUT_FACILITIES"] != nil)
         XCTAssertThrowsError(try factorial(3)) { e in
-            let missing = e as? LungoMissingCapability
-            XCTAssertEqual(missing?.capability, "polyglot.journal")
+            let missing = e as? LungoMissingFacility
+            XCTAssertEqual(missing?.facility, "polyglot.journal")
             XCTAssertEqual(missing?.operation, "hostRecord")
         }
     }
@@ -175,8 +175,8 @@ final class PolyglotTests: XCTestCase {
         XCTAssertThrowsError(try bump(counter)) { XCTAssert($0 is LungoMalformed) }
     }
 
-    // TEST0056: host Capabilities
-    func test0056_HostCapabilities() throws {
+    // TEST0056: host Facilities
+    func test0056_HostFacilities() throws {
         XCTAssertEqual(try scaledSum([1, 2, 3]), 60)
         journal.clear()
         XCTAssertEqual(try recordAll(["a", "b"]), 2)
@@ -203,7 +203,7 @@ final class PolyglotTests: XCTestCase {
     }
 
     // TEST0298: the package's assurance document is the program's: its claims, what they assume,
-    // and the capabilities each export needs
+    // and the facilities each export needs
     func test0298_AssuranceIsTheProgramsAssurance() throws {
         let a = assurance
         XCTAssertEqual(a.program, "polyglot")
@@ -217,13 +217,13 @@ final class PolyglotTests: XCTestCase {
         // Proved, and conditional on what the host's scaler is assumed to do.
         XCTAssertEqual(a.claim("Polyglot.scaledSum_singleton_mono")?.status, "proved")
         XCTAssertEqual(a.claim("Polyglot.scaledSum_singleton_mono")?.assumptions, ["Polyglot.ScalesMonotonically"])
-        XCTAssertEqual(a.export("Polyglot.scaledSum")?.capabilities, ["Polyglot.Scaler"])
+        XCTAssertEqual(a.export("Polyglot.scaledSum")?.facilities, ["Polyglot.Scaler"])
         XCTAssertEqual(a.export("Polyglot.scaledSum")?.assumptions, ["Polyglot.ScalesMonotonically"])
         XCTAssertEqual(a.export("Polyglot.fetchAll")?.isAsync, true)
-        XCTAssertEqual(a.export("Polyglot.fetchAll")?.capabilities, ["Polyglot.fetchInterface"])
+        XCTAssertEqual(a.export("Polyglot.fetchAll")?.facilities, ["Polyglot.fetchInterface"])
         // Sorted by Lean name.
         XCTAssertEqual(
-            a.capabilities.map { "\($0.id)/\($0.form)" },
+            a.facilities.map { "\($0.id)/\($0.form)" },
             ["polyglot.journal/extern", "polyglot.scaler/extern", "polyglot.fetch/async"]
         )
         XCTAssertEqual(a.export("Polyglot.negate")?.claims, [])

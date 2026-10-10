@@ -60,7 +60,8 @@ impl Scratch {
     }
 
     fn build(&self, cfg: &Builder, out: &str) -> lungo_build::Result<lungo_build::BuildOutcome> {
-        let env = Environment::native(self.package.clone(), self.package.join(out), self.package.join(format!("{out}-work")));
+        let env =
+            Environment::native(self.package.clone(), self.package.join(out), self.package.join(format!("{out}-work")));
         cfg.run(Path::new("lean"), &env)
     }
 
@@ -118,7 +119,8 @@ fn forged(decl: &str, kind: &str, structure: &str, value: &str) -> String {
 }
 
 fn forged_claim(evidence: &str, relation: &str, subjects: &[&str], specs: &[&str]) -> String {
-    let names = |xs: &[&str]| format!("namesExpr [{}]", xs.iter().map(|x| format!("`{x}")).collect::<Vec<_>>().join(", "));
+    let names =
+        |xs: &[&str]| format!("namesExpr [{}]", xs.iter().map(|x| format!("`{x}")).collect::<Vec<_>>().join(", "));
     forged(
         evidence,
         "claim",
@@ -142,7 +144,10 @@ fn test0278_claims_about_exports_are_reported_with_their_status_and_assumptions(
     assert_eq!(doc["library"]["package"], "lungo");
     let c = named(&doc, "claims", "Assured.double_eq");
     assert_eq!((c["relation"].as_str(), c["status"].as_str()), (Some("lungo.equals"), Some("proved")));
-    assert_eq!((strings(&c["subjects"]), strings(&c["specifications"])), (vec!["Assured.double"], vec!["Assured.twice"]));
+    assert_eq!(
+        (strings(&c["subjects"]), strings(&c["specifications"])),
+        (vec!["Assured.double"], vec!["Assured.twice"])
+    );
     assert!(strings(&c["assumptions"]).is_empty());
     // An assumption is a hypothesis of the claim's statement, found where it is bound.
     let c = named(&doc, "claims", "Assured.elapsed_le");
@@ -150,19 +155,19 @@ fn test0278_claims_about_exports_are_reported_with_their_status_and_assumptions(
     assert_eq!(c["status"], "proved", "a conditional claim is proved, under its assumption");
     let spec = named(&doc, "specifications", "Assured.twice");
     assert_eq!(spec["kind"], "lungo.model");
-    let clock = named(&doc, "capabilities", "Assured.Clock");
+    let clock = named(&doc, "facilities", "Assured.Clock");
     assert_eq!((clock["id"].as_str(), clock["form"].as_str()), (Some("assured.clock"), Some("extern")));
     assert_eq!(strings(&clock["assumptions"]), ["Assured.Monotone"]);
     assert_eq!(clock["operations"][0]["name"], "Assured.now");
     let e = named(&doc, "exports", "Assured.elapsed");
     assert_eq!(strings(&e["claims"]), ["Assured.elapsed_le"]);
-    assert_eq!(strings(&e["capabilities"]), ["Assured.Clock"]);
+    assert_eq!(strings(&e["facilities"]), ["Assured.Clock"]);
     assert_eq!(strings(&e["assumptions"]), ["Assured.Monotone"]);
     let e = named(&doc, "exports", "Assured.double");
     assert_eq!(strings(&e["claims"]), ["Assured.double_eq"]);
-    assert!(strings(&e["capabilities"]).is_empty() && strings(&e["assumptions"]).is_empty());
+    assert!(strings(&e["facilities"]).is_empty() && strings(&e["assumptions"]).is_empty());
     // Every record is fingerprinted, and no path of this machine is in the document.
-    for section in ["specifications", "capabilities", "assumptions", "claims"] {
+    for section in ["specifications", "facilities", "assumptions", "claims"] {
         for r in doc[section].as_array().unwrap() {
             let fp = r["fingerprint"].as_str().unwrap();
             assert!(fp.len() == 64 && fp.bytes().all(|b| b.is_ascii_hexdigit()), "{r}");
@@ -191,7 +196,9 @@ fn test0279_a_claim_resting_on_sorry_is_refused_or_reported_incomplete_when_sorr
     // An incomplete claim is not a proof: an export required to carry a proved claim has none.
     s.write(
         "Assured.lean",
-        &std::fs::read_to_string(s.file("Assured.lean")).unwrap().replace("@[lungo_claim \"lungo.equals\" subject double spec twice]\n", ""),
+        &std::fs::read_to_string(s.file("Assured.lean"))
+            .unwrap()
+            .replace("@[lungo_claim \"lungo.equals\" subject double spec twice]\n", ""),
     );
     fails_with(
         s.build(&config().deny_sorry(false).require_claims("Assured.double"), "out"),
@@ -238,46 +245,46 @@ fn test0283_a_claim_about_what_its_statement_does_not_mention_is_refused() {
     fails_with(s.build(&config(), "out"), ErrorCode::ClaimNotInStatement, "Assured.twice");
 }
 
-/// TEST0284: two capabilities with one identifier are refused
+/// TEST0284: two facilities with one identifier are refused
 #[test]
-fn test0284_two_capabilities_with_one_identifier_are_refused() {
+fn test0284_two_facilities_with_one_identifier_are_refused() {
     let s = Scratch::new("duplicate");
-    s.append("\n@[lungo_capability \"assured.clock\"]\nstructure OtherClock\n");
+    s.append("\n@[lungo_facility \"assured.clock\"]\nstructure OtherClock\n");
     fails_with(s.build(&config(), "out"), ErrorCode::DuplicateAssuranceId, "assured.clock");
 }
 
-/// TEST0285: externs and capabilities must agree
+/// TEST0285: externs and facilities must agree
 #[test]
-fn test0285_externs_and_capabilities_must_agree() {
+fn test0285_externs_and_facilities_must_agree() {
     // A reachable operation the host does not implement.
-    let s = Scratch::new("capabilities");
+    let s = Scratch::new("facilities");
     fails_with(s.build(&configure(), "out"), ErrorCode::UnresolvedExtern, "assured_now");
-    // An extern that is no capability's operation: the host cannot implement it.
+    // An extern that is no facility's operation: the host cannot implement it.
     s.append("\n@[extern \"assured_raw\"]\nopaque raw (n : Nat) : Nat\n\ndef viaRaw (n : Nat) : Nat := raw n\n");
     fails_with(s.build(&config(), "out"), ErrorCode::UnresolvedExtern, "@[lungo_operation");
     fails_with(
         s.build(&config().rust_extern("assured_raw", "crate::host::raw"), "out"),
-        ErrorCode::CapabilityMismatch,
+        ErrorCode::FacilityMismatch,
         "assured_raw",
     );
     // An operation the runtime implements itself.
     let s = Scratch::new("intrinsic-operation");
     s.append("\n@[extern \"lean_nat_add\", lungo_operation Clock]\nopaque plus (a b : Nat) : Nat\n");
-    fails_with(s.build(&config(), "out"), ErrorCode::CapabilityMismatch, "lean_nat_add");
+    fails_with(s.build(&config(), "out"), ErrorCode::FacilityMismatch, "lean_nat_add");
 }
 
-/// TEST0286: an async capability whose answers depend on the operation's fields is refused
+/// TEST0286: an async facility whose answers depend on the operation's fields is refused
 #[test]
-fn test0286_an_async_capability_whose_answers_depend_on_the_operations_fields_is_refused() {
+fn test0286_an_async_facility_whose_answers_depend_on_the_operations_fields_is_refused() {
     let s = Scratch::new("async-interface");
     s.append(
         "\ninductive Pick where\n  | below (n : Nat)\n\ninstance pickInterface : Lungo.Async.Interface Pick where\n  Ret\n    | .below n => Fin (n + 1)\n",
     );
     s.append(&forged(
         "Assured.pickInterface",
-        "capability",
-        "Capability",
-        "mkApp3 (mkConst ``Lungo.Registry.Capability.mk) (nameExpr `Assured.pickInterface) (mkStrLit \"assured.pick\") \
+        "facility",
+        "Facility",
+        "mkApp3 (mkConst ``Lungo.Registry.Facility.mk) (nameExpr `Assured.pickInterface) (mkStrLit \"assured.pick\") \
          (optionNameExpr (some `Assured.Pick))",
     ));
     fails_with(s.build(&config(), "out"), ErrorCode::AsyncInterface, "Assured.Pick");
@@ -290,8 +297,11 @@ fn test0287_a_library_of_another_schema_version_is_refused() {
     let registry = s.package.join("lungo-lib/Lungo/Registry.lean");
     let source = std::fs::read_to_string(&registry).unwrap();
     assert!(source.contains("def schemaVersion : Nat := nat_lit 1"));
-    std::fs::write(&registry, source.replace("def schemaVersion : Nat := nat_lit 1", "def schemaVersion : Nat := nat_lit 2"))
-        .unwrap();
+    std::fs::write(
+        &registry,
+        source.replace("def schemaVersion : Nat := nat_lit 1", "def schemaVersion : Nat := nat_lit 2"),
+    )
+    .unwrap();
     fails_with(s.build(&config(), "out"), ErrorCode::AssuranceLibraryVersion, "2");
 }
 
@@ -315,7 +325,10 @@ fn test0289_assurance_modules_add_their_claims_without_changing_the_program() {
     assert!(plain["claims"].as_array().unwrap().iter().all(|c| c["name"] != "Assured.double_even"));
     let c = named(&laws, "claims", "Assured.double_even");
     assert_eq!(c["status"], "proved");
-    assert_eq!(strings(&named(&laws, "exports", "Assured.double")["claims"]), ["Assured.double_eq", "Assured.double_even"]);
+    assert_eq!(
+        strings(&named(&laws, "exports", "Assured.double")["claims"]),
+        ["Assured.double_eq", "Assured.double_even"]
+    );
     // The program is the same: every generated Rust file but the assurance it embeds.
     let rust = |out: &str| -> BTreeMap<String, String> {
         let dir = s.package.join(out).join("assured/modules");
@@ -340,10 +353,14 @@ fn test0290_the_policy_requires_claims_and_forbids_assumptions() {
     let s = Scratch::new("policy");
     s.append("\ndef unclaimed (n : Nat) : Nat := n\n");
     s.build(&config().require_claims("Assured.double").require_claims("Assured.elapsed"), "out").unwrap();
-    let text = fails_with(s.build(&config().require_claims("Assured"), "out"), ErrorCode::ExportWithoutClaim, "Assured.unclaimed");
+    let text = fails_with(
+        s.build(&config().require_claims("Assured"), "out"),
+        ErrorCode::ExportWithoutClaim,
+        "Assured.unclaimed",
+    );
     assert!(!text.contains("export Assured.double has"), "{text}");
     fails_with(s.build(&config().require_claims("."), "out"), ErrorCode::ExportWithoutClaim, "Assured.unclaimed");
-    // Forbidding the assumption refuses the claim resting on it; forbidding the capability also
+    // Forbidding the assumption refuses the claim resting on it; forbidding the facility also
     // refuses the export using it.
     fails_with(
         s.build(&config().forbid_assumption("Assured.Monotone"), "out"),
@@ -353,7 +370,7 @@ fn test0290_the_policy_requires_claims_and_forbids_assumptions() {
     fails_with(
         s.build(&config().forbid_assumption("Assured.Clock"), "out"),
         ErrorCode::ForbiddenAssumption,
-        "the export Assured.elapsed needs the capability Assured.Clock",
+        "the export Assured.elapsed needs the facility Assured.Clock",
     );
     // A policy naming nothing of the program is a configuration error, not an empty policy.
     for cfg in [config().require_claims("Assured.missing"), config().forbid_assumption("Assured.Missing")] {
@@ -431,13 +448,9 @@ fn test0293_thousands_of_claims_are_read_within_the_workers_limits() {
 fn test0294_lungos_lean_library_checks_every_attribute_it_declares() {
     let s = Scratch::new("library");
     let lib = s.package.join("lungo-lib");
-    let out = std::process::Command::new("lake").args(["build", "Lungo", "LungoTest"]).current_dir(&lib).output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let out =
+        std::process::Command::new("lake").args(["build", "Lungo", "LungoTest"]).current_dir(&lib).output().unwrap();
+    assert!(out.status.success(), "{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     // The library is released with lungo, under its version.
     let lakefile = std::fs::read_to_string(lib.join("lakefile.toml")).unwrap();
     let version = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../version.txt")).unwrap();

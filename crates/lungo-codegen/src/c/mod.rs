@@ -72,12 +72,12 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     let id = identifier(input.name);
     let prefix = format!("{id}__");
     let sources = SourceIndex::new(&input.success.source_metadata, input.local_prefix);
-    // Every operation of a capability is the host's: the package registers an implementation of
+    // Every operation of a facility is the host's: the package registers an implementation of
     // each under its key.
     let host = crate::core::externs::operation_keys(&program.declarations, &input.success.extern_requirements)
         .map_err(|e| vec![e])?;
     let hint = |_: &str| String::new();
-    let application = ApplicationExterns { implementations: &host, setting: "the host's capabilities", hint: &hint };
+    let application = ApplicationExterns { implementations: &host, setting: "the host's facilities", hint: &hint };
     let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
         describe_source(&r.source, input.local_prefix)
     })?;
@@ -145,7 +145,7 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
     h.line(format!("void {prefix}initialize(void);"));
     h.line(format!("const lungo_types *{prefix}types(void);"));
     h.line(format!("void {prefix}set_host_extern(size_t index, uint64_t callback);"));
-    h.line(format!("void {prefix}check_capabilities(void);"));
+    h.line(format!("void {prefix}check_facilities(void);"));
     for f in &boundary.functions {
         h.line(format!("int32_t {}(const uint8_t *input, size_t len, lungo_buffer *out);", f.symbol));
     }
@@ -276,8 +276,8 @@ fn emit_initialize(w: &mut Writer, input: &ProgramInput, emitter: &Emitter) {
     w.open(format!("static uint64_t {prefix}initialize_once(void) {{"));
     w.line(comment("A runtime of another C ABI version does not define lungo_abi_v2: linking fails."));
     w.line("if (lungo_abi_v2() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
-    w.line(comment("Initializers may call the host's operations: every capability must be provided."));
-    w.line(format!("{prefix}check_capabilities();"));
+    w.line(comment("Initializers may call the host's operations: every facility must be provided."));
+    w.line(format!("{prefix}check_facilities();"));
     if let Ok(exports) = runtime_exports(input.success) {
         for export in exports {
             w.line(format!(

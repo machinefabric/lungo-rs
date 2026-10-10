@@ -99,18 +99,18 @@ pub unsafe extern "C" fn lungo_check_layout(
 }
 
 /// Reports that the host did not provide `operation` (the Lean extern `declaration`) of the
-/// capability `capability` before the program was initialized.
+/// facility `facility` before the program was initialized.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lungo_panic_capability_missing(
-    capability: *const c_char,
+pub unsafe extern "C" fn lungo_panic_facility_missing(
+    facility: *const c_char,
     operation: *const c_char,
     declaration: *const c_char,
 ) -> ! {
-    let what = "lungo_panic_capability_missing";
-    let (capability, operation, declaration) =
-        unsafe { (text(capability, what), text(operation, what), text(declaration, what)) };
+    let what = "lungo_panic_facility_missing";
+    let (facility, operation, declaration) =
+        unsafe { (text(facility, what), text(operation, what), text(declaration, what)) };
     lean_internal_panic(&format!(
-        "the host does not provide the capability {capability}: its operation {operation} (Lean extern \
-         '{declaration}') is not implemented; provide every capability before using the program"
+        "the host does not provide the facility {facility}: its operation {operation} (Lean extern \
+         '{declaration}') is not implemented; provide every facility before using the program"
     ))
 }

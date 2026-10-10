@@ -2,12 +2,12 @@
 //! Lean calls the host's implementations of externs.
 //!
 //! [`generate`] computes the [`Boundary`], the model every binding generator consumes (the
-//! program's types as a wire-format type table, its callable functions, the capabilities the
+//! program's types as a wire-format type table, its callable functions, the facilities the
 //! host provides, the entry point), and emits its C: the type table, one call entry point per
-//! exported function, and one adapter per operation of a capability.
+//! exported function, and one adapter per operation of a facility.
 //!
-//! A capability is either a group of `@[extern]` operations the host implements synchronously,
-//! called through these adapters, or an async capability: the constructors of an operation type
+//! A facility is either a group of `@[extern]` operations the host implements synchronously,
+//! called through these adapters, or an async facility: the constructors of an operation type
 //! an async program asks the host to perform, answered through the handler the caller passes to
 //! each async export (see [`lungo_runtime::wire::program`]).
 
@@ -20,7 +20,7 @@ use crate::core::writer::Writer;
 use crate::{CodegenError, ErrorCode};
 use lungo_bir::{Declaration, IrType, Program};
 use lungo_protocol::{
-    CapabilityKind, DeclSource, Export, ExternRequirement, FacadeParam, FacadeType, FieldKind, Success, TypeDecl,
+    DeclSource, Export, ExternRequirement, FacadeParam, FacadeType, FacilityKind, FieldKind, Success, TypeDecl,
 };
 use lungo_runtime::wire::{self, Returns, Signature, Type};
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ pub struct Function {
     pub source: Option<DeclSource>,
 }
 
-/// An operation of a capability: an `@[extern]` declaration the host implements.
+/// An operation of a facility: an `@[extern]` declaration the host implements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Operation {
@@ -82,18 +82,18 @@ pub struct Operation {
     pub returns: Returns,
 }
 
-/// A capability the host provides by implementing its operations, each called synchronously.
+/// A facility the host provides by implementing its operations, each called synchronously.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Capability {
+pub struct Facility {
     /// The namespaced identifier, such as `time.clock`.
     pub id: String,
-    /// The Lean declaration registered as the capability.
+    /// The Lean declaration registered as the facility.
     pub lean_name: String,
     pub operations: Vec<Operation>,
 }
 
-/// An operation of an async capability: a constructor of its operation type.
+/// An operation of an async facility: a constructor of its operation type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AsyncOperation {
@@ -105,13 +105,13 @@ pub struct AsyncOperation {
     pub answer: Type,
 }
 
-/// A capability whose operations an async program asks the host to perform; the caller of an
+/// A facility whose operations an async program asks the host to perform; the caller of an
 /// async export passes a handler for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AsyncCapability {
+pub struct AsyncFacility {
     pub id: String,
-    /// The Lean declaration registered as the capability (its `Lungo.Async.Interface` instance).
+    /// The Lean declaration registered as the facility (its `Lungo.Async.Interface` instance).
     pub lean_name: String,
     /// The operation type: its index in the type table.
     pub op_type: u32,
@@ -168,10 +168,10 @@ pub struct Boundary {
     /// The Lean names of the table's types, by index.
     pub types: Vec<NamedType>,
     pub functions: Vec<Function>,
-    /// The capabilities whose operations the host implements, by identifier.
-    pub capabilities: Vec<Capability>,
-    /// The async capabilities the program's async exports ask operations of, by identifier.
-    pub async_capabilities: Vec<AsyncCapability>,
+    /// The facilities whose operations the host implements, by identifier.
+    pub facilities: Vec<Facility>,
+    /// The async facilities the program's async exports ask operations of, by identifier.
+    pub async_facilities: Vec<AsyncFacility>,
     /// `int32_t <prefix>run_main(size_t argc, const char *const *argv)`, when a root module
     /// defines `main`.
     pub run_main: Option<String>,
@@ -447,32 +447,30 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     let assurance = &input.success.assurance;
     let requirements: HashMap<&str, &ExternRequirement> =
         input.success.extern_requirements.iter().map(|r| (r.declaration.as_str(), r)).collect();
-    let capability_ids: HashMap<&str, &str> =
-        assurance.capabilities.iter().map(|c| (c.name.as_str(), c.id.as_str())).collect();
-    // The operations the host implements, grouped by capability: capabilities by identifier,
+    let facility_ids: HashMap<&str, &str> =
+        assurance.facilities.iter().map(|c| (c.name.as_str(), c.id.as_str())).collect();
+    // The operations the host implements, grouped by facility: facilities by identifier,
     // operations by declaration. Their order is the order of their indices.
     let mut grouped: std::collections::BTreeMap<&str, Vec<(&Declaration, &ExternRequirement, String, &str)>> =
         std::collections::BTreeMap::new();
     for (d, r) in &input.externs.resolutions {
         let Resolution::Application { key, .. } = r else { continue };
-        let decl = input
-            .program
-            .declaration(d)
-            .ok_or_else(|| vec![CodegenError::internal(format!("extern {d} missing"))])?;
+        let decl =
+            input.program.declaration(d).ok_or_else(|| vec![CodegenError::internal(format!("extern {d} missing"))])?;
         let req = requirements
             .get(d.as_str())
             .copied()
             .ok_or_else(|| vec![CodegenError::internal(format!("no extern requirement for {d}"))])?;
-        let capability = &req
+        let facility = &req
             .operation
             .as_ref()
             .ok_or_else(|| vec![CodegenError::internal(format!("{d} is implemented by the host but is no operation"))])?
-            .capability;
-        let id = capability_ids
-            .get(capability.as_str())
+            .facility;
+        let id = facility_ids
+            .get(facility.as_str())
             .copied()
-            .ok_or_else(|| vec![CodegenError::internal(format!("the capability {capability} has no record"))])?;
-        grouped.entry(id).or_default().push((decl, req, key.clone(), capability.as_str()));
+            .ok_or_else(|| vec![CodegenError::internal(format!("the facility {facility} has no record"))])?;
+        grouped.entry(id).or_default().push((decl, req, key.clone(), facility.as_str()));
     }
     let host_reqs: Vec<&ExternRequirement> = grouped.values().flatten().map(|(_, r, _, _)| *r).collect();
     let reachable = reachable_types(&interface.types, &interface.exports, &host_reqs, &|_| false);
@@ -496,23 +494,24 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
         }
     }
 
-    // Async capabilities, as the async exports ask their operations.
-    let mut async_capabilities: Vec<AsyncCapability> = Vec::new();
+    // Async facilities, as the async exports ask their operations.
+    let mut async_facilities: Vec<AsyncFacility> = Vec::new();
     for f in &functions {
         let Returns::Async { op, rets, .. } = &f.returns else { continue };
-        if async_capabilities.iter().any(|c| c.op_type == *op) {
+        if async_facilities.iter().any(|c| c.op_type == *op) {
             continue;
         }
         let op_name = &table.types[*op as usize].name;
-        let record = assurance.capabilities.iter().find(|c| {
-            matches!(&c.kind, CapabilityKind::Async { op_type, .. } if op_type == op_name)
-        });
+        let record = assurance
+            .facilities
+            .iter()
+            .find(|c| matches!(&c.kind, FacilityKind::Async { op_type, .. } if op_type == op_name));
         let Some(record) = record else {
             errors.push(CodegenError::external(
                 ErrorCode::AsyncInterface,
                 format!(
                     "{} returns an async program over {op_name}, which is not the operation type of an async \
-                     capability: give its `Lungo.Async.Interface {op_name}` instance `@[lungo_capability \"ns.name\"]`",
+                     facility: give its `Lungo.Async.Interface {op_name}` instance `@[lungo_facility \"ns.name\"]`",
                     f.lean_name
                 ),
             ));
@@ -523,19 +522,23 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
             .iter()
             .zip(rets)
             .enumerate()
-            .map(|(i, (c, answer))| AsyncOperation { ctor: i as u32, lean_name: c.name.clone(), answer: answer.clone() })
+            .map(|(i, (c, answer))| AsyncOperation {
+                ctor: i as u32,
+                lean_name: c.name.clone(),
+                answer: answer.clone(),
+            })
             .collect();
-        async_capabilities.push(AsyncCapability {
+        async_facilities.push(AsyncFacility {
             id: record.id.clone(),
             lean_name: record.name.clone(),
             op_type: *op,
             operations,
         });
     }
-    async_capabilities.sort_by(|a, b| a.id.cmp(&b.id));
+    async_facilities.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // Capabilities and their operations.
-    let mut capabilities = Vec::new();
+    // Facilities and their operations.
+    let mut facilities = Vec::new();
     let mut index = 0;
     for (id, ops) in &grouped {
         let mut operations = Vec::new();
@@ -546,13 +549,13 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
             }
             index += 1;
         }
-        capabilities.push(Capability { id: (*id).to_owned(), lean_name: ops[0].3.to_owned(), operations });
+        facilities.push(Facility { id: (*id).to_owned(), lean_name: ops[0].3.to_owned(), operations });
     }
     if !errors.is_empty() {
         return Err(errors);
     }
 
-    // The type table, the host callbacks, and the check that every capability is provided.
+    // The type table, the host callbacks, and the check that every facility is provided.
     w.line(format!("#include \"{}_program.h\"", input.id));
     w.line("");
     let table_bytes = table.encode();
@@ -584,11 +587,11 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
         w.line(format!("{prefix}host_callbacks[index] = callback;"));
     }
     w.close("}");
-    w.open(format!("void {prefix}check_capabilities(void) {{"));
-    for c in &capabilities {
+    w.open(format!("void {prefix}check_facilities(void) {{"));
+    for c in &facilities {
         for o in &c.operations {
             w.line(format!(
-                "if ({prefix}host_callbacks[{}] == 0) lungo_panic_capability_missing({}, {}, {});",
+                "if ({prefix}host_callbacks[{}] == 0) lungo_panic_facility_missing({}, {}, {});",
                 o.index,
                 string(c.id.as_bytes()),
                 string(operation_name(&o.declaration).as_bytes()),
@@ -618,8 +621,8 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
             })
             .collect(),
         functions,
-        capabilities,
-        async_capabilities,
+        facilities,
+        async_facilities,
         run_main: input.run_main.clone(),
         set_host_extern: format!("{prefix}set_host_extern"),
         types_symbol: format!("{prefix}types"),
@@ -628,14 +631,14 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     Ok((boundary, text))
 }
 
-/// The name of an operation within its capability: the last component of its declaration.
+/// The name of an operation within its facility: the last component of its declaration.
 pub fn operation_name(declaration: &str) -> &str {
     declaration.rsplit('.').next().unwrap_or(declaration)
 }
 
-/// The name of a capability in a package: the last segment of its identifier (`clock` for
+/// The name of a facility in a package: the last segment of its identifier (`clock` for
 /// `time.clock`), with `-` as `_`.
-pub fn capability_name(id: &str) -> String {
+pub fn facility_name(id: &str) -> String {
     id.rsplit('.').next().unwrap_or(id).replace('-', "_")
 }
 
@@ -837,8 +840,8 @@ fn opaque_returns(r: Returns) -> Result<Returns, CodegenError> {
         Returns::Async { .. } => {
             return Err(CodegenError::external(
                 ErrorCode::AsyncInterface,
-                "an operation of a capability returns an async program; an operation the host performs \
-                 asynchronously is a constructor of an async capability's operation type",
+                "an operation of a facility returns an async program; an operation the host performs \
+                 asynchronously is a constructor of an async facility's operation type",
             ));
         }
     })

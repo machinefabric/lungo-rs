@@ -6,16 +6,16 @@ import {
   type FetchOpHandler,
   type Lookup,
   type Point,
-  type PolyglotCapabilities,
+  type PolyglotFacilities,
   type Shape,
   type Tree,
 } from "polyglot";
 
-const capabilities: PolyglotCapabilities = {
+const facilities: PolyglotFacilities = {
   scaler: { hostScale: (n: bigint) => n },
   journal: { hostRecord: (_line: string) => {} },
 };
-const p = await load({ capabilities });
+const p = await load({ facilities });
 const handler: FetchOpHandler = {
   get: async (url: string) => ({ ok: true, value: url }),
   stamp: (t) => t,

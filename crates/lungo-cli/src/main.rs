@@ -126,9 +126,9 @@ struct AssuranceArgs {
     /// Only exports with a claim of this relation (repeatable).
     #[arg(long = "claim-kind")]
     claim_kinds: Vec<String>,
-    /// Only exports needing this capability, by Lean name or identifier (repeatable).
-    #[arg(long = "capability")]
-    capabilities: Vec<String>,
+    /// Only exports needing this facility, by Lean name or identifier (repeatable).
+    #[arg(long = "facility")]
+    facilities: Vec<String>,
     /// Only exports whose claims assume this, by Lean name (repeatable).
     #[arg(long = "assumption")]
     assumptions: Vec<String>,
@@ -368,7 +368,7 @@ fn assurance_command(file: &ProjectFile, env: &Environment, args: &AssuranceArgs
     let filters = assurance::Filters {
         declaration: args.declaration.clone(),
         claim_kinds: args.claim_kinds.clone(),
-        capabilities: args.capabilities.clone(),
+        facilities: args.facilities.clone(),
         assumptions: args.assumptions.clone(),
         trust_issues: args.trust_issues.clone(),
     };
@@ -630,11 +630,11 @@ fn report_summary(analysis: &Analysis) {
         .filter(|e| a.claims.iter().any(|c| !c.evidence_trust.depends_on_sorry && c.subjects.contains(&e.name)))
         .count();
     println!(
-        "assurance: {} specifications, {} claims ({} proved, {incomplete} incomplete), {} capabilities, {} assumptions; {claimed} of {} exports have proved claims",
+        "assurance: {} specifications, {} claims ({} proved, {incomplete} incomplete), {} facilities, {} assumptions; {claimed} of {} exports have proved claims",
         a.specs.len(),
         a.claims.len(),
         a.claims.len() - incomplete,
-        a.capabilities.len(),
+        a.facilities.len(),
         a.assumptions.len(),
         s.interface.exports.len()
     );
@@ -645,7 +645,7 @@ fn report_summary(analysis: &Analysis) {
 
 /// Prints what is known about `name`; source paths are shown relative to the configuration
 /// (`local_prefix` is the Lean project's path from it), as in generated code. An export's claims,
-/// trust, assumptions and capabilities are separate sections; so are the claims a theorem is the
+/// trust, assumptions and facilities are separate sections; so are the claims a theorem is the
 /// evidence of and those a specification is cited by.
 fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -> Result<()> {
     let s = &analysis.success;
@@ -677,7 +677,10 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
         if !c.specifications.is_empty() {
             println!("  specifications: {}", c.specifications.join(", "));
         }
-        println!("  assumptions: {}", if c.assumptions.is_empty() { "(none)".to_owned() } else { c.assumptions.join(", ") });
+        println!(
+            "  assumptions: {}",
+            if c.assumptions.is_empty() { "(none)".to_owned() } else { c.assumptions.join(", ") }
+        );
         println!("  evidence axioms: {}", c.evidence_trust.axioms.join(", "));
         println!("  evidence depends on sorry: {}", c.evidence_trust.depends_on_sorry);
         println!("  fingerprint: {}", c.fingerprint);
@@ -691,12 +694,16 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
     }
     if let Some(x) = doc.assumptions.iter().find(|x| x.name == name) {
         found = true;
-        println!("{name} is an assumption of {} — assumed, never proved: {}", x.capability, x.statement.replace('\n', " "));
+        println!(
+            "{name} is an assumption of {} — assumed, never proved: {}",
+            x.facility,
+            x.statement.replace('\n', " ")
+        );
     }
-    if let Some(c) = doc.capabilities.iter().find(|c| c.name == name) {
+    if let Some(c) = doc.facilities.iter().find(|c| c.name == name) {
         found = true;
         let ops: Vec<&str> = c.operations.iter().map(|o| o.name.as_str()).collect();
-        println!("{name} is the capability {}: operations {}", c.id, ops.join(", "));
+        println!("{name} is the facility {}: operations {}", c.id, ops.join(", "));
         if !c.assumptions.is_empty() {
             println!("  assumed of the host's implementation: {}", c.assumptions.join(", "));
         }
@@ -721,7 +728,7 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
         found = true;
         println!("extern: {:?}", r.entry);
         if let Some(op) = &r.operation {
-            println!("operation of the capability {}", op.capability);
+            println!("operation of the facility {}", op.facility);
         }
     }
     if !found {

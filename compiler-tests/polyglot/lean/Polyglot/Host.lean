@@ -1,17 +1,17 @@
 import Lungo
 
 /-!
-The capabilities the application provides in the host language: a scaler and a journal, each an
+The facilities the application provides in the host language: a scaler and a journal, each an
 `@[extern]` operation the host implements.
 -/
 namespace Polyglot
 
 /-- Scales numbers by the host's factor. -/
-@[lungo_capability "polyglot.scaler"]
+@[lungo_facility "polyglot.scaler"]
 structure Scaler
 
 /-- Keeps the host's log. -/
-@[lungo_capability "polyglot.journal"]
+@[lungo_facility "polyglot.journal"]
 structure Journal
 
 /-- Scales by the host's factor (pure). -/

@@ -144,7 +144,7 @@ partial def facade (tparams : Array FVarId) (ty : Expr) (fuel : Nat := 64) : Fac
     | ``EIO, #[e, a] => return .eio (← recur e) (← recur a)
     | ``BaseIO, #[a] => return .baseIO (← recur a)
     | `Lungo.Async.Program, #[op, inst, a] =>
-      -- An async program: the host answers each operation with the type the capability's
+      -- An async program: the host answers each operation with the type the facility's
       -- `Interface` instance gives that constructor.
       let .const opName [] := op.consumeMData
         | throwError "an async program's operations must be an inductive type without parameters, not {op}"

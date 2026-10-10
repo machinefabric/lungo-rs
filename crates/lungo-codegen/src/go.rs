@@ -7,14 +7,14 @@
 //! program rejects values Go can express that Lean cannot, and `IO` functions fail with
 //! `*lungo.IOError`, `EIO ε` functions with `*lungo.Error[ε]`.
 //!
-//! Each capability the host provides is an interface with a method per operation, installed with
-//! `Set<Capability>`; a call before every capability is installed fails with
-//! `*lungo.MissingCapabilityError`. An async export takes a `context.Context` and a handler of
-//! its async capability, whose methods the generated code calls for each operation the program
+//! Each facility the host provides is an interface with a method per operation, installed with
+//! `Set<Facility>`; a call before every facility is installed fails with
+//! `*lungo.MissingFacilityError`. An async export takes a `context.Context` and a handler of
+//! its async facility, whose methods the generated code calls for each operation the program
 //! asks. `Assurance()` is the program's assurance document.
 
 use crate::CodegenError;
-use crate::c::boundary::{AsyncCapability, Boundary, Capability, Function, Operation, capability_name, operation_name};
+use crate::c::boundary::{AsyncFacility, Boundary, Facility, Function, Operation, facility_name, operation_name};
 use crate::core::model::value_recursive;
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
@@ -214,8 +214,8 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
-/// The Go names of a capability.
-struct CapabilityNames {
+/// The Go names of a facility.
+struct FacilityNames {
     /// The interface.
     interface: String,
     /// The function installing an implementation.
@@ -226,7 +226,7 @@ struct CapabilityNames {
     methods: Vec<String>,
 }
 
-/// The Go names of an async capability.
+/// The Go names of an async facility.
 struct AsyncNames {
     /// The handler interface.
     handler: String,
@@ -239,7 +239,7 @@ struct AsyncNames {
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    capabilities: Vec<CapabilityNames>,
+    facilities: Vec<FacilityNames>,
     asyncs: Vec<AsyncNames>,
 }
 
@@ -317,24 +317,26 @@ impl Names {
                 scope.claim_function(&f.lean_name, s, |suffix| suffix.iter().map(|c| go_exported(c)).collect())
             })
             .collect::<Result<_, _>>()?;
-        let mut capabilities = Vec::new();
-        for c in &b.capabilities {
-            let interface = scope.claim(go_exported(&capability_name(&c.id)), format!("capability {}", c.id))?;
-            let setter = scope.claim(format!("Set{interface}"), format!("the installer of capability {}", c.id))?;
-            let var = scope.claim(format!("the{interface}"), format!("the implementation of capability {}", c.id))?;
+        let mut facilities = Vec::new();
+        for c in &b.facilities {
+            let interface = scope.claim(go_exported(&facility_name(&c.id)), format!("facility {}", c.id))?;
+            let setter = scope.claim(format!("Set{interface}"), format!("the installer of facility {}", c.id))?;
+            let var = scope.claim(format!("the{interface}"), format!("the implementation of facility {}", c.id))?;
             let mut methods = Scope::new("Go");
             let ms = c
                 .operations
                 .iter()
-                .map(|o| methods.claim(go_exported(operation_name(&o.declaration)), format!("operation {}", o.declaration)))
+                .map(|o| {
+                    methods.claim(go_exported(operation_name(&o.declaration)), format!("operation {}", o.declaration))
+                })
                 .collect::<Result<_, _>>()?;
-            capabilities.push(CapabilityNames { interface, setter, var, methods: ms });
+            facilities.push(FacilityNames { interface, setter, var, methods: ms });
         }
         let mut asyncs = Vec::new();
-        for c in &b.async_capabilities {
+        for c in &b.async_facilities {
             let op = &types[c.op_type as usize].name;
-            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
-            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async capability {}", c.id))?;
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async facility {}", c.id))?;
+            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async facility {}", c.id))?;
             let mut methods = Scope::new("Go");
             let ms = c
                 .operations
@@ -346,7 +348,7 @@ impl Names {
                 .collect::<Result<_, _>>()?;
             asyncs.push(AsyncNames { handler, perform, methods: ms });
         }
-        Ok(Names { types, functions, capabilities, asyncs })
+        Ok(Names { types, functions, facilities, asyncs })
     }
 }
 
@@ -572,8 +574,8 @@ impl Emitter<'_> {
                 self.named_type(&mut w, i);
             }
         }
-        self.capabilities(&mut w);
-        self.async_capabilities(&mut w);
+        self.facilities(&mut w);
+        self.async_facilities(&mut w);
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
         }
@@ -886,29 +888,29 @@ impl Emitter<'_> {
         (!is_unit(t)).then(|| self.go_type(t))
     }
 
-    /// The async capability whose operation type is `op`.
-    fn async_capability(&self, op: u32) -> (&AsyncCapability, &AsyncNames) {
+    /// The async facility whose operation type is `op`.
+    fn async_facility(&self, op: u32) -> (&AsyncFacility, &AsyncNames) {
         let b = self.boundary();
         let i = b
-            .async_capabilities
+            .async_facilities
             .iter()
             .position(|c| c.op_type == op)
-            .expect("the boundary has the async capability of every async export");
-        (&b.async_capabilities[i], &self.names.asyncs[i])
+            .expect("the boundary has the async facility of every async export");
+        (&b.async_facilities[i], &self.names.asyncs[i])
     }
 
-    /// `ready` checks that the host installed every capability before a call.
+    /// `ready` checks that the host installed every facility before a call.
     fn ready(&self, w: &mut Writer) {
         let b = self.boundary();
-        if b.capabilities.is_empty() {
+        if b.facilities.is_empty() {
             return;
         }
-        w.line("// ready fails unless the host installed every capability.");
+        w.line("// ready fails unless the host installed every facility.");
         w.line("func ready() error {");
-        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+        for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
             w.line(format!("\tif {}.Load() == nil {{", n.var));
             w.line(format!(
-                "\t\treturn &lungo.MissingCapabilityError{{Capability: \"{}\", Operation: \"{}\"}}",
+                "\t\treturn &lungo.MissingFacilityError{{Facility: \"{}\", Operation: \"{}\"}}",
                 c.id,
                 operation_name(&c.operations[0].declaration)
             ));
@@ -932,7 +934,7 @@ impl Emitter<'_> {
             None => "(err error)".to_owned(),
         };
         let asynchronous = match &f.returns {
-            Returns::Async { op, .. } => Some(self.async_capability(*op)),
+            Returns::Async { op, .. } => Some(self.async_facility(*op)),
             _ => None,
         };
         if let Some((_, an)) = asynchronous {
@@ -951,7 +953,7 @@ impl Emitter<'_> {
             ));
         }
         w.line(format!("func {name}{tp}({}) {results} {{", params.join(", ")));
-        if !self.boundary().capabilities.is_empty() {
+        if !self.boundary().facilities.is_empty() {
             w.line("\tif err = ready(); err != nil {");
             w.line("\t\treturn");
             w.line("\t}");
@@ -984,7 +986,7 @@ impl Emitter<'_> {
                 self.descriptor(value, Scoped::Function)
             ),
             Returns::Async { op, value, .. } => {
-                let (_, an) = self.async_capability(*op);
+                let (_, an) = self.async_facility(*op);
                 let op_type = Type::Inductive { index: *op, args: Vec::new() };
                 format!(
                     "lungo.DriveAsync(ctx, program(), status, out, {}, {}, func(ctx context.Context, op {}, w *lungo.Writer) error {{\n\t\treturn {}(ctx, handler, op, w)\n\t}})",
@@ -1005,19 +1007,19 @@ impl Emitter<'_> {
         w.line("");
     }
 
-    /// Each capability: its interface, and the function installing an implementation.
-    fn capabilities(&self, w: &mut Writer) {
+    /// Each facility: its interface, and the function installing an implementation.
+    fn facilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
-            self.capability(w, c, n);
+        for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
+            self.facility(w, c, n);
         }
         self.ready(w);
     }
 
-    fn capability(&self, w: &mut Writer, c: &Capability, n: &CapabilityNames) {
+    fn facility(&self, w: &mut Writer, c: &Facility, n: &FacilityNames) {
         let b = self.boundary();
         w.line(format!(
-            "// {} is the capability {} ({}), which the host provides. Its methods may run on any",
+            "// {} is the facility {} ({}), which the host provides. Its methods may run on any",
             n.interface, c.id, c.lean_name
         ));
         w.line("// goroutine's thread; an error of a method whose Lean type is not IO or EIO terminates the program.");
@@ -1039,7 +1041,7 @@ impl Emitter<'_> {
         w.line(format!("var {} atomic.Pointer[{}]", n.var, n.interface));
         w.line("");
         w.line(format!(
-            "// {} installs the implementation of the capability {}; the program's first call requires it.",
+            "// {} installs the implementation of the facility {}; the program's first call requires it.",
             n.setter, c.id
         ));
         w.line(format!("func {}(c {}) {{", n.setter, n.interface));
@@ -1095,16 +1097,16 @@ impl Emitter<'_> {
         }
     }
 
-    /// Each async capability: the handler interface async exports take, and the function
+    /// Each async facility: the handler interface async exports take, and the function
     /// dispatching an operation to it.
-    fn async_capabilities(&self, w: &mut Writer) {
+    fn async_facilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+        for (c, n) in b.async_facilities.iter().zip(&self.names.asyncs) {
             let decl = &b.table.types[c.op_type as usize];
             let tn = &self.names.types[c.op_type as usize];
             let op_type = Type::Inductive { index: c.op_type, args: Vec::new() };
             w.line(format!(
-                "// {} performs the operations of the async capability {} ({}) an async export asks.",
+                "// {} performs the operations of the async facility {} ({}) an async export asks.",
                 n.handler, c.id, c.lean_name
             ));
             w.line("// A method's error abandons the program, and the export returns it.");
@@ -1116,7 +1118,8 @@ impl Emitter<'_> {
             for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
                 let fields = &tn.ctors[o.ctor as usize].1;
                 let mut ps = vec!["ctx context.Context".to_owned()];
-                let locals = distinct_locals(ctor.fields.iter().enumerate().map(|(k, f)| go_local(&f.name, k)).collect());
+                let locals =
+                    distinct_locals(ctor.fields.iter().enumerate().map(|(k, f)| go_local(&f.name, k)).collect());
                 for (f, l) in ctor.fields.iter().zip(&locals) {
                     ps.push(format!("{l} {}", self.go_type(&f.ty)));
                 }
@@ -1135,9 +1138,8 @@ impl Emitter<'_> {
             let ptr = self.recursive[c.op_type as usize];
             let call = |w: &mut Writer, indent: &str, k: usize, x: &str| {
                 let o = &c.operations[k];
-                let args: Vec<String> = std::iter::once("ctx".to_owned())
-                    .chain(tn.ctors[k].1.iter().map(|f| format!("{x}.{f}")))
-                    .collect();
+                let args: Vec<String> =
+                    std::iter::once("ctx".to_owned()).chain(tn.ctors[k].1.iter().map(|f| format!("{x}.{f}"))).collect();
                 w.line(format!("{indent}answer, err := h.{}({})", n.methods[k], args.join(", ")));
                 w.line(format!("{indent}if err != nil {{"));
                 w.line(format!("{indent}\treturn err"));
@@ -1179,7 +1181,7 @@ impl Emitter<'_> {
         w.line("})");
         w.line("");
         w.line("// Assurance is the program's assurance document: what its Lean code claims and proves of each");
-        w.line("// export, what it trusts, and what it assumes of the host's capabilities.");
+        w.line("// export, what it trusts, and what it assumes of the host's facilities.");
         w.line("func Assurance() *lungo.Assurance { return assurance() }");
         w.line("");
     }

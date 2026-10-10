@@ -1,7 +1,7 @@
 # Rendered from lakefile.toml.wstemplate by `sdx`: edit the template, not lakefile.toml.
 #
 # lungo's Lean library: the declarations a Lean project uses to state what its exported
-# definitions are proved to do, which host capabilities they need and what they assume of them,
+# definitions are proved to do, which host facilities they need and what they assume of them,
 # and the async programs lungo projects as native async functions. Released with lungo, at
 # lungo's version.
 name = "lungo"

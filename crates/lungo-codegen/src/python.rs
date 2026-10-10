@@ -7,14 +7,14 @@
 //! polymorphic types `Generic`. `IO` functions raise `lungo_py.LeanIOError`, `EIO ε` functions
 //! `lungo_py.LeanError`, and arguments Lean cannot represent `lungo_py.MalformedError`.
 //!
-//! Each capability the host provides is a `Protocol` with a method per operation, installed with
-//! `set_<capability>`; a call before every capability is installed raises
-//! `lungo_py.MissingCapabilityError`. An async export is an `async def` taking a handler of its
-//! async capability, whose methods (coroutines or plain functions) it awaits for each operation
+//! Each facility the host provides is a `Protocol` with a method per operation, installed with
+//! `set_<facility>`; a call before every facility is installed raises
+//! `lungo_py.MissingFacilityError`. An async export is an `async def` taking a handler of its
+//! async facility, whose methods (coroutines or plain functions) it awaits for each operation
 //! the program asks. `ASSURANCE` is the program's assurance document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Capability, Function, capability_name, operation_name};
+use crate::c::boundary::{Boundary, Facility, Function, facility_name, operation_name};
 use crate::core::names::{components, snake_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
@@ -95,14 +95,14 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
-/// The Python names of a capability: its protocol, its installer, and its methods.
-struct CapabilityNames {
+/// The Python names of a facility: its protocol, its installer, and its methods.
+struct FacilityNames {
     protocol: String,
     setter: String,
     methods: Vec<String>,
 }
 
-/// The Python names of an async capability: its handler protocol, the dispatcher, the methods.
+/// The Python names of an async facility: its handler protocol, the dispatcher, the methods.
 struct AsyncNames {
     handler: String,
     perform: String,
@@ -112,7 +112,7 @@ struct AsyncNames {
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    capabilities: Vec<CapabilityNames>,
+    facilities: Vec<FacilityNames>,
     asyncs: Vec<AsyncNames>,
 }
 
@@ -174,23 +174,29 @@ impl Names {
             .zip(&b.functions)
             .map(|(s, f)| scope.claim_function(&f.lean_name, s, py_snake))
             .collect::<Result<_, _>>()?;
-        let mut capabilities = Vec::new();
-        for c in &b.capabilities {
-            let base = capability_name(&c.id);
-            let protocol = scope.claim(py_class(&[base.clone()]), format!("capability {}", c.id))?;
-            let setter = scope.claim(format!("set_{}", py_snake(&[base])), format!("the installer of capability {}", c.id))?;
+        let mut facilities = Vec::new();
+        for c in &b.facilities {
+            let base = facility_name(&c.id);
+            let protocol = scope.claim(py_class(&[base.clone()]), format!("facility {}", c.id))?;
+            let setter =
+                scope.claim(format!("set_{}", py_snake(&[base])), format!("the installer of facility {}", c.id))?;
             let mut methods = Scope::new("Python");
             let ms = c
                 .operations
                 .iter()
-                .map(|o| methods.claim(py_snake(&[operation_name(&o.declaration).to_owned()]), format!("operation {}", o.declaration)))
+                .map(|o| {
+                    methods.claim(
+                        py_snake(&[operation_name(&o.declaration).to_owned()]),
+                        format!("operation {}", o.declaration),
+                    )
+                })
                 .collect::<Result<_, _>>()?;
-            capabilities.push(CapabilityNames { protocol, setter, methods: ms });
+            facilities.push(FacilityNames { protocol, setter, methods: ms });
         }
         let mut asyncs = Vec::new();
-        for c in &b.async_capabilities {
+        for c in &b.async_facilities {
             let op = types[c.op_type as usize].class.clone();
-            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async facility {}", c.id))?;
             let perform = format!("_perform_{}", py_snake(&[op.clone()]));
             let mut methods = Scope::new("Python");
             let ms = c
@@ -203,7 +209,7 @@ impl Names {
                 .collect::<Result<_, _>>()?;
             asyncs.push(AsyncNames { handler, perform, methods: ms });
         }
-        Ok(Names { types, functions, capabilities, asyncs })
+        Ok(Names { types, functions, facilities, asyncs })
     }
 }
 
@@ -583,8 +589,8 @@ impl Emitter<'_> {
                 self.named_type(&mut w, i);
             }
         }
-        self.capabilities(&mut w);
-        self.async_capabilities(&mut w);
+        self.facilities(&mut w);
+        self.async_facilities(&mut w);
         for (f, name) in b.functions.iter().zip(&self.names.functions) {
             self.function(&mut w, f, name);
         }
@@ -598,11 +604,8 @@ impl Emitter<'_> {
         w.line("");
         w.line("");
         w.line("#: The program's assurance document: what its Lean code claims and proves of each export, what");
-        w.line("#: it trusts, and what it assumes of the host's capabilities.");
-        w.line(format!(
-            "ASSURANCE = lungo_py.Assurance.from_json({})",
-            py_string(&self.request.assurance.to_json())
-        ));
+        w.line("#: it trusts, and what it assumes of the host's facilities.");
+        w.line(format!("ASSURANCE = lungo_py.Assurance.from_json({})", py_string(&self.request.assurance.to_json())));
         let text = w.finish();
         format!("{}\n", text.trim_end())
     }
@@ -836,13 +839,13 @@ impl Emitter<'_> {
         }
     }
 
-    /// The index of the async capability whose operation type is `op`.
+    /// The index of the async facility whose operation type is `op`.
     fn async_index(&self, op: u32) -> usize {
         self.boundary()
-            .async_capabilities
+            .async_facilities
             .iter()
             .position(|c| c.op_type == op)
-            .expect("the boundary has the async capability of every async export")
+            .expect("the boundary has the async facility of every async export")
     }
 
     fn function(&self, w: &mut Writer, f: &Function, name: &str) {
@@ -868,7 +871,7 @@ impl Emitter<'_> {
             f.lean_name,
             f.lean_type.replace('\n', " ").replace("\"\"\"", "\\\"\\\"\\\"")
         ));
-        if !self.boundary().capabilities.is_empty() {
+        if !self.boundary().facilities.is_empty() {
             w.line("    _ready()");
         }
         let type_args: Vec<String> = (0..n).map(|k| format!("type_{},", param_name(k).to_lowercase())).collect();
@@ -897,14 +900,14 @@ impl Emitter<'_> {
         }
     }
 
-    /// Each capability: its protocol and installer, and `_ready`, which checks that every one was
+    /// Each facility: its protocol and installer, and `_ready`, which checks that every one was
     /// installed.
-    fn capabilities(&self, w: &mut Writer) {
+    fn facilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
-            self.capability(w, c, n);
+        for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
+            self.facility(w, c, n);
         }
-        if b.capabilities.is_empty() {
+        if b.facilities.is_empty() {
             return;
         }
         w.line("");
@@ -913,23 +916,23 @@ impl Emitter<'_> {
         w.line("");
         w.line("");
         w.line("def _ready() -> None:");
-        for c in &b.capabilities {
+        for c in &b.facilities {
             w.line(format!("    if {} not in _installed:", py_string(&c.id)));
             w.line(format!(
-                "        raise lungo_py.MissingCapabilityError({}, {})",
+                "        raise lungo_py.MissingFacilityError({}, {})",
                 py_string(&c.id),
                 py_string(operation_name(&c.operations[0].declaration))
             ));
         }
     }
 
-    fn capability(&self, w: &mut Writer, c: &Capability, n: &CapabilityNames) {
+    fn facility(&self, w: &mut Writer, c: &Facility, n: &FacilityNames) {
         let b = self.boundary();
         w.line("");
         w.line("");
         w.line(format!("class {}(_t.Protocol):", n.protocol));
         w.line(format!(
-            "    \"\"\"The capability {} ({}), which the host provides. Methods may run on any thread; an",
+            "    \"\"\"The facility {} ({}), which the host provides. Methods may run on any thread; an",
             c.id, c.lean_name
         ));
         w.line("    exception of a method whose Lean type is not IO or EIO terminates the program.");
@@ -956,7 +959,7 @@ impl Emitter<'_> {
         w.line("");
         w.line(format!("def {}(impl: {}) -> None:", n.setter, n.protocol));
         w.line(format!(
-            "    \"\"\"Installs the implementation of the capability {}; the program's first call requires it.\"\"\"",
+            "    \"\"\"Installs the implementation of the facility {}; the program's first call requires it.\"\"\"",
             c.id
         ));
         for (o, m) in c.operations.iter().zip(&n.methods) {
@@ -973,18 +976,18 @@ impl Emitter<'_> {
         w.line(format!("    _installed.add({})", py_string(&c.id)));
     }
 
-    /// Each async capability: the handler protocol async exports take, and the function that
+    /// Each async facility: the handler protocol async exports take, and the function that
     /// asks a handler for an operation's answer.
-    fn async_capabilities(&self, w: &mut Writer) {
+    fn async_facilities(&self, w: &mut Writer) {
         let b = self.boundary();
-        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+        for (c, n) in b.async_facilities.iter().zip(&self.names.asyncs) {
             let decl = &b.table.types[c.op_type as usize];
             let tn = &self.names.types[c.op_type as usize];
             w.line("");
             w.line("");
             w.line(format!("class {}(_t.Protocol):", n.handler));
             w.line(format!(
-                "    \"\"\"Performs the operations of the async capability {} ({}) an async export asks. A method",
+                "    \"\"\"Performs the operations of the async facility {} ({}) an async export asks. A method",
                 c.id, c.lean_name
             ));
             w.line("    is a coroutine or returns its answer; an exception abandons the program, and the export raises it.");

@@ -1100,8 +1100,9 @@ pub unsafe extern "C" fn lungo_invoke_async(
             if !matches!(inst.returns, Returns::Async { .. }) {
                 misuse(what, "the function does not return an async program; call it with lungo_invoke");
             }
-            let s = decode_step(table, &inst.returns, &bytes)
-                .unwrap_or_else(|e| lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}")));
+            let s = decode_step(table, &inst.returns, &bytes).unwrap_or_else(|e| {
+                lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}"))
+            });
             unsafe { set_step(step, s) };
             OK
         }
@@ -1154,8 +1155,9 @@ pub unsafe extern "C" fn lungo_resume(
     transfer(copy);
     match wire::program::resume(resumption, &input) {
         Ok(bytes) => {
-            let s = decode_step(table, &returns, &bytes)
-                .unwrap_or_else(|e| lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}")));
+            let s = decode_step(table, &returns, &bytes).unwrap_or_else(|e| {
+                lean_internal_panic(&format!("{what}: the runtime produced a malformed step: {e}"))
+            });
             unsafe { set_step(step, s) };
             OK
         }

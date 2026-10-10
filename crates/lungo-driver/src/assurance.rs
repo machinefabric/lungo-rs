@@ -6,7 +6,7 @@
 //! an operation that is not an extern, …) is an error with its own code, whatever the policy.
 //! Then the policy (`[assurance]` in `lungo.toml`, `Builder::require_claims` and
 //! `Builder::forbid_assumption`): exports that must carry a proved claim, and assumptions or
-//! capabilities nothing may rest on. The trust policy's `deny_sorry` and `deny_axioms` apply to
+//! facilities nothing may rest on. The trust policy's `deny_sorry` and `deny_axioms` apply to
 //! the evidence of claims through [`crate::LeanOptions::check_trust`].
 
 use crate::{Error, Result};
@@ -25,7 +25,7 @@ pub struct AssurancePolicy {
     /// `.` selects every export; any other path selects the export it names and every export in
     /// it as a namespace.
     pub require_claims: Vec<String>,
-    /// Assumptions, or capabilities (all of whose assumptions and operations), that no proved
+    /// Assumptions, or facilities (all of whose assumptions and operations), that no proved
     /// claim and no export may rest on, by Lean name.
     pub forbid_assumptions: Vec<String>,
 }
@@ -81,19 +81,19 @@ impl AssurancePolicy {
             }
         }
         let assumptions: BTreeMap<&str, &str> =
-            a.assumptions.iter().map(|x| (x.name.as_str(), x.capability.as_str())).collect();
-        let capabilities: BTreeSet<&str> = a.capabilities.iter().map(|c| c.name.as_str()).collect();
+            a.assumptions.iter().map(|x| (x.name.as_str(), x.facility.as_str())).collect();
+        let facilities: BTreeSet<&str> = a.facilities.iter().map(|c| c.name.as_str()).collect();
         for name in &self.forbid_assumptions {
-            if !assumptions.contains_key(name.as_str()) && !capabilities.contains(name.as_str()) {
+            if !assumptions.contains_key(name.as_str()) && !facilities.contains(name.as_str()) {
                 return Err(Error::Configuration(format!(
-                    "`forbid-assumptions` names {name:?}, which is neither an assumption nor a capability of the program"
+                    "`forbid-assumptions` names {name:?}, which is neither an assumption nor a facility of the program"
                 )));
             }
         }
         let forbidden = |assumption: &str| {
-            self.forbid_assumptions.iter().any(|f| {
-                f == assumption || assumptions.get(assumption).is_some_and(|cap| f == cap)
-            })
+            self.forbid_assumptions
+                .iter()
+                .any(|f| f == assumption || assumptions.get(assumption).is_some_and(|facility| f == facility))
         };
         for c in &a.claims {
             if claim_status(c) != ClaimStatus::Proved {
@@ -103,10 +103,7 @@ impl AssurancePolicy {
                 if forbidden(x) {
                     issues.push(AssuranceIssue {
                         code: ErrorCode::ForbiddenAssumption,
-                        message: format!(
-                            "the claim {} assumes {x}, which `forbid-assumptions` forbids",
-                            c.evidence
-                        ),
+                        message: format!("the claim {} assumes {x}, which `forbid-assumptions` forbids", c.evidence),
                     });
                 }
             }
@@ -114,16 +111,16 @@ impl AssurancePolicy {
         let forbidden_symbols: BTreeMap<&str, &str> = a
             .operations
             .iter()
-            .filter(|o| self.forbid_assumptions.iter().any(|f| f == &o.capability))
-            .map(|o| (o.symbol.as_str(), o.capability.as_str()))
+            .filter(|o| self.forbid_assumptions.iter().any(|f| f == &o.facility))
+            .map(|o| (o.symbol.as_str(), o.facility.as_str()))
             .collect();
         for e in &success.interface.exports {
             for s in &e.trust.extern_dependencies {
-                if let Some(cap) = forbidden_symbols.get(s.as_str()) {
+                if let Some(facility) = forbidden_symbols.get(s.as_str()) {
                     issues.push(AssuranceIssue {
                         code: ErrorCode::ForbiddenAssumption,
                         message: format!(
-                            "the export {} needs the capability {cap} (its operation `{s}`), which `forbid-assumptions` forbids",
+                            "the export {} needs the facility {facility} (its operation `{s}`), which `forbid-assumptions` forbids",
                             e.name
                         ),
                     });
@@ -159,7 +156,7 @@ pub fn record_issues(success: &Success) -> Vec<AssuranceIssue> {
                 ViolationKind::InvalidClaim => ErrorCode::InvalidClaim,
                 ViolationKind::NotInStatement => ErrorCode::ClaimNotInStatement,
                 ViolationKind::DuplicateId => ErrorCode::DuplicateAssuranceId,
-                ViolationKind::CapabilityMismatch => ErrorCode::CapabilityMismatch,
+                ViolationKind::FacilityMismatch => ErrorCode::FacilityMismatch,
                 ViolationKind::AsyncInterface => ErrorCode::AsyncInterface,
                 ViolationKind::LibraryVersion => ErrorCode::AssuranceLibraryVersion,
                 ViolationKind::MetadataOnlyDependency => ErrorCode::MetadataOnlyDependency,

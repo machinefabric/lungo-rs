@@ -7,7 +7,7 @@ import { ASSURANCE, load } from "polyglot";
 
 const lines = [];
 const p = await load({
-  capabilities: {
+  facilities: {
     scaler: { hostScale: (n) => n * 10n },
     journal: {
       hostRecord: (line) => {
@@ -107,8 +107,8 @@ test("TEST0055 opaque values", () => {
   assert.throws(() => p.bump(counter), L.MalformedError);
 });
 
-// TEST0056: host capabilities
-test("TEST0056 host capabilities", () => {
+// TEST0056: host facilities
+test("TEST0056 host facilities", () => {
   assert.equal(p.scaledSum([1n, 2n, 3n]), 60n);
   lines.length = 0;
   assert.equal(p.recordAll(["a", "b"]), 2n);
@@ -127,27 +127,27 @@ test("TEST0062 the browser WASI runs the program too", async () => {
   const out = [];
   const q = await load({
     wasi: new BrowserWasi({ stdout: (b) => out.push(new TextDecoder().decode(b)) }),
-    capabilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } },
+    facilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } },
   });
   assert.equal(q.factorial(20n), 2432902008176640000n);
   assert.equal(q.runMain([]), 0);
   assert.match(out.join(""), /polyglot \[\]/);
 });
 
-// TEST0297: loading without every capability fails, naming the capability and an operation of it
-test("TEST0297 a missing capability is named", async () => {
+// TEST0297: loading without every facility fails, naming the facility and an operation of it
+test("TEST0297 a missing facility is named", async () => {
   await assert.rejects(
-    load({ capabilities: { journal: { hostRecord: () => {} } } }),
-    (e) => e instanceof L.MissingCapabilityError && e.capability === "polyglot.scaler" && e.operation === "hostScale",
+    load({ facilities: { journal: { hostRecord: () => {} } } }),
+    (e) => e instanceof L.MissingFacilityError && e.facility === "polyglot.scaler" && e.operation === "hostScale",
   );
   await assert.rejects(
-    load({ capabilities: { journal: { hostRecord: () => {} }, scaler: {} } }),
-    (e) => e instanceof L.MissingCapabilityError && e.capability === "polyglot.scaler",
+    load({ facilities: { journal: { hostRecord: () => {} }, scaler: {} } }),
+    (e) => e instanceof L.MissingFacilityError && e.facility === "polyglot.scaler",
   );
 });
 
 // TEST0298: the package's assurance document is the program's: its claims, what they assume, and
-// the capabilities each export needs
+// the facilities each export needs
 test("TEST0298 assurance is the program's assurance", () => {
   const a = ASSURANCE;
   assert.deepEqual([a.program, a.schema_version, a.provenance.lean_version], ["polyglot", 1, "4.34.1"]);
@@ -160,12 +160,12 @@ test("TEST0298 assurance is the program's assurance", () => {
   // Proved, and conditional on what the host's scaler is assumed to do.
   const mono = claim("Polyglot.scaledSum_singleton_mono");
   assert.deepEqual([mono.status, mono.assumptions], ["proved", ["Polyglot.ScalesMonotonically"]]);
-  assert.deepEqual(exp("Polyglot.scaledSum").capabilities, ["Polyglot.Scaler"]);
+  assert.deepEqual(exp("Polyglot.scaledSum").facilities, ["Polyglot.Scaler"]);
   assert.deepEqual(exp("Polyglot.scaledSum").assumptions, ["Polyglot.ScalesMonotonically"]);
-  assert.deepEqual([exp("Polyglot.fetchAll").async, exp("Polyglot.fetchAll").capabilities], [true, ["Polyglot.fetchInterface"]]);
+  assert.deepEqual([exp("Polyglot.fetchAll").async, exp("Polyglot.fetchAll").facilities], [true, ["Polyglot.fetchInterface"]]);
   // Sorted by Lean name.
   assert.deepEqual(
-    a.capabilities.map((c) => `${c.id}/${c.form}`),
+    a.facilities.map((c) => `${c.id}/${c.form}`),
     ["polyglot.journal/extern", "polyglot.scaler/extern", "polyglot.fetch/async"],
   );
   assert.deepEqual(exp("Polyglot.negate").claims, []);
@@ -222,7 +222,7 @@ test("TEST0302 concurrent async programs resume independently", async () => {
 test("TEST0303 a process ends with a program waiting", () => {
   const script = `
     import { load } from "polyglot";
-    const p = await load({ capabilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } } });
+    const p = await load({ facilities: { scaler: { hostScale: (n) => n }, journal: { hostRecord: () => {} } } });
     p.fetchAll({ get: () => new Promise(() => {}) }, ["slow"]);
     await new Promise((r) => setTimeout(r, 10));
     console.log("waiting:", p.outstanding());

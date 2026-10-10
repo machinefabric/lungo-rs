@@ -1,7 +1,7 @@
 import Lungo
 
 /-!
-An async capability: operations the program asks the host to perform asynchronously, answered
+An async facility: operations the program asks the host to perform asynchronously, answered
 with a string or an error, an opaque token, or a function.
 -/
 namespace Polyglot
@@ -21,7 +21,7 @@ inductive FetchOp where
   | stamp (t : Token)
   | scaler (k : Nat)
 
-@[lungo_capability "polyglot.fetch"]
+@[lungo_facility "polyglot.fetch"]
 instance fetchInterface : Lungo.Async.Interface FetchOp where
   Ret
     | .get _ => Except String String

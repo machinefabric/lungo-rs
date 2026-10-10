@@ -155,7 +155,7 @@ worker is rebuilt automatically; persistent protocol errors indicate an installa
 
 **Unresolved extern symbol.** An `@[extern]` declaration reachable from the root modules is
 implemented neither by a Lean `@[export]` definition nor by the lungo runtime, and is not an
-operation of a capability (`@[lungo_operation C]`), which only the host implements; or it is an
+operation of a facility (`@[lungo_operation C]`), which only the host implements; or it is an
 operation the Rust output has no `rust_extern` mapping for. The message names the declaration,
 its symbol, Lean type, required representation, and source location.
 
@@ -168,7 +168,7 @@ Lean type: Nat → Nat
 Expected runtime representation: (tobj) -> tobj
 Source: lean/Unknown.lean:3:1
 
-Nothing implements it. If the host is to implement it, make it an operation of a capability: give it `@[lungo_operation C]`, `C` being a declaration with `@[lungo_capability "ns.name"]` (lungo's Lean library).
+Nothing implements it. If the host is to implement it, make it an operation of a facility: give it `@[lungo_operation C]`, `C` being a declaration with `@[lungo_facility "ns.name"]` (lungo's Lean library).
 ```
 
 ### LNG0402
@@ -262,15 +262,15 @@ error[LNG0602]: the export Formal.step has no proved claim (`require-claims` sel
 ### LNG0603
 
 **Forbidden assumption.** A proved claim takes as a hypothesis an assumption `forbid-assumptions`
-names (or an assumption of a capability it names), or an export calls an operation of a
-capability it names.
+names (or an assumption of a facility it names), or an export calls an operation of a
+facility it names.
 
 ## Assurance records
 
 ### LNG0701
 
 **Malformed assurance record.** A record (`decl._lungo_…`) is not in the form lungo's Lean
-library writes, or names a specification kind, relation, role or capability identifier that is
+library writes, or names a specification kind, relation, role or facility identifier that is
 not a well-formed namespaced string, or not one lungo defines in the `lungo` namespace. Records
 are written by the `@[lungo_…]` attributes; one written by hand is read and checked the same way.
 
@@ -278,7 +278,7 @@ are written by the `@[lungo_…]` attributes; one written by hand is read and ch
 
 **Dangling assurance reference.** A record names a declaration that does not exist, a claim
 cites a specification without `@[lungo_spec]`, or an operation or assumption names something that
-is not a capability.
+is not a facility.
 
 ### LNG0703
 
@@ -293,26 +293,26 @@ of the claim's subjects or specifications: the theorem is not about what the cla
 
 ### LNG0705
 
-**Duplicate assurance identifier.** Two capabilities have the same identifier.
+**Duplicate assurance identifier.** Two facilities have the same identifier.
 
 ### LNG0706
 
-**Capability mismatch.** An operation of a capability is not an `@[extern]` declaration with an
-entry for C, belongs to an async capability, or has a symbol Lean (`@[export]`) or the lungo
+**Facility mismatch.** An operation of a facility is not an `@[extern]` declaration with an
+entry for C, belongs to an async facility, or has a symbol Lean (`@[export]`) or the lungo
 runtime already implements; or a `rust_extern` mapping names an extern that is not an operation
-of a capability.
+of a facility.
 
 ### LNG0707
 
 **Invalid async interface.** An export returns an async program (`Lungo.Async.Program op α`)
-whose `Lungo.Async.Interface op` instance is not registered with `@[lungo_capability]`, whose
+whose `Lungo.Async.Interface op` instance is not registered with `@[lungo_facility]`, whose
 operations cannot cross to the host, or whose answer type depends on the operation's arguments;
 or an async program appears inside a value rather than as what a function returns.
 
 ### LNG0708
 
 **Assurance fingerprint mismatch.** `lungo assurance --compose`: two assurance documents
-describe a record with the same name (a specification, claim, capability or assumption)
+describe a record with the same name (a specification, claim, facility or assumption)
 differently: from another Lake package, or with another meaning. The packages were generated
 from different definitions; regenerate them from the same Lean sources.
 

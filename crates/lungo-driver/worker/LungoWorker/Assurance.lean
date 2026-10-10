@@ -7,7 +7,7 @@ import LungoWorker.LCNFAdapter
 
 /-!
 The assurance records of a program: what its Lean code registered with lungo's Lean library
-(`@[lungo_spec]`, `@[lungo_claim]`, `@[lungo_capability]`, `@[lungo_operation]`,
+(`@[lungo_spec]`, `@[lungo_claim]`, `@[lungo_facility]`, `@[lungo_operation]`,
 `@[lungo_assumption]`, `@[lungo_role]`), read from the compiled environment and checked against
 it.
 
@@ -40,7 +40,7 @@ inductive ViolationKind where
   | invalidClaim
   | notInStatement
   | duplicateId
-  | capabilityMismatch
+  | facilityMismatch
   | asyncInterface
   | libraryVersion
   | metadataOnlyDependency
@@ -52,7 +52,7 @@ def ViolationKind.toCbor : ViolationKind → Value
   | .invalidClaim => unitVariant "invalid_claim"
   | .notInStatement => unitVariant "not_in_statement"
   | .duplicateId => unitVariant "duplicate_id"
-  | .capabilityMismatch => unitVariant "capability_mismatch"
+  | .facilityMismatch => unitVariant "facility_mismatch"
   | .asyncInterface => unitVariant "async_interface"
   | .libraryVersion => unitVariant "library_version"
   | .metadataOnlyDependency => unitVariant "metadata_only_dependency"
@@ -141,16 +141,16 @@ structure ClaimRec where
   relation : String
   subjects : List Name
   specs : List Name
-structure CapabilityRec where
+structure FacilityRec where
   decl : Name
   id : String
   async : Option Name
 structure OperationRec where
   decl : Name
-  capability : Name
+  facility : Name
 structure AssumptionRec where
   decl : Name
-  capability : Name
+  facility : Name
 structure RoleRec where
   decl : Name
   role : String
@@ -159,7 +159,7 @@ structure RoleRec where
 structure Records where
   specs : NameMap SpecRec := {}
   claims : NameMap ClaimRec := {}
-  capabilities : NameMap CapabilityRec := {}
+  facilities : NameMap FacilityRec := {}
   operations : NameMap OperationRec := {}
   assumptions : NameMap AssumptionRec := {}
   roles : NameMap RoleRec := {}
@@ -173,7 +173,7 @@ def recordKind? (ty : Expr) : Option String :=
   match ty with
   | .const `Lungo.Registry.Spec [] => some "spec"
   | .const `Lungo.Registry.Claim [] => some "claim"
-  | .const `Lungo.Registry.Capability [] => some "capability"
+  | .const `Lungo.Registry.Facility [] => some "facility"
   | .const `Lungo.Registry.Operation [] => some "operation"
   | .const `Lungo.Registry.Assumption [] => some "assumption"
   | .const `Lungo.Registry.Role [] => some "role"
@@ -210,28 +210,28 @@ def readRecord (r : Records) (n : Name) (kind : String) (ci : ConstantInfo) : Re
             { r with claims := r.claims.insert evidence { evidence, relation, subjects, specs } }
         | _, _, _, _ => malformed "its value is not in canonical form"
       | _ => malformed "its value is not a `Lungo.Registry.Claim.mk` application"
-    | "capability" =>
-      match ctorArgs `Lungo.Registry.Capability.mk 3 d.value with
+    | "facility" =>
+      match ctorArgs `Lungo.Registry.Facility.mk 3 d.value with
       | some #[a, b, c] =>
         match decodeName a, decodeString b, decodeOptionName c with
         | some decl, some id, some async =>
-          named decl fun r => { r with capabilities := r.capabilities.insert decl { decl, id, async } }
+          named decl fun r => { r with facilities := r.facilities.insert decl { decl, id, async } }
         | _, _, _ => malformed "its value is not in canonical form"
-      | _ => malformed "its value is not a `Lungo.Registry.Capability.mk` application"
+      | _ => malformed "its value is not a `Lungo.Registry.Facility.mk` application"
     | "operation" =>
       match ctorArgs `Lungo.Registry.Operation.mk 2 d.value with
       | some #[a, b] =>
         match decodeName a, decodeName b with
-        | some decl, some capability =>
-          named decl fun r => { r with operations := r.operations.insert decl { decl, capability } }
+        | some decl, some facility =>
+          named decl fun r => { r with operations := r.operations.insert decl { decl, facility } }
         | _, _ => malformed "its value is not in canonical form"
       | _ => malformed "its value is not a `Lungo.Registry.Operation.mk` application"
     | "assumption" =>
       match ctorArgs `Lungo.Registry.Assumption.mk 2 d.value with
       | some #[a, b] =>
         match decodeName a, decodeName b with
-        | some decl, some capability =>
-          named decl fun r => { r with assumptions := r.assumptions.insert decl { decl, capability } }
+        | some decl, some facility =>
+          named decl fun r => { r with assumptions := r.assumptions.insert decl { decl, facility } }
         | _, _ => malformed "its value is not in canonical form"
       | _ => malformed "its value is not a `Lungo.Registry.Assumption.mk` application"
     | "role" =>
@@ -415,8 +415,8 @@ def sortNames (xs : Array Name) : Array Name :=
 
 def names (xs : List Name) : Value := arr (xs.toArray.map BridgeIR.name)
 
-/-- Why the async capability `inst`, an instance of `Lungo.Async.Interface op`, is not one a host
-can serve, as `@[lungo_capability]` checks it: an operation with a field a host cannot supply, or
+/-- Why the async facility `inst`, an instance of `Lungo.Async.Interface op`, is not one a host
+can serve, as `@[lungo_facility]` checks it: an operation with a field a host cannot supply, or
 whose answer's type is not fixed by the operation alone. `none` when it can. -/
 def asyncProblem (op inst : Name) (ctors : List Name) : MetaM (Option String) := do
   for ctor in ctors do
@@ -479,17 +479,17 @@ def analyze (input : Input) : IO (Except String Output) := do
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     specsOut := specsOut.push (obj [("name", BridgeIR.name decl), ("kind", str s.kind),
       ("statement", str statement), ("origin", origin), ("fingerprint_material", str material)])
-  -- Capabilities.
-  let mut capabilitiesOut := #[]
+  -- Facilities.
+  let mut facilitiesOut := #[]
   let mut ids : Std.HashMap String Name := {}
-  for (decl, c) in rec_.capabilities.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
+  for (decl, c) in rec_.facilities.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
     let some ci := env.find? decl
-      | violations := flag .danglingReference decl s!"the capability `{decl}` does not exist" violations; continue
-    if let some why := kindProblem "capability identifier" c.id [] then
-      violations := flag .malformedRecord decl s!"the capability `{decl}`: {why}" violations
+      | violations := flag .danglingReference decl s!"the facility `{decl}` does not exist" violations; continue
+    if let some why := kindProblem "facility identifier" c.id [] then
+      violations := flag .malformedRecord decl s!"the facility `{decl}`: {why}" violations
     if let some other := ids[c.id]? then
       violations := flag .duplicateId decl
-        s!"the capabilities `{other}` and `{decl}` have the same identifier `{c.id}`" violations
+        s!"the facilities `{other}` and `{decl}` have the same identifier `{c.id}`" violations
     ids := ids.insert c.id decl
     let mut kind := unitVariant "extern"
     let mut exprs := [("type", ci.type)]
@@ -499,54 +499,54 @@ def analyze (input : Input) : IO (Except String Output) := do
         | _ => false
       unless ok do
         violations := flag .asyncInterface decl
-          s!"the async capability `{decl}` is not an instance of `Lungo.Async.Interface {op}`" violations
+          s!"the async facility `{decl}` is not an instance of `Lungo.Async.Interface {op}`" violations
       match env.find? op with
       | some (.inductInfo info) =>
         if info.numParams != 0 || info.numIndices != 0 then
           violations := flag .asyncInterface decl
-            s!"the operations of the async capability `{decl}`, `{op}`, have parameters or indices" violations
+            s!"the operations of the async facility `{decl}`, `{op}`, have parameters or indices" violations
         if ok then
           match ← run (asyncProblem op decl info.ctors).run' with
           | .ok none => pure ()
           | .ok (some why) =>
-            violations := flag .asyncInterface decl s!"the async capability `{decl}`: {why}" violations
+            violations := flag .asyncInterface decl s!"the async facility `{decl}`: {why}" violations
           | .error e =>
-            violations := flag .asyncInterface decl s!"the async capability `{decl}` cannot be checked: {e}" violations
+            violations := flag .asyncInterface decl s!"the async facility `{decl}` cannot be checked: {e}" violations
         let ctors := info.ctors.filterMap fun ctor => (env.find? ctor).map fun cci => (ctor, cci.type)
         exprs := exprs ++ ctors.map fun (ctor, t) => (s!"operation {escape ctor.toString}", t)
         kind := variant "async" [("op_type", BridgeIR.name op), ("operations", arr (info.ctors.toArray.map BridgeIR.name))]
       | _ =>
         violations := flag .asyncInterface decl
-          s!"the operations of the async capability `{decl}`, `{op}`, are not an inductive type" violations
-    let material ← match canonText ci.levelParams s!"capability {c.id}" exprs with
+          s!"the operations of the async facility `{decl}`, `{op}`, are not an inductive type" violations
+    let material ← match canonText ci.levelParams s!"facility {c.id}" exprs with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
-    capabilitiesOut := capabilitiesOut.push (obj [("name", BridgeIR.name decl), ("id", str c.id),
+    facilitiesOut := facilitiesOut.push (obj [("name", BridgeIR.name decl), ("id", str c.id),
       ("kind", kind), ("origin", origin), ("fingerprint_material", str material)])
   -- Operations.
   let mut operationsOut := #[]
   for (decl, o) in rec_.operations.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
     let some ci := env.find? decl
       | violations := flag .danglingReference decl s!"the operation `{decl}` does not exist" violations; continue
-    match rec_.capabilities.find? o.capability with
+    match rec_.facilities.find? o.facility with
     | none =>
       violations := flag .danglingReference decl
-        s!"the operation `{decl}` belongs to `{o.capability}`, which is not a capability" violations
+        s!"the operation `{decl}` belongs to `{o.facility}`, which is not a facility" violations
     | some c =>
       if c.async.isSome then
-        violations := flag .capabilityMismatch decl
-          s!"the operation `{decl}` belongs to the async capability `{o.capability}`, whose operations are \
+        violations := flag .facilityMismatch decl
+          s!"the operation `{decl}` belongs to the async facility `{o.facility}`, whose operations are \
             the constructors of its operation type" violations
     let some symbol := externSymbol? env decl
-      | violations := flag .capabilityMismatch decl
+      | violations := flag .facilityMismatch decl
           s!"the operation `{decl}` is not an `@[extern]` declaration with an entry for C" violations; continue
     let material ← match canonText ci.levelParams s!"operation {escape symbol}" [("type", ci.type)] with
       | .ok m => pure m
       | .error e => return .error s!"cannot fingerprint `{decl}`: {e}"
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     operationsOut := operationsOut.push (obj [("name", BridgeIR.name decl),
-      ("capability", BridgeIR.name o.capability), ("symbol", str symbol),
+      ("facility", BridgeIR.name o.facility), ("symbol", str symbol),
       ("reachable", .bool (input.closureNames.contains decl)), ("origin", origin),
       ("fingerprint_material", str material)])
   -- Assumptions.
@@ -554,9 +554,9 @@ def analyze (input : Input) : IO (Except String Output) := do
   for (decl, a) in rec_.assumptions.toArray.qsort (fun a b => BridgeIR.nameString a.1 < BridgeIR.nameString b.1) do
     let some ci := env.find? decl
       | violations := flag .danglingReference decl s!"the assumption `{decl}` does not exist" violations; continue
-    unless rec_.capabilities.contains a.capability do
+    unless rec_.facilities.contains a.facility do
       violations := flag .danglingReference decl
-        s!"the assumption `{decl}` is of `{a.capability}`, which is not a capability" violations
+        s!"the assumption `{decl}` is of `{a.facility}`, which is not a facility" violations
     let isProposition ← match ← run (do
         let r : MetaM Bool := forallTelescopeReducing ci.type fun _ b => return (← whnfD b).isProp
         r.run') with
@@ -571,7 +571,7 @@ def analyze (input : Input) : IO (Except String Output) := do
     let statement ← match ← run (pretty ci.type) with | .ok s => pure s | .error e => return .error e
     let origin ← match ← run (input.origin decl) with | .ok o => pure o | .error e => return .error e
     assumptionsOut := assumptionsOut.push (obj [("name", BridgeIR.name decl),
-      ("capability", BridgeIR.name a.capability), ("statement", str statement), ("origin", origin),
+      ("facility", BridgeIR.name a.facility), ("statement", str statement), ("origin", origin),
       ("fingerprint_material", str material)])
   -- Claims.
   let mut claimsOut := #[]
@@ -643,7 +643,7 @@ def analyze (input : Input) : IO (Except String Output) := do
   return .ok {
     value := obj [
       ("library", obj [("package", str input.lib.package), ("schema_version", nat input.lib.schemaVersion)]),
-      ("specs", arr specsOut), ("claims", arr claimsOut), ("capabilities", arr capabilitiesOut),
+      ("specs", arr specsOut), ("claims", arr claimsOut), ("facilities", arr facilitiesOut),
       ("operations", arr operationsOut), ("assumptions", arr assumptionsOut), ("roles", arr rolesOut)]
     violations
   }

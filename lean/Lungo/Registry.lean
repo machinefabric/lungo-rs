@@ -39,25 +39,25 @@ structure Claim where
   subjects : List Lean.Name
   specs : List Lean.Name
 
-/-- `@[lungo_capability id]`: `decl` names a capability the host provides. `async` is the
-operation type when `decl` is an instance of `Lungo.Async.Interface`; the capability's
+/-- `@[lungo_facility id]`: `decl` names a facility the host provides. `async` is the
+operation type when `decl` is an instance of `Lungo.Async.Interface`; the facility's
 operations are then that type's constructors. -/
-structure Capability where
+structure Facility where
   decl : Lean.Name
   id : String
   async : Option Lean.Name
 
-/-- `@[lungo_operation capability]`: the `@[extern]` declaration `decl` is one of the operations
-of `capability`, implemented by the host. -/
+/-- `@[lungo_operation facility]`: the `@[extern]` declaration `decl` is one of the operations
+of `facility`, implemented by the host. -/
 structure Operation where
   decl : Lean.Name
-  capability : Lean.Name
+  facility : Lean.Name
 
-/-- `@[lungo_assumption capability]`: the proposition `decl` is assumed of the host's
-implementation of `capability`, never proved. -/
+/-- `@[lungo_assumption facility]`: the proposition `decl` is assumed of the host's
+implementation of `facility`, never proved. -/
 structure Assumption where
   decl : Lean.Name
-  capability : Lean.Name
+  facility : Lean.Name
 
 /-- `@[lungo_role role]`: `decl` plays `role` (an implementation, an oracle, a monitor, a model). -/
 structure Role where

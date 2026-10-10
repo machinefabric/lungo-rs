@@ -48,7 +48,7 @@ static uint64_t nat(const lungo_value *v) {
     return x;
 }
 
-/* Host capabilities. */
+/* Host facilities. */
 static char log_lines[8][64];
 static size_t log_count = 0;
 
@@ -172,9 +172,9 @@ int main(int argc, char **argv) {
        bytes, so this program's are too (a text-mode stream would end them with "\r\n"). */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-    /* TEST0297: a call before every capability is implemented ends the process, naming the
-       capability and the operation (the test runs this case in a process of its own). */
-    if (argc == 2 && strcmp(argv[1], "without-capabilities") == 0) {
+    /* TEST0297: a call before every facility is implemented ends the process, naming the
+       facility and the operation (the test runs this case in a process of its own). */
+    if (argc == 2 && strcmp(argv[1], "without-facilities") == 0) {
         polyglot_implement_journal_host_record(record, NULL, NULL);
         lungo_value *three = lungo_value_nat(3);
         polyglot_factorial(three, &result_, &error_);
@@ -374,7 +374,7 @@ int main(int argc, char **argv) {
     lungo_value_free(v2);
     lungo_value_free(copy);
 
-    /* TEST0056: host capabilities. */
+    /* TEST0056: host facilities. */
     lungo_value *nums[3] = {lungo_value_nat(1), lungo_value_nat(2), lungo_value_nat(3)};
     lungo_value *numbers = lungo_value_list(nums, 3);
     lungo_value *scaled = OK(polyglot_scaled_sum(numbers, &result_, &error_));

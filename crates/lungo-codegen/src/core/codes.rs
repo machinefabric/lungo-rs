@@ -115,7 +115,7 @@ codes! {
     TrustPolicy = "LNG0601", "trust policy violation";
     /// An export `require-claims` selects has no proved claim.
     ExportWithoutClaim = "LNG0602", "export without a proved claim";
-    /// A proved claim, or an export, depends on an assumption or capability
+    /// A proved claim, or an export, depends on an assumption or facility
     /// `forbid-assumptions` names.
     ForbiddenAssumption = "LNG0603", "forbidden assumption";
 
@@ -133,10 +133,10 @@ codes! {
     ClaimNotInStatement = "LNG0704", "claim subject not in its statement";
     /// Two records carry the same identifier.
     DuplicateAssuranceId = "LNG0705", "duplicate assurance identifier";
-    /// An operation of a capability is not an extern the host can implement, or a `rust_extern`
+    /// An operation of a facility is not an extern the host can implement, or a `rust_extern`
     /// mapping names an extern that is not an operation.
-    CapabilityMismatch = "LNG0706", "capability mismatch";
-    /// An async capability's interface, or an async export, cannot cross to the host.
+    FacilityMismatch = "LNG0706", "facility mismatch";
+    /// An async facility's interface, or an async export, cannot cross to the host.
     AsyncInterface = "LNG0707", "invalid async interface";
     /// `lungo assurance --compose`: two packages describe the same record differently.
     FingerprintMismatch = "LNG0708", "assurance fingerprint mismatch";

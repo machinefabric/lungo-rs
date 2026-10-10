@@ -7,11 +7,11 @@
 //!
 //! Every Lean value is a `lungo_value`; the API adds, per type, its type expression, named
 //! constructors and field accessors, per exported function a C function checking and passing its
-//! arguments, per operation of a capability a function the host implements it with, and the
+//! arguments, per operation of a facility a function the host implements it with, and the
 //! program's assurance document. An async export returns its program's first step
 //! (`lungo_step`), answered with `lungo_resume`. Objective-C uses the same API.
 
-use super::boundary::{Boundary, byte_array, capability_name, describe_type, operation_name};
+use super::boundary::{Boundary, byte_array, describe_type, facility_name, operation_name};
 use super::syntax::comment;
 use crate::CodegenError;
 use crate::core::names::{components, snake_case};
@@ -88,7 +88,7 @@ struct TypeNames {
 struct Names {
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    /// Per capability, the function implementing each operation.
+    /// Per facility, the function implementing each operation.
     operations: Vec<Vec<String>>,
     initialize: String,
     run_main: Option<String>,
@@ -268,13 +268,13 @@ impl Names {
             .map(|(short, f)| scope.claim_function(&f.lean_name, short, |suffix| format!("{id}_{}", snake(suffix))))
             .collect::<Result<_, _>>()?;
         let mut operations = Vec::new();
-        for c in &b.capabilities {
-            let cap = snake_case(&capability_name(&c.id));
+        for c in &b.facilities {
+            let facility = snake_case(&facility_name(&c.id));
             let mut ops = Vec::new();
             for o in &c.operations {
                 ops.push(scope.claim(
-                    format!("{id}_implement_{cap}_{}", snake_case(operation_name(&o.declaration))),
-                    format!("operation {} of capability {}", o.declaration, c.id),
+                    format!("{id}_implement_{facility}_{}", snake_case(operation_name(&o.declaration))),
+                    format!("operation {} of facility {}", o.declaration, c.id),
                 )?);
             }
             operations.push(ops);
@@ -387,9 +387,9 @@ fn header(request: &GenerateRequest, names: &Names) -> String {
         w.line(format!("{};", function_prototype(name, f)));
         w.line("");
     }
-    for (c, ops) in b.capabilities.iter().zip(&names.operations) {
+    for (c, ops) in b.facilities.iter().zip(&names.operations) {
         w.line(comment(&format!(
-            "The capability {} ({}): the host implements every operation before the program initializes.{}",
+            "The facility {} ({}): the host implements every operation before the program initializes.{}",
             c.id,
             c.lean_name,
             assumptions_note(request, &c.lean_name)
@@ -401,10 +401,10 @@ fn header(request: &GenerateRequest, names: &Names) -> String {
         }
         w.line("");
     }
-    for c in &b.async_capabilities {
+    for c in &b.async_facilities {
         let op = &b.types[c.op_type as usize].lean_name;
         w.line(comment(&format!(
-            "The async capability {} ({}): an async export asks the host to perform a {op}, the step's value, \
+            "The async facility {} ({}): an async export asks the host to perform a {op}, the step's value, \
              and is resumed with the answer.{}",
             c.id,
             c.lean_name,
@@ -445,7 +445,7 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
             w.line(l);
         }
     }
-    for (i, o) in b.capabilities.iter().flat_map(|c| &c.operations).enumerate() {
+    for (i, o) in b.facilities.iter().flat_map(|c| &c.operations).enumerate() {
         for l in byte_array(&format!("host_sig_{i}"), &o.signature().encode()) {
             w.line(l);
         }
@@ -537,8 +537,11 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
             w.line(format!("const lungo_value *args[{}] = {{{}}};", values.len(), values.join(", ")));
             format!("args, {}", values.len())
         };
-        let (invoke, out) =
-            if matches!(f.returns, Returns::Async { .. }) { ("lungo_invoke_async", "step") } else { ("lungo_invoke", "result") };
+        let (invoke, out) = if matches!(f.returns, Returns::Async { .. }) {
+            ("lungo_invoke_async", "step")
+        } else {
+            ("lungo_invoke", "result")
+        };
         w.line(format!(
             "return {invoke}({}(), {}, sig_{i}, sizeof sig_{i}, {type_args}, {args}, {out}, error);",
             b.types_symbol, f.symbol
@@ -546,7 +549,7 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
         w.close("}");
         w.line("");
     }
-    let operations = b.capabilities.iter().flat_map(|c| &c.operations);
+    let operations = b.facilities.iter().flat_map(|c| &c.operations);
     for (i, (o, name)) in operations.zip(names.operations.iter().flatten()).enumerate() {
         w.open(format!("void {name}(lungo_function f, void *ctx, lungo_drop drop) {{"));
         w.line(format!(
@@ -559,11 +562,11 @@ fn source(request: &GenerateRequest, names: &Names, externs: &BTreeMap<usize, &E
     w.finish()
 }
 
-/// A sentence naming what the program's claims assume of capability `lean_name`, or nothing.
+/// A sentence naming what the program's claims assume of facility `lean_name`, or nothing.
 pub(crate) fn assumptions_note(request: &GenerateRequest, lean_name: &str) -> String {
     let assumed: Vec<&str> = request
         .assurance
-        .capabilities
+        .facilities
         .iter()
         .find(|c| c.name == lean_name)
         .map(|c| c.assumptions.iter().map(String::as_str).collect())

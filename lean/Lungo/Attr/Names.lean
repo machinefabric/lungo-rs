@@ -5,7 +5,7 @@ public meta import Lean
 /-!
 # Kinds, roles and record names
 
-A specification kind, a claim's relation, a role and a capability's identifier are namespaced
+A specification kind, a claim's relation, a role and a facility's identifier are namespaced
 strings: two or more `.`-separated segments of lowercase letters, digits, `_` (and `-` after the
 first segment), each starting with a letter — `lungo.decides`, `acme.cost-bound`, `time.clock`.
 The `lungo` namespace is lungo's own: only the kinds listed here exist in it. Any other namespace

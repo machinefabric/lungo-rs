@@ -161,7 +161,7 @@ protocollo persistenti indicano un problema di installazione.
 
 **Simbolo extern non risolto.** Una dichiarazione `@[extern]` raggiungibile dai moduli radice
 non è implementata né da una definizione Lean `@[export]` né dal runtime di lungo, e non è
-un'operazione di una capacità (`@[lungo_operation C]`), che solo l'host implementa; oppure è
+un'operazione di una facility (`@[lungo_operation C]`), che solo l'host implementa; oppure è
 un'operazione per cui l'output Rust non ha una mappatura `rust_extern`. Il messaggio indica la
 dichiarazione, il suo simbolo, il tipo Lean, la rappresentazione richiesta e la posizione nel
 sorgente.
@@ -268,8 +268,8 @@ error[LNG0602]: the export Formal.step has no proved claim (`require-claims` sel
 ### LNG0603
 
 **Assunzione proibita.** Un'affermazione dimostrata prende come ipotesi un'assunzione che
-`forbid-assumptions` nomina (o un'assunzione di una capacità che nomina), oppure un export chiama
-un'operazione di una capacità che nomina.
+`forbid-assumptions` nomina (o un'assunzione di una facility che nomina), oppure un export chiama
+un'operazione di una facility che nomina.
 
 ## Registrazioni di garanzia
 
@@ -277,7 +277,7 @@ un'operazione di una capacità che nomina.
 
 **Registrazione di garanzia malformata.** Una registrazione (`decl._lungo_…`) non è nella forma
 che scrive la libreria Lean di lungo, oppure nomina un tipo di specifica, una relazione, un ruolo
-o un identificatore di capacità che non è una stringa con spazio dei nomi ben formata, o che non è
+o un identificatore di facility che non è una stringa con spazio dei nomi ben formata, o che non è
 tra quelli che lungo definisce nello spazio dei nomi `lungo`. Le registrazioni le scrivono gli
 attributi `@[lungo_…]`; una scritta a mano è letta e verificata allo stesso modo.
 
@@ -285,7 +285,7 @@ attributi `@[lungo_…]`; una scritta a mano è letta e verificata allo stesso m
 
 **Riferimento di garanzia pendente.** Una registrazione nomina una dichiarazione che non esiste,
 un'affermazione cita una specifica senza `@[lungo_spec]`, oppure un'operazione o un'assunzione
-nomina qualcosa che non è una capacità.
+nomina qualcosa che non è una facility.
 
 ### LNG0703
 
@@ -301,20 +301,20 @@ ciò che l'affermazione dice.
 
 ### LNG0705
 
-**Identificatore di garanzia duplicato.** Due capacità hanno lo stesso identificatore.
+**Identificatore di garanzia duplicato.** Due facility hanno lo stesso identificatore.
 
 ### LNG0706
 
-**Incoerenza di capacità.** Un'operazione di una capacità non è una dichiarazione `@[extern]` con
-una voce per C, appartiene a una capacità asincrona, oppure ha un simbolo che Lean (`@[export]`) o
+**Incoerenza di facility.** Un'operazione di una facility non è una dichiarazione `@[extern]` con
+una voce per C, appartiene a una facility asincrona, oppure ha un simbolo che Lean (`@[export]`) o
 il runtime di lungo implementano già; oppure una mappatura `rust_extern` nomina un extern che non è
-un'operazione di una capacità.
+un'operazione di una facility.
 
 ### LNG0707
 
 **Interfaccia asincrona non valida.** Un export restituisce un programma asincrono
 (`Lungo.Async.Program op α`) la cui istanza `Lungo.Async.Interface op` non è registrata con
-`@[lungo_capability]`, le cui operazioni non possono passare all'host, o il cui tipo di risposta
+`@[lungo_facility]`, le cui operazioni non possono passare all'host, o il cui tipo di risposta
 dipende dagli argomenti dell'operazione; oppure un programma asincrono compare dentro un valore
 invece che come risultato di una funzione.
 
@@ -322,7 +322,7 @@ invece che come risultato di una funzione.
 
 **Impronta di garanzia discordante.** `lungo assurance --compose`: due documenti di garanzia
 descrivono in modo diverso una registrazione con lo stesso nome (una specifica, un'affermazione,
-una capacità o un'assunzione): da un altro pacchetto Lake, oppure con un altro significato. I
+una facility o un'assunzione): da un altro pacchetto Lake, oppure con un altro significato. I
 pacchetti sono stati generati da definizioni diverse; rigenerateli dagli stessi sorgenti Lean.
 
 ### LNG0709

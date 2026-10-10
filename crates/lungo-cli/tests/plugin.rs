@@ -141,15 +141,15 @@ fn test0268_a_plugin_receives_the_request_and_its_files_are_published() {
     }
     assert!(request["program_files"]["program/lungo.h"].is_string(), "the program's C is in the request");
     assert!(request["runtime"]["distribution"]["local"]["dir"].is_string());
-    // The host's capabilities, each with its operations, and the async one.
-    let capabilities: Vec<(&str, usize)> = request["boundary"]["capabilities"]
+    // The host's facilities, each with its operations, and the async one.
+    let facilities: Vec<(&str, usize)> = request["boundary"]["facilities"]
         .as_array()
         .unwrap()
         .iter()
         .map(|c| (c["id"].as_str().unwrap(), c["operations"].as_array().unwrap().len()))
         .collect();
-    assert_eq!(capabilities, [("polyglot.journal", 1), ("polyglot.scaler", 1)]);
-    let asyncs = request["boundary"]["async_capabilities"].as_array().unwrap();
+    assert_eq!(facilities, [("polyglot.journal", 1), ("polyglot.scaler", 1)]);
+    let asyncs = request["boundary"]["async_facilities"].as_array().unwrap();
     assert_eq!((asyncs.len(), asyncs[0]["id"].as_str().unwrap()), (1, "polyglot.fetch"));
     assert_eq!(asyncs[0]["operations"].as_array().unwrap().len(), 3);
     // The assurance document is in the request, and lungo writes it into the output itself, as

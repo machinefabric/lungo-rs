@@ -1,13 +1,13 @@
 import Lungo
 
 /-!
-Lean code calling back into the Rust application through the operations of a capability, which
+Lean code calling back into the Rust application through the operations of a facility, which
 the application implements with `Builder::rust_extern`.
 -/
 namespace Host
 
 /-- The services the application provides. -/
-@[lungo_capability "test.host"]
+@[lungo_facility "test.host"]
 structure Services
 
 /-- Looks a key up in the host's table. -/

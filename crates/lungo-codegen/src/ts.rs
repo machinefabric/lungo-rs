@@ -8,15 +8,15 @@
 //! throw `LeanIOError` (`IO`), `LeanError` (`EIO ε`) and `MalformedError` (arguments Lean cannot
 //! represent).
 //!
-//! The capabilities the host provides are given to `load` (`options.capabilities`), one object
-//! per capability with a method per operation; `load` rejects with `MissingCapabilityError` when
+//! The facilities the host provides are given to `load` (`options.facilities`), one object
+//! per facility with a method per operation; `load` rejects with `MissingFacilityError` when
 //! one is missing. An async export returns a `Promise`: it takes a handler of its async
-//! capability, whose methods (returning answers or promises of them) it awaits for each operation
+//! facility, whose methods (returning answers or promises of them) it awaits for each operation
 //! the program asks, and an optional `AbortSignal`. `ASSURANCE` is the program's assurance
 //! document.
 
 use crate::CodegenError;
-use crate::c::boundary::{Boundary, Function, capability_name, operation_name};
+use crate::c::boundary::{Boundary, Function, facility_name, operation_name};
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
@@ -125,15 +125,15 @@ struct TypeNames {
     ctors: Vec<(String, Vec<String>)>,
 }
 
-/// The TypeScript names of a capability: its key in `options.capabilities`, its interface, and
+/// The TypeScript names of a facility: its key in `options.facilities`, its interface, and
 /// its methods.
-struct CapabilityNames {
+struct FacilityNames {
     key: String,
     interface: String,
     methods: Vec<String>,
 }
 
-/// The TypeScript names of an async capability: its handler interface, the dispatcher, the
+/// The TypeScript names of an async facility: its handler interface, the dispatcher, the
 /// methods.
 struct AsyncNames {
     handler: String,
@@ -145,7 +145,7 @@ struct Names {
     class: String,
     types: Vec<TypeNames>,
     functions: Vec<String>,
-    capabilities: Vec<CapabilityNames>,
+    facilities: Vec<FacilityNames>,
     asyncs: Vec<AsyncNames>,
 }
 
@@ -192,7 +192,7 @@ impl Names {
         let mut scope = Scope::new("TypeScript");
         for reserved in [
             class.to_owned(),
-            format!("{class}Capabilities"),
+            format!("{class}Facilities"),
             "load".into(),
             "LoadOptions".into(),
             "leanTypes".into(),
@@ -247,7 +247,7 @@ impl Names {
         }
         let mut methods = Scope::new("TypeScript");
         methods.claim("runMain".into(), "the program's `main`")?;
-        if !b.async_capabilities.is_empty() {
+        if !b.async_facilities.is_empty() {
             methods.claim("outstanding".into(), "the count of waiting async programs")?;
         }
         let fn_names: Vec<&str> = b.functions.iter().map(|f| f.lean_name.as_str()).collect();
@@ -259,11 +259,12 @@ impl Names {
             })
             .collect::<Result<_, _>>()?;
         let mut keys = Scope::new("TypeScript");
-        let mut capabilities = Vec::new();
-        for c in &b.capabilities {
-            let base = capability_name(&c.id);
-            let key = keys.claim(camel(&[base.clone()]).trim_end_matches('_').to_owned(), format!("capability {}", c.id))?;
-            let interface = scope.claim(format!("{class}{}", pascal(&[base])), format!("capability {}", c.id))?;
+        let mut facilities = Vec::new();
+        for c in &b.facilities {
+            let base = facility_name(&c.id);
+            let key =
+                keys.claim(camel(&[base.clone()]).trim_end_matches('_').to_owned(), format!("facility {}", c.id))?;
+            let interface = scope.claim(format!("{class}{}", pascal(&[base])), format!("facility {}", c.id))?;
             let mut methods = Scope::new("TypeScript");
             let ms = c
                 .operations
@@ -275,13 +276,13 @@ impl Names {
                     )
                 })
                 .collect::<Result<_, _>>()?;
-            capabilities.push(CapabilityNames { key, interface, methods: ms });
+            facilities.push(FacilityNames { key, interface, methods: ms });
         }
         let mut asyncs = Vec::new();
-        for c in &b.async_capabilities {
+        for c in &b.async_facilities {
             let op = types[c.op_type as usize].name.clone();
-            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async capability {}", c.id))?;
-            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async capability {}", c.id))?;
+            let handler = scope.claim(format!("{op}Handler"), format!("the handler of async facility {}", c.id))?;
+            let perform = scope.claim(format!("perform{op}"), format!("the dispatcher of async facility {}", c.id))?;
             let mut methods = Scope::new("TypeScript");
             let ms = c
                 .operations
@@ -293,7 +294,7 @@ impl Names {
                 .collect::<Result<_, _>>()?;
             asyncs.push(AsyncNames { handler, perform, methods: ms });
         }
-        Ok(Names { class: class.to_owned(), types, functions, capabilities, asyncs })
+        Ok(Names { class: class.to_owned(), types, functions, facilities, asyncs })
     }
 }
 
@@ -507,19 +508,19 @@ impl Emitter<'_> {
         }
     }
 
-    /// The index of the async capability whose operation type is `op`.
+    /// The index of the async facility whose operation type is `op`.
     fn async_index(&self, op: u32) -> usize {
         self.boundary()
-            .async_capabilities
+            .async_facilities
             .iter()
             .position(|c| c.op_type == op)
-            .expect("the boundary has the async capability of every async export")
+            .expect("the boundary has the async facility of every async export")
     }
 
-    /// The dispatchers of the async capabilities: each asks a handler for an operation's answer.
+    /// The dispatchers of the async facilities: each asks a handler for an operation's answer.
     fn js_perform(&self, w: &mut Writer) {
         let b = self.boundary();
-        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+        for (c, n) in b.async_facilities.iter().zip(&self.names.asyncs) {
             let decl = &b.table.types[c.op_type as usize];
             let tn = &self.names.types[c.op_type as usize];
             w.line("");
@@ -542,7 +543,10 @@ impl Emitter<'_> {
                     w.line(format!("    case {}: {}", js_string(kind), call(k, "op")));
                 }
                 w.line("  }");
-                w.line(format!("  throw new L.MalformedError(`an operation that is not a {}: ${{op?.kind}}`);", tn.name));
+                w.line(format!(
+                    "  throw new L.MalformedError(`an operation that is not a {}: ${{op?.kind}}`);",
+                    tn.name
+                ));
             }
             w.line("}");
         }
@@ -596,7 +600,7 @@ impl Emitter<'_> {
         self.js_perform(&mut w);
         w.line("");
         w.line("/** The program's assurance document: what its Lean code claims and proves of each export, what it");
-        w.line(" *  trusts, and what it assumes of the host's capabilities. */");
+        w.line(" *  trusts, and what it assumes of the host's facilities. */");
         w.line(format!("export const ASSURANCE = L.parseAssurance({});", self.request.assurance.to_json().trim_end()));
         w.line("");
         w.line("/** The layout fingerprint and descriptor of each type, by Lean name, for modules using them. */");
@@ -625,22 +629,22 @@ impl Emitter<'_> {
             w.line(format!("    return this.#program.runMain({}, args);", js_string(run_main)));
             w.line("  }");
         }
-        if !b.async_capabilities.is_empty() {
+        if !b.async_facilities.is_empty() {
             w.line("  outstanding() {");
             w.line("    return this.#program.outstanding();");
             w.line("  }");
         }
         w.line("}");
         w.line("");
-        w.line("/** Instantiates the program; `options.capabilities` provides the capabilities it needs. */");
+        w.line("/** Instantiates the program; `options.facilities` provides the facilities it needs. */");
         w.line("export async function load(options = {}) {");
-        if !b.capabilities.is_empty() {
-            // Every capability, with every operation, before anything is instantiated.
-            w.line("  const capabilities = options.capabilities ?? {};");
-            for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+        if !b.facilities.is_empty() {
+            // Every facility, with every operation, before anything is instantiated.
+            w.line("  const facilities = options.facilities ?? {};");
+            for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
                 for (o, m) in c.operations.iter().zip(&n.methods) {
                     w.line(format!(
-                        "  if (typeof capabilities.{}?.{m} !== \"function\") throw new L.MissingCapabilityError({}, {});",
+                        "  if (typeof facilities.{}?.{m} !== \"function\") throw new L.MissingFacilityError({}, {});",
                         n.key,
                         js_string(&c.id),
                         js_string(operation_name(&o.declaration))
@@ -650,8 +654,8 @@ impl Emitter<'_> {
         }
         w.line("  const program = await L.Program.load(options.module ?? (await programModule()), { wasi: options.wasi });");
         w.line(format!("  program.types({});", js_string(&b.types_symbol)));
-        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
-            w.line(format!("  const {} = capabilities.{};", n.key, n.key));
+        for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
+            w.line(format!("  const {} = facilities.{};", n.key, n.key));
             for (o, m) in c.operations.iter().zip(&n.methods) {
                 let ps: Vec<String> = o.params.iter().map(|p| self.descriptor(&p.ty, Scoped::Function)).collect();
                 w.line(format!(
@@ -947,17 +951,19 @@ impl Emitter<'_> {
             w.line("  /** Runs the Lean program's `main` with `args`; its exit code. */");
             w.line("  runMain(args: string[]): number;");
         }
-        if !b.async_capabilities.is_empty() {
-            w.line("  /** The number of this program's async calls waiting for an answer: zero once each has settled. */");
+        if !b.async_facilities.is_empty() {
+            w.line(
+                "  /** The number of this program's async calls waiting for an answer: zero once each has settled. */",
+            );
             w.line("  outstanding(): number;");
         }
         w.line("}");
-        let capabilities = format!("{}Capabilities", self.names.class);
-        for (c, n) in b.capabilities.iter().zip(&self.names.capabilities) {
+        let facilities = format!("{}Facilities", self.names.class);
+        for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
             w.line("");
             let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
             w.line(format!(
-                "/** The capability {} (`{}`), which the host provides; a method whose Lean type is not IO or EIO must not throw.{} */",
+                "/** The facility {} (`{}`), which the host provides; a method whose Lean type is not IO or EIO must not throw.{} */",
                 c.id,
                 c.lean_name,
                 note.replace("*/", "* /")
@@ -976,22 +982,22 @@ impl Emitter<'_> {
             }
             w.line("}");
         }
-        if !b.capabilities.is_empty() {
+        if !b.facilities.is_empty() {
             w.line("");
-            w.line("/** The capabilities the program needs, by name. */");
-            w.line(format!("export interface {capabilities} {{"));
-            for n in &self.names.capabilities {
+            w.line("/** The facilities the program needs, by name. */");
+            w.line(format!("export interface {facilities} {{"));
+            for n in &self.names.facilities {
                 w.line(format!("  {}: {};", n.key, n.interface));
             }
             w.line("}");
         }
-        for (c, n) in b.async_capabilities.iter().zip(&self.names.asyncs) {
+        for (c, n) in b.async_facilities.iter().zip(&self.names.asyncs) {
             let decl = &b.table.types[c.op_type as usize];
             let tn = &self.names.types[c.op_type as usize];
             w.line("");
             let note = crate::c::api::assumptions_note(self.request, &c.lean_name);
             w.line(format!(
-                "/** Performs the operations of the async capability {} (`{}`) an async export asks; a rejection abandons the program.{} */",
+                "/** Performs the operations of the async facility {} (`{}`) an async export asks; a rejection abandons the program.{} */",
                 c.id,
                 c.lean_name,
                 note.replace("*/", "* /")
@@ -1012,15 +1018,15 @@ impl Emitter<'_> {
         w.line("export const ASSURANCE: L.Assurance;");
         w.line("");
         w.line("export interface LoadOptions {");
-        if !b.capabilities.is_empty() {
-            w.line(format!("  capabilities: {capabilities};"));
+        if !b.facilities.is_empty() {
+            w.line(format!("  facilities: {facilities};"));
         }
         w.line("  /** The program module (default: `program.wasm` next to this file). */");
         w.line("  module?: WebAssembly.Module | BufferSource;");
         w.line("  wasi?: L.Wasi;");
         w.line("}");
         w.line("");
-        let optional = if b.capabilities.is_empty() { "?" } else { "" };
+        let optional = if b.facilities.is_empty() { "?" } else { "" };
         w.line(format!("export function load(options{optional}: LoadOptions): Promise<{}>;", self.names.class));
         w.finish()
     }

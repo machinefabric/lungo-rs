@@ -48,7 +48,15 @@ fn test0093_generate_writes_rust_then_reuses_it() {
     let second = ok(&["generate", &flag]);
     let module = out.join("formal");
     assert_eq!(second.trim_end(), format!("up to date: rust {}", module.display()));
-    for f in ["formal.rs", "names.json", "externs.json", "sources.json", "manifest.json", "assurance.json", "build-info.json"] {
+    for f in [
+        "formal.rs",
+        "names.json",
+        "externs.json",
+        "sources.json",
+        "manifest.json",
+        "assurance.json",
+        "build-info.json",
+    ] {
         assert!(module.join(f).is_file(), "{f} is published");
     }
 }

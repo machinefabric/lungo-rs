@@ -18,7 +18,7 @@ namespace LungoTest.Module
 @[lungo_claim "lungo.decides" subject isSmall spec Small]
 theorem isSmall_decides (n : Nat) : isSmall n = true ↔ Small n := by simp [isSmall, Small]
 
-@[lungo_capability "test.log"] def Log : Unit := ()
+@[lungo_facility "test.log"] def Log : Unit := ()
 
 @[extern "lungotest_log", lungo_operation Log] opaque log : String → Unit
 

@@ -38,10 +38,8 @@ mod oracle;
 pub use lungo_codegen::rust::Attribute;
 pub use lungo_driver::{
     ADAPTER_VERSION, Analysis, AssuranceIssue, AssurancePolicy, BuildKey, CodegenError, Context, Environment, Error,
-    ErrorCode,
-    LeanOptions, Limits,
-    RUNTIME_ABI_VERSION, Result, SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, WorkerCache, bir, cache_root,
-    canonical_path, codegen, host_triple, protocol, read_pin, relative_path,
+    ErrorCode, LeanOptions, Limits, RUNTIME_ABI_VERSION, Result, SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy,
+    WorkerCache, bir, cache_root, canonical_path, codegen, host_triple, protocol, read_pin, relative_path,
 };
 
 use lungo_driver::{claim_output, on_large_stack, output};
@@ -87,7 +85,7 @@ pub fn configure() -> Builder {
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct RustOptions {
     pub mode: Mode,
-    /// The Rust implementations of the operations of the program's capabilities (the externs
+    /// The Rust implementations of the operations of the program's facilities (the externs
     /// its Lean code marks `@[lungo_operation]`): extern key → Rust path. Every operation the
     /// program reaches has one, and nothing else does.
     pub rust_externs: BTreeMap<String, String>,
@@ -150,7 +148,7 @@ impl Builder {
     }
 
     /// Forbids every proved claim and every export from resting on the assumption, or the
-    /// capability, `name`.
+    /// facility, `name`.
     pub fn forbid_assumption(mut self, name: impl Into<String>) -> Self {
         self.assurance = self.assurance.forbid_assumption(name);
         self

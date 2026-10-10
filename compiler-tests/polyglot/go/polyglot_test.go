@@ -18,14 +18,14 @@ import (
 	"example.com/polyglottest/polyglot"
 )
 
-// The scaler capability: multiplies by ten.
+// The scaler facility: multiplies by ten.
 type scaler struct{}
 
 func (scaler) HostScale(n *big.Int) (*big.Int, error) {
 	return new(big.Int).Mul(n, big.NewInt(10)), nil
 }
 
-// The journal capability: records lines, refusing `fail`.
+// The journal facility: records lines, refusing `fail`.
 type journal struct {
 	mu    sync.Mutex
 	lines []string
@@ -43,11 +43,11 @@ func (h *journal) HostRecord(line string) error {
 
 var theJournal = &journal{}
 
-// withoutCapabilities: the process runs a helper test that needs no capability installed.
-const withoutCapabilities = "LUNGO_POLYGLOT_WITHOUT_CAPABILITIES"
+// withoutFacilities: the process runs a helper test that needs no facility installed.
+const withoutFacilities = "LUNGO_POLYGLOT_WITHOUT_FACILITIES"
 
 func init() {
-	if os.Getenv(withoutCapabilities) == "" {
+	if os.Getenv(withoutFacilities) == "" {
 		polyglot.SetScaler(scaler{})
 		polyglot.SetJournal(theJournal)
 	}
@@ -226,8 +226,8 @@ func Test0055_OpaqueValues(t *testing.T) {
 	}
 }
 
-// TEST0056: host capabilities
-func Test0056_HostCapabilities(t *testing.T) {
+// TEST0056: host facilities
+func Test0056_HostFacilities(t *testing.T) {
 	if s := must(polyglot.ScaledSum([]*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3)}))(t); s.Int64() != 60 {
 		t.Errorf("scaledSum = %v", s)
 	}
@@ -269,10 +269,10 @@ func Test0058_RunMain(t *testing.T) {
 	}
 }
 
-// TEST0297: a call before every capability is installed fails, naming the capability and an
+// TEST0297: a call before every facility is installed fails, naming the facility and an
 // operation of it.
-func Test0297_AMissingCapabilityIsNamed(t *testing.T) {
-	out, err := helper(t, "TestHelperWithoutCapabilities", withoutCapabilities+"=1")
+func Test0297_AMissingFacilityIsNamed(t *testing.T) {
+	out, err := helper(t, "TestHelperWithoutFacilities", withoutFacilities+"=1")
 	if err != nil {
 		t.Fatalf("the helper failed: %v\n%s", err, out)
 	}
@@ -281,22 +281,22 @@ func Test0297_AMissingCapabilityIsNamed(t *testing.T) {
 	}
 }
 
-func TestHelperWithoutCapabilities(t *testing.T) {
-	if os.Getenv(withoutCapabilities) == "" {
+func TestHelperWithoutFacilities(t *testing.T) {
+	if os.Getenv(withoutFacilities) == "" {
 		t.Skip("runs in a process of its own, from Test0297")
 	}
 	_, err := polyglot.Factorial(big.NewInt(3))
-	var missing *lungo.MissingCapabilityError
+	var missing *lungo.MissingFacilityError
 	if !errors.As(err, &missing) {
-		t.Fatalf("a call without capabilities returned %v", err)
+		t.Fatalf("a call without facilities returned %v", err)
 	}
-	// The journal is checked first: capabilities are checked in identifier order.
-	t.Logf("missing: %s %s", missing.Capability, missing.Operation)
-	os.Stdout.WriteString("missing: " + missing.Capability + " " + missing.Operation + "\n")
+	// The journal is checked first: facilities are checked in identifier order.
+	t.Logf("missing: %s %s", missing.Facility, missing.Operation)
+	os.Stdout.WriteString("missing: " + missing.Facility + " " + missing.Operation + "\n")
 }
 
 // TEST0298: the package's assurance document is the program's: its claims, what they assume, and
-// the capabilities each export needs.
+// the facilities each export needs.
 func Test0298_AssuranceIsTheProgramsAssurance(t *testing.T) {
 	a := polyglot.Assurance()
 	if a.Program != "polyglot" || a.SchemaVersion != 1 || a.Provenance.LeanVersion != "4.34.1" {
@@ -323,19 +323,19 @@ func Test0298_AssuranceIsTheProgramsAssurance(t *testing.T) {
 		t.Errorf("scaledSum_singleton_mono: %+v", c)
 	}
 	e := a.Export("Polyglot.scaledSum")
-	if e == nil || strings.Join(e.Capabilities, ",") != "Polyglot.Scaler" || strings.Join(e.Assumptions, ",") != "Polyglot.ScalesMonotonically" {
+	if e == nil || strings.Join(e.Facilities, ",") != "Polyglot.Scaler" || strings.Join(e.Assumptions, ",") != "Polyglot.ScalesMonotonically" {
 		t.Errorf("scaledSum: %+v", e)
 	}
-	if e := a.Export("Polyglot.fetchAll"); e == nil || !e.Async || strings.Join(e.Capabilities, ",") != "Polyglot.fetchInterface" {
+	if e := a.Export("Polyglot.fetchAll"); e == nil || !e.Async || strings.Join(e.Facilities, ",") != "Polyglot.fetchInterface" {
 		t.Errorf("fetchAll: %+v", e)
 	}
 	// Sorted by Lean name: Polyglot.Journal, Polyglot.Scaler, Polyglot.fetchInterface.
 	ids := []string{}
-	for _, c := range a.Capabilities {
+	for _, c := range a.Facilities {
 		ids = append(ids, c.ID+"/"+c.Form)
 	}
 	if strings.Join(ids, ",") != "polyglot.journal/extern,polyglot.scaler/extern,polyglot.fetch/async" {
-		t.Errorf("capabilities %v", ids)
+		t.Errorf("facilities %v", ids)
 	}
 	if e := a.Export("Polyglot.negate"); e == nil || len(e.Claims) != 0 {
 		t.Errorf("negate carries no claim: %+v", e)

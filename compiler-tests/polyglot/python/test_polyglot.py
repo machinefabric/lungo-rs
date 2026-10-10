@@ -12,14 +12,14 @@ import polyglot as P
 
 
 class Scaler:
-    """The scaler capability: multiplies by ten."""
+    """The scaler facility: multiplies by ten."""
 
     def host_scale(self, n):
         return n * 10
 
 
 class Journal:
-    """The journal capability: records lines, refusing `fail`."""
+    """The journal facility: records lines, refusing `fail`."""
 
     def __init__(self):
         self.lines = []
@@ -149,8 +149,8 @@ class PolyglotTest(unittest.TestCase):
         with self.assertRaises(lungo_py.MalformedError):
             P.bump(counter)
 
-    # TEST0056: host capabilities
-    def test_0056_host_capabilities(self):
+    # TEST0056: host facilities
+    def test_0056_host_facilities(self):
         self.assertEqual(P.scaled_sum([1, 2, 3]), 60)
         JOURNAL.lines.clear()
         self.assertEqual(P.record_all(["a", "b"]), 2)
@@ -178,9 +178,9 @@ class PolyglotTest(unittest.TestCase):
     def test_0058_run_main(self):
         self.assertEqual(P.run_main(["one", "two"]), 2)
 
-    # TEST0297: a call before every capability is installed fails, naming the capability and an
+    # TEST0297: a call before every facility is installed fails, naming the facility and an
     # operation of it
-    def test_0297_a_missing_capability_is_named(self):
+    def test_0297_a_missing_facility_is_named(self):
         out = helper(
             "import lungo_py, polyglot as P\n"
             "class Journal:\n"
@@ -188,14 +188,14 @@ class PolyglotTest(unittest.TestCase):
             "P.set_journal(Journal())\n"
             "try:\n"
             "    P.factorial(3)\n"
-            "except lungo_py.MissingCapabilityError as e:\n"
-            "    print('missing:', e.capability, e.operation)\n"
+            "except lungo_py.MissingFacilityError as e:\n"
+            "    print('missing:', e.facility, e.operation)\n"
         )
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(out.stdout, "missing: polyglot.scaler hostScale\n")
 
     # TEST0298: the package's assurance document is the program's: its claims, what they assume,
-    # and the capabilities each export needs
+    # and the facilities each export needs
     def test_0298_assurance_is_the_programs_assurance(self):
         a = P.ASSURANCE
         self.assertEqual((a.program, a.schema_version, a.provenance.lean_version), ("polyglot", 1, "4.34.1"))
@@ -208,12 +208,12 @@ class PolyglotTest(unittest.TestCase):
         c = a.claim("Polyglot.scaledSum_singleton_mono")
         self.assertEqual((c.status, c.assumptions), ("proved", ("Polyglot.ScalesMonotonically",)))
         e = a.export("Polyglot.scaledSum")
-        self.assertEqual((e.capabilities, e.assumptions), (("Polyglot.Scaler",), ("Polyglot.ScalesMonotonically",)))
+        self.assertEqual((e.facilities, e.assumptions), (("Polyglot.Scaler",), ("Polyglot.ScalesMonotonically",)))
         e = a.export("Polyglot.fetchAll")
-        self.assertEqual((e.async_, e.capabilities), (True, ("Polyglot.fetchInterface",)))
+        self.assertEqual((e.async_, e.facilities), (True, ("Polyglot.fetchInterface",)))
         # Sorted by Lean name.
         self.assertEqual(
-            [(c.id, c.form) for c in a.capabilities],
+            [(c.id, c.form) for c in a.facilities],
             [("polyglot.journal", "extern"), ("polyglot.scaler", "extern"), ("polyglot.fetch", "async")],
         )
         self.assertEqual(a.export("Polyglot.negate").claims, ())

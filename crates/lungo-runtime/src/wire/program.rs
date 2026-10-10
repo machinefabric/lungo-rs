@@ -124,14 +124,10 @@ pub unsafe fn step(table: &'static TypeTable, op: u32, rets: &[Type], value: &Ty
                 lean_mark_mt(resume);
                 let r = resumptions();
                 let id = r.next.fetch_add(1, Ordering::Relaxed);
-                r.live.lock().unwrap_or_else(|e| e.into_inner()).insert(id, Resumption {
-                    table,
-                    op,
-                    rets: rets.to_vec(),
-                    value: value.clone(),
-                    ctor,
-                    resume: SendObj(resume),
-                });
+                r.live.lock().unwrap_or_else(|e| e.into_inner()).insert(
+                    id,
+                    Resumption { table, op, rets: rets.to_vec(), value: value.clone(), ctor, resume: SendObj(resume) },
+                );
                 out.extend_from_slice(&id.to_le_bytes());
             }
             tag => lean_internal_panic(&format!(
@@ -248,7 +244,14 @@ mod tests {
                     trivial: None,
                     ctors: vec![ask("Only.mk", 0)],
                 },
-                TypeDecl { name: "W".into(), opaque: true, params: 0, repr: Repr::Object, trivial: None, ctors: vec![] },
+                TypeDecl {
+                    name: "W".into(),
+                    opaque: true,
+                    params: 0,
+                    repr: Repr::Object,
+                    trivial: None,
+                    ctors: vec![],
+                },
             ],
         })
     }

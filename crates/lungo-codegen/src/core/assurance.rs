@@ -12,7 +12,7 @@
 //!   (`incomplete`, only when the trust policy allows it);
 //! - **trust**: the axioms, `sorry`, `unsafe`, `partial` and extern code an export's executable
 //!   closure depends on, as before;
-//! - **assumptions**: propositions about the host's capabilities a claim's statement takes as
+//! - **assumptions**: propositions about the host's facilities a claim's statement takes as
 //!   hypotheses. A claim with assumptions holds of a running program only when the host's
 //!   implementation satisfies them; registering an implementation proves nothing about it.
 //!
@@ -21,8 +21,7 @@
 //! packages can be checked to agree on what a shared name means (`lungo assurance --compose`).
 
 use lungo_protocol::{
-    Assurance, CapabilityKind, ClaimRecord, DeclSource, Export, FacadeType, Position, Success, Trust,
-    WorkerToolchain,
+    Assurance, ClaimRecord, DeclSource, Export, FacadeType, FacilityKind, Position, Success, Trust, WorkerToolchain,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -47,7 +46,7 @@ pub struct AssuranceDocument {
     /// lungo's Lean library, when the program uses it.
     pub library: Option<Library>,
     pub specifications: Vec<Specification>,
-    pub capabilities: Vec<Capability>,
+    pub facilities: Vec<Facility>,
     pub assumptions: Vec<Assumption>,
     pub claims: Vec<Claim>,
     pub roles: Vec<Role>,
@@ -96,7 +95,7 @@ pub struct Specification {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CapabilityForm {
+pub enum FacilityForm {
     /// `@[extern]` operations the host implements, called synchronously.
     Extern,
     /// The constructors of an operation type, performed asynchronously by a handler the caller
@@ -106,15 +105,15 @@ pub enum CapabilityForm {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Capability {
+pub struct Facility {
     pub name: String,
     /// The namespaced identifier, such as `time.clock`.
     pub id: String,
-    pub form: CapabilityForm,
-    /// The operation type of an async capability.
+    pub form: FacilityForm,
+    /// The operation type of an async facility.
     pub op_type: Option<String>,
     pub operations: Vec<Operation>,
-    /// The assumptions registered for this capability.
+    /// The assumptions registered for this facility.
     pub assumptions: Vec<String>,
     pub package: Option<String>,
     pub fingerprint: String,
@@ -124,12 +123,12 @@ pub struct Capability {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Operation {
-    /// The `@[extern]` declaration, or the constructor of an async capability's operation type.
+    /// The `@[extern]` declaration, or the constructor of an async facility's operation type.
     pub name: String,
     /// The extern key of a synchronous operation.
     pub symbol: Option<String>,
-    /// The fingerprint of a synchronous operation's declaration (an async capability's operations
-    /// are covered by the capability's).
+    /// The fingerprint of a synchronous operation's declaration (an async facility's operations
+    /// are covered by the facility's).
     pub fingerprint: Option<String>,
 }
 
@@ -137,7 +136,7 @@ pub struct Operation {
 #[serde(deny_unknown_fields)]
 pub struct Assumption {
     pub name: String,
-    pub capability: String,
+    pub facility: String,
     pub statement: String,
     pub package: Option<String>,
     pub fingerprint: String,
@@ -210,8 +209,8 @@ pub struct ExportSummary {
     pub claims: Vec<String>,
     /// The assumptions those claims are conditional on.
     pub assumptions: Vec<String>,
-    /// The capabilities the export needs the host to provide.
-    pub capabilities: Vec<String>,
+    /// The facilities the export needs the host to provide.
+    pub facilities: Vec<String>,
     /// The roles registered for the export.
     pub roles: Vec<String>,
     pub source: Option<Source>,
@@ -290,21 +289,21 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
             source: source(&s.origin.source),
         })
         .collect();
-    let mut capability_assumptions: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+    let mut facility_assumptions: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     for x in &a.assumptions {
-        capability_assumptions.entry(x.capability.as_str()).or_default().insert(x.name.clone());
+        facility_assumptions.entry(x.facility.as_str()).or_default().insert(x.name.clone());
     }
-    let capabilities: Vec<Capability> = a
-        .capabilities
+    let facilities: Vec<Facility> = a
+        .facilities
         .iter()
         .map(|c| {
             let (form, op_type, operations) = match &c.kind {
-                CapabilityKind::Extern => (
-                    CapabilityForm::Extern,
+                FacilityKind::Extern => (
+                    FacilityForm::Extern,
                     None,
                     a.operations
                         .iter()
-                        .filter(|o| o.capability == c.name && o.reachable)
+                        .filter(|o| o.facility == c.name && o.reachable)
                         .map(|o| Operation {
                             name: o.name.clone(),
                             symbol: Some(o.symbol.clone()),
@@ -312,19 +311,22 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
                         })
                         .collect(),
                 ),
-                CapabilityKind::Async { op_type, operations } => (
-                    CapabilityForm::Async,
+                FacilityKind::Async { op_type, operations } => (
+                    FacilityForm::Async,
                     Some(op_type.clone()),
                     operations.iter().map(|o| Operation { name: o.clone(), symbol: None, fingerprint: None }).collect(),
                 ),
             };
-            Capability {
+            Facility {
                 name: c.name.clone(),
                 id: c.id.clone(),
                 form,
                 op_type,
                 operations,
-                assumptions: capability_assumptions.get(c.name.as_str()).map(|s| s.iter().cloned().collect()).unwrap_or_default(),
+                assumptions: facility_assumptions
+                    .get(c.name.as_str())
+                    .map(|s| s.iter().cloned().collect())
+                    .unwrap_or_default(),
                 package: c.origin.package.clone(),
                 fingerprint: fingerprint(&c.fingerprint_material, lean),
                 source: source(&c.origin.source),
@@ -336,7 +338,7 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
         .iter()
         .map(|x| Assumption {
             name: x.name.clone(),
-            capability: x.capability.clone(),
+            facility: x.facility.clone(),
             statement: x.statement.clone(),
             package: x.origin.package.clone(),
             fingerprint: fingerprint(&x.fingerprint_material, lean),
@@ -363,15 +365,16 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
             source: source(&c.origin.source),
         })
         .collect();
-    let roles = a.roles.iter().map(|r| Role { name: r.name.clone(), role: r.role.clone(), exported: r.exported }).collect();
-    let symbol_capability: BTreeMap<&str, &str> =
-        a.operations.iter().map(|o| (o.symbol.as_str(), o.capability.as_str())).collect();
-    let async_capability: BTreeMap<&str, &str> = a
-        .capabilities
+    let roles =
+        a.roles.iter().map(|r| Role { name: r.name.clone(), role: r.role.clone(), exported: r.exported }).collect();
+    let symbol_facility: BTreeMap<&str, &str> =
+        a.operations.iter().map(|o| (o.symbol.as_str(), o.facility.as_str())).collect();
+    let async_facility: BTreeMap<&str, &str> = a
+        .facilities
         .iter()
         .filter_map(|c| match &c.kind {
-            CapabilityKind::Async { op_type, .. } => Some((op_type.as_str(), c.name.as_str())),
-            CapabilityKind::Extern => None,
+            FacilityKind::Async { op_type, .. } => Some((op_type.as_str(), c.name.as_str())),
+            FacilityKind::Extern => None,
         })
         .collect();
     let mut exports: Vec<ExportSummary> = success
@@ -381,15 +384,15 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
         .map(|e| {
             let on: Vec<&Claim> = claims.iter().filter(|c| c.subjects.contains(&e.name)).collect();
             let assumptions: BTreeSet<String> = on.iter().flat_map(|c| c.assumptions.iter().cloned()).collect();
-            let mut caps: BTreeSet<String> = e
+            let mut facilities: BTreeSet<String> = e
                 .trust
                 .extern_dependencies
                 .iter()
-                .filter_map(|s| symbol_capability.get(s.as_str()).map(|c| (*c).to_owned()))
+                .filter_map(|s| symbol_facility.get(s.as_str()).map(|c| (*c).to_owned()))
                 .collect();
             if let Some(op) = async_op(e) {
-                if let Some(c) = async_capability.get(op) {
-                    caps.insert((*c).to_owned());
+                if let Some(c) = async_facility.get(op) {
+                    facilities.insert((*c).to_owned());
                 }
             }
             ExportSummary {
@@ -399,7 +402,7 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
                 trust: e.trust.clone(),
                 claims: on.iter().map(|c| c.name.clone()).collect(),
                 assumptions: assumptions.into_iter().collect(),
-                capabilities: caps.into_iter().collect(),
+                facilities: facilities.into_iter().collect(),
                 roles: a.roles.iter().filter(|r| r.name == e.name).map(|r| r.role.clone()).collect(),
                 source: source(&e.source),
             }
@@ -418,11 +421,10 @@ pub fn document(success: &Success, toolchain: &WorkerToolchain, program: &str) -
         },
         library: a.library.as_ref().map(|l| Library { package: l.package.clone(), schema_version: l.schema_version }),
         specifications,
-        capabilities,
+        facilities,
         assumptions,
         claims,
         roles,
         exports,
     }
 }
-

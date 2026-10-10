@@ -7,10 +7,10 @@
 
 use crate::runtime;
 use lungo_build::codegen::c::{ProgramInput, generate_program};
+use lungo_build::codegen::core::assurance;
 use lungo_build::codegen::plugin::{ExternType, GenerateRequest, PROTOCOL_VERSION, ProgramInfo, RuntimeInfo, builtin};
 use lungo_build::protocol::{Endian, Target};
-use lungo_build::codegen::core::assurance;
-use lungo_build::{AssurancePolicy, Analysis, Builder, Context, Environment, Error, LeanOptions, Result, RustOptions};
+use lungo_build::{Analysis, AssurancePolicy, Builder, Context, Environment, Error, LeanOptions, Result, RustOptions};
 use lungo_driver::output;
 use serde::Serialize;
 use std::cell::OnceCell;

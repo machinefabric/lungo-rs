@@ -87,21 +87,21 @@ pub struct Specification {
     pub fingerprint: &'static str,
 }
 
-/// A proposition assumed, never proved, of the host's implementation of a capability.
+/// A proposition assumed, never proved, of the host's implementation of a facility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Assumption {
     pub name: &'static str,
-    /// The capability it is assumed of.
-    pub capability: &'static str,
+    /// The facility it is assumed of.
+    pub facility: &'static str,
     pub statement: &'static str,
     pub package: Option<&'static str>,
     pub fingerprint: &'static str,
 }
 
-/// A capability the host provides.
+/// A facility the host provides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Capability {
-    /// The Lean declaration registered as the capability.
+pub struct Facility {
+    /// The Lean declaration registered as the facility.
     pub name: &'static str,
     /// The namespaced identifier, such as `time.clock`.
     pub id: &'static str,
@@ -128,7 +128,7 @@ pub struct Assurance {
     pub schema_version: u32,
     pub program: &'static str,
     pub specifications: &'static [Specification],
-    pub capabilities: &'static [Capability],
+    pub facilities: &'static [Facility],
     pub assumptions: &'static [Assumption],
     pub claims: &'static [Claim],
     pub roles: &'static [Role],
@@ -146,9 +146,9 @@ impl Assurance {
         claims.iter().filter(move |c| c.subjects.contains(&lean_name))
     }
 
-    /// The capability declared as `name`.
-    pub fn capability(&self, name: &str) -> Option<&'static Capability> {
-        self.capabilities.binary_search_by(|c| c.name.cmp(name)).ok().map(|i| &self.capabilities[i])
+    /// The facility declared as `name`.
+    pub fn facility(&self, name: &str) -> Option<&'static Facility> {
+        self.facilities.binary_search_by(|c| c.name.cmp(name)).ok().map(|i| &self.facilities[i])
     }
 
     /// The assumption declared as `name`.
@@ -163,12 +163,12 @@ impl Assurance {
 }
 
 /// What an export's assurance is: the claims about it, the assumptions they are conditional on,
-/// the capabilities it needs, and its roles.
+/// the facilities it needs, and its roles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExportAssurance {
     pub claims: &'static [&'static str],
     pub assumptions: &'static [&'static str],
-    pub capabilities: &'static [&'static str],
+    pub facilities: &'static [&'static str],
     pub roles: &'static [&'static str],
     /// Whether the export returns an async program.
     pub asynchronous: bool,

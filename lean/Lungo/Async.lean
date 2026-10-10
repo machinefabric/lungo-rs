@@ -11,7 +11,7 @@ computation as data: either it is done with a value, or it asks the host to perf
 An export returning `Program Op α` becomes a native async function in every language lungo
 generates: the host passes a handler with one asynchronous method per constructor of `Op`, the
 generated code awaits each method and resumes the program with its answer. Registering the
-`Interface Op` instance with `@[lungo_capability "ns.name"]` makes `Op` a capability, and each of
+`Interface Op` instance with `@[lungo_facility "ns.name"]` makes `Op` a facility, and each of
 its constructors an operation.
 
 Because the program is data, Lean can reason about it without any host: `run` interprets it with
@@ -24,7 +24,7 @@ behaviour of the host, or only for hosts satisfying an assumption.
 
 namespace Lungo.Async
 
-/-- The operations `Op` of an async capability, and what each one answers. -/
+/-- The operations `Op` of an async facility, and what each one answers. -/
 class Interface (Op : Type) where
   Ret : Op → Type
 

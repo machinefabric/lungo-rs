@@ -185,9 +185,9 @@ error: `LungoTest.monitorsNotSound` does not state a `lungo.monitors` claim: it 
 @[lungo_claim "lungo.monitors" subject double]
 theorem monitorsNotSound (n : Nat) : double n = 2 * n := rfl
 
-/-! ## Capabilities, operations and assumptions -/
+/-! ## Facilities, operations and assumptions -/
 
-@[lungo_capability "time.clock"] def Clock : Unit := ()
+@[lungo_facility "time.clock"] def Clock : Unit := ()
 
 @[extern "lungotest_now", lungo_operation Clock] opaque now : Unit → Nat
 
@@ -199,22 +199,22 @@ class LawfulClock : Prop where
 attribute [lungo_assumption Clock] LawfulClock
 
 /--
-error: `lungo.clock`: the `lungo` namespace is lungo's own, and holds no capability identifier; use a namespace of your own, such as `time.clock`
+error: `lungo.clock`: the `lungo` namespace is lungo's own, and holds no facility identifier; use a namespace of your own, such as `time.clock`
 -/
 #guard_msgs in
-@[lungo_capability "lungo.clock"] def ReservedId : Unit := ()
+@[lungo_facility "lungo.clock"] def ReservedId : Unit := ()
 
 /--
-error: `Clock` is not a valid capability identifier: it must be two or more `.`-separated segments of lowercase letters, digits and `_` (and `-` after the first), each starting with a letter, such as `time.clock`
+error: `Clock` is not a valid facility identifier: it must be two or more `.`-separated segments of lowercase letters, digits and `_` (and `-` after the first), each starting with a letter, such as `time.clock`
 -/
 #guard_msgs in
-@[lungo_capability "Clock"] def BadId : Unit := ()
+@[lungo_facility "Clock"] def BadId : Unit := ()
 
 /--
-error: `@[lungo_capability]` names a capability by a definition, a structure or an instance of `Lungo.Async.Interface`, not by a theorem
+error: `@[lungo_facility]` names a facility by a definition, a structure or an instance of `Lungo.Async.Interface`, not by a theorem
 -/
 #guard_msgs in
-@[lungo_capability "time.clock"] theorem capabilityTheorem : True := trivial
+@[lungo_facility "time.clock"] theorem facilityTheorem : True := trivial
 
 /--
 error: `@[lungo_operation]` is given to the `@[extern]` declaration the host implements; `LungoTest.notExtern` has no `@[extern]` (write `@[extern "symbol"]` before `@[lungo_operation …]`)
@@ -223,10 +223,10 @@ error: `@[lungo_operation]` is given to the `@[extern]` declaration the host imp
 @[lungo_operation Clock] def notExtern (u : Unit) : Nat := 0
 
 /--
-error: `@[lungo_operation LungoTest.Even]`: `LungoTest.Even` is not a capability; give it `@[lungo_capability "ns.name"]` first
+error: `@[lungo_operation LungoTest.Even]`: `LungoTest.Even` is not a facility; give it `@[lungo_facility "ns.name"]` first
 -/
 #guard_msgs in
-@[extern "lungotest_other", lungo_operation Even] opaque notACapability : Unit → Nat
+@[extern "lungotest_other", lungo_operation Even] opaque notAFacility : Unit → Nat
 
 /--
 error: `@[lungo_assumption]` is given to a proposition (or a family of them, or a class in `Prop`); `LungoTest.notAProposition` is not one
@@ -235,20 +235,20 @@ error: `@[lungo_assumption]` is given to a proposition (or a family of them, or 
 @[lungo_assumption Clock] def notAProposition : Nat := 0
 
 /--
-error: `@[lungo_assumption LungoTest.Even]`: `LungoTest.Even` is not a capability; give it `@[lungo_capability "ns.name"]` first
+error: `@[lungo_assumption LungoTest.Even]`: `LungoTest.Even` is not a facility; give it `@[lungo_facility "ns.name"]` first
 -/
 #guard_msgs in
-@[lungo_assumption Even] def assumesNotACapability : Prop := True
+@[lungo_assumption Even] def assumesNotAFacility : Prop := True
 
 inductive StoreOp where
   | get (key : String)
   | put (key : String) (value : Nat)
 
-@[lungo_capability "store.kv"] instance storeInterface : Lungo.Async.Interface StoreOp where
+@[lungo_facility "store.kv"] instance storeInterface : Lungo.Async.Interface StoreOp where
   Ret | .get _ => Option Nat | .put _ _ => Unit
 
 /--
-error: `@[lungo_operation LungoTest.storeInterface]`: `LungoTest.storeInterface` is an async capability, whose operations are the constructors of its operation type
+error: `@[lungo_operation LungoTest.storeInterface]`: `LungoTest.storeInterface` is an async facility, whose operations are the constructors of its operation type
 -/
 #guard_msgs in
 @[extern "lungotest_async", lungo_operation storeInterface] opaque asyncOperation : Unit → Nat
@@ -257,32 +257,32 @@ inductive DependentOp where
   | read (n : Nat)
 
 /--
-error: `@[lungo_capability]`: what `LungoTest.DependentOp.read` answers depends on its arguments:
+error: `@[lungo_facility]`: what `LungoTest.DependentOp.read` answers depends on its arguments:
   Fin (n + 1)
 The type of each operation's answer must be fixed by the operation alone.
 -/
 #guard_msgs in
-@[lungo_capability "store.dependent"] instance dependentInterface : Lungo.Async.Interface DependentOp where
+@[lungo_facility "store.dependent"] instance dependentInterface : Lungo.Async.Interface DependentOp where
   Ret | .read n => Fin (n + 1)
 
 inductive ProofOp where
   | check (n : Nat) (h : n > 0)
 
 /--
-error: `@[lungo_capability]`: the field `h` of `LungoTest.ProofOp.check` is a proof or a type, which a host cannot supply
+error: `@[lungo_facility]`: the field `h` of `LungoTest.ProofOp.check` is a proof or a type, which a host cannot supply
 -/
 #guard_msgs in
-@[lungo_capability "store.proof"] instance proofInterface : Lungo.Async.Interface ProofOp where
+@[lungo_facility "store.proof"] instance proofInterface : Lungo.Async.Interface ProofOp where
   Ret _ := Bool
 
 inductive ParamOp (α : Type) where
   | take (a : α)
 
 /--
-error: `@[lungo_capability]`: the operations of an async capability are an inductive type without parameters, not `ParamOp Nat`
+error: `@[lungo_facility]`: the operations of an async facility are an inductive type without parameters, not `ParamOp Nat`
 -/
 #guard_msgs in
-@[lungo_capability "store.param"] instance paramInterface : Lungo.Async.Interface (ParamOp Nat) where
+@[lungo_facility "store.param"] instance paramInterface : Lungo.Async.Interface (ParamOp Nat) where
   Ret _ := Unit
 
 /-! ## Roles -/
@@ -312,10 +312,10 @@ info: def LungoTest.isEven_decides._lungo_claim : Lungo.Registry.Claim :=
 #print isEven_decides._lungo_claim
 
 /--
-info: def LungoTest.storeInterface._lungo_capability : Lungo.Registry.Capability :=
+info: def LungoTest.storeInterface._lungo_facility : Lungo.Registry.Facility :=
 { decl := `LungoTest.storeInterface, id := "store.kv", async := some `LungoTest.StoreOp }
 -/
 #guard_msgs in
-#print storeInterface._lungo_capability
+#print storeInterface._lungo_facility
 
 end LungoTest

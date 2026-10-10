@@ -406,7 +406,7 @@ typedef int32_t (*lungo_host_dispatch)(uint64_t callback, const uint8_t *input, 
 typedef void (*lungo_host_ref)(uint64_t callback);
 void lungo_set_host(lungo_host_dispatch dispatch, lungo_host_ref retain, lungo_host_ref release);
 
-LUNGO_NORETURN void lungo_panic_capability_missing(const char *capability, const char *operation,
+LUNGO_NORETURN void lungo_panic_facility_missing(const char *facility, const char *operation,
                                                    const char *declaration);
 void lungo_check_layout(const char *lean_type, const char *provider, const char *expected, const char *actual);
 void lungo_handle_release(uint64_t handle);
