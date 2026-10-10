@@ -239,7 +239,11 @@ impl AssuranceDocument {
             Some(v) => return Err(format!("schema version {v}; this lungo reads version {SCHEMA_VERSION}")),
             None => return Err("no schema_version".into()),
         }
-        serde_json::from_value(value).map_err(|e| e.to_string())
+        let document: AssuranceDocument = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+        // Unknown fields are refused while reading; a missing one (a nullable field reads as null)
+        // is found by writing the document again, which writes every field.
+        let written = serde_json::to_value(&document).map_err(|e| e.to_string())?;
+        missing_field(&value, &written, "document").map_or(Ok(document), Err)
     }
 
     pub fn claim(&self, name: &str) -> Option<&Claim> {
@@ -343,6 +347,21 @@ pub fn definition_digests(
         }
     }
     Ok(definitions.iter().zip(digests).map(|(d, x)| (d.name.clone(), x.expect("every definition is digested"))).collect())
+}
+
+/// The first field `written` has that `read` lacks, at any depth.
+fn missing_field(read: &serde_json::Value, written: &serde_json::Value, at: &str) -> Option<String> {
+    use serde_json::Value;
+    match (read, written) {
+        (Value::Object(r), Value::Object(w)) => w.iter().find_map(|(k, wv)| match r.get(k) {
+            None => Some(format!("{at} lacks the field {k}")),
+            Some(rv) => missing_field(rv, wv, &format!("{at}.{k}")),
+        }),
+        (Value::Array(r), Value::Array(w)) => {
+            r.iter().zip(w).enumerate().find_map(|(i, (rv, wv))| missing_field(rv, wv, &format!("{at}[{i}]")))
+        }
+        _ => None,
+    }
 }
 
 /// The fingerprint of a record: the lowercase hexadecimal SHA-256 of its canonical text, as the
@@ -612,5 +631,21 @@ mod tests {
         // A definition the worker did not describe is an error, not a silent omission.
         assert!(definition_digests(&[def("a", "", &["missing"])], "4.34.1").is_err());
         assert!(fingerprint("x", &["missing".into()], &digests, "4.34.1").is_err());
+    }
+
+    /// TEST0348: a document missing a field is refused, even a nullable one
+    #[test]
+    fn test0348_a_document_missing_a_field_is_refused_even_a_nullable_one() {
+        let text = r#"{"schema_version": 1, "program": "p",
+            "provenance": {"lean_version": "4.34.1", "lean_githash": "x", "lungo_version": "1", "bir_version": 3, "runtime_abi": 2},
+            "library": null, "specifications": [{"name": "P.s", "kind": "lungo.model", "statement": "Nat", "definition": null,
+            "package": null, "fingerprint": "f", "source": null}], "facilities": [], "assumptions": [], "claims": [],
+            "roles": [], "exports": []}"#;
+        let doc = AssuranceDocument::from_json(text).unwrap();
+        assert_eq!(doc.specifications[0].definition, None);
+        let err = AssuranceDocument::from_json(&text.replace(r#""definition": null,"#, "")).unwrap_err();
+        assert!(err.contains("document.specifications[0] lacks the field definition"), "{err}");
+        assert!(AssuranceDocument::from_json(&text.replace(r#""library": null,"#, "")).unwrap_err().contains("library"));
+        assert!(AssuranceDocument::from_json(&text.replace(r#""roles": [],"#, r#""roles": [], "extra": 1,"#)).is_err());
     }
 }
