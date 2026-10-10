@@ -237,8 +237,12 @@ final class PolyglotTests: XCTestCase {
         let bodies = try await fetchAll(h, ["a", "missing", "b"])
         XCTAssertEqual(bodies, ["body:a", "error: not found", "body:b"])
         let token = try XCTUnwrap(try mkToken(5))
-        XCTAssertEqual(try await stampToken(h, token), 6)
-        XCTAssertEqual(try await applyScaler(h, 7, 6), 42)
+        // Awaited first: XCTest's assertions take their operands as autoclosures, which
+        // cannot await.
+        let stamped = try await stampToken(h, token)
+        XCTAssertEqual(stamped, 6)
+        let scaled = try await applyScaler(h, 7, 6)
+        XCTAssertEqual(scaled, 42)
         XCTAssertEqual(lungoOutstanding(), 0)
     }
 

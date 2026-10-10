@@ -276,7 +276,8 @@ fn test0115_ts_binding() {
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&project));
     run(Command::new("node").args(["node_modules/typescript/bin/tsc", "-p", "."]).current_dir(&project));
-    let out = run(Command::new("node").args(["--test", "polyglot.test.js"]).current_dir(&project));
+    // TAP is asked for by name: the assertions below read its "# pass"/"# fail" lines.
+    let out = run(Command::new("node").args(["--test", "--test-reporter=tap", "polyglot.test.js"]).current_dir(&project));
     assert!(out.contains("# pass 18") && out.contains("# fail 0"), "{out}");
 }
 

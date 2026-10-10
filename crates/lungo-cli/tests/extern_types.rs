@@ -244,7 +244,8 @@ fn test0107_typescript_programs_share_data_but_not_handles() {
         run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&host))
     };
     install();
-    let test = || Command::new("node").args(["--test", "extern.test.js"]).current_dir(&host).output().unwrap();
+    // TAP is asked for by name: the assertions below read its "# pass"/"# fail" lines.
+    let test = || Command::new("node").args(["--test", "--test-reporter=tap", "extern.test.js"]).current_dir(&host).output().unwrap();
     let passed = test();
     assert!(passed.status.success() && text(&passed).contains("# fail 0"), "{}", text(&passed));
 

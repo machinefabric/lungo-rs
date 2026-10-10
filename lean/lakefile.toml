@@ -5,7 +5,7 @@
 # and the async programs lungo projects as native async functions. Released with lungo, at
 # lungo's version.
 name = "lungo"
-version = "1.105.524"
+version = "1.106.540"
 defaultTargets = ["Lungo"]
 
 [[lean_lib]]

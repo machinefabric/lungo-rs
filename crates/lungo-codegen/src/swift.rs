@@ -948,7 +948,9 @@ impl Emitter<'_> {
         }
         let type_args: Vec<String> = (0..n).map(|k| format!("type{}.expr", param_name(k))).collect();
         if let (Some((op, i)), Returns::Async { value, .. }) = (asynchronous, &f.returns) {
-            let prefix = if result.is_some() { "try await" } else { "_ = try await" };
+            // An explicit `return`: with `try ready()` above it the call is not the body's
+            // only expression, and Swift returns implicitly only from a body that is one.
+            let prefix = if result.is_some() { "return try await" } else { "_ = try await" };
             w.line(format!("    {prefix} program.driveAsync("));
             w.line(format!("        entry({}), typeArgs: [{}],", f.symbol, type_args.join(", ")));
             if f.params.is_empty() {
@@ -969,7 +971,9 @@ impl Emitter<'_> {
             w.line("}");
             return;
         }
-        let prefix = if result.is_some() { "try" } else { "_ = try" };
+        // An explicit `return`, for the reason above: a program with facilities checks they
+        // are installed first, and the call then no longer returns implicitly.
+        let prefix = if result.is_some() { "return try" } else { "_ = try" };
         w.line(format!("    {prefix} program.invoke("));
         w.line(format!("        entry({}), typeArgs: [{}],", f.symbol, type_args.join(", ")));
         if f.params.is_empty() {

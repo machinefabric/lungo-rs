@@ -88,7 +88,9 @@ fn ts(name: &str, program: &str) -> String {
     std::fs::write(project.join("package.json"), manifest.to_string()).unwrap();
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&project));
-    run(Command::new("node").arg("--test").current_dir(&project))
+    // The reporter is named because the callers read its text ("# pass 1"): left to itself
+    // node picks one, and newer releases print the "spec" form even when piped.
+    run(Command::new("node").args(["--test", "--test-reporter=tap"]).current_dir(&project))
 }
 
 /// Generates example `name` (program `program`) for C and builds its test program with CMake;
