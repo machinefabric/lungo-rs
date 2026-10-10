@@ -456,3 +456,25 @@ fn test0294_lungos_lean_library_checks_every_attribute_it_declares() {
     let version = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../version.txt")).unwrap();
     assert!(lakefile.contains(&format!("version = \"{}\"", version.trim())), "{lakefile}");
 }
+
+/// TEST0345: a build waits while another holds a package it depends on
+#[test]
+fn test0345_a_build_waits_while_another_holds_a_package_it_depends_on() {
+    let s = Scratch::new("shared-package");
+    // Another build holds lungo's library, which this project requires by path.
+    let lib = s.package.join("lungo-lib/.lake");
+    std::fs::create_dir_all(&lib).unwrap();
+    let held = std::fs::File::create(lib.join("lungo-build.lock")).unwrap();
+    held.lock().unwrap();
+    let (done, finished) = std::sync::mpsc::channel();
+    let package = s.package.clone();
+    let build = std::thread::spawn(move || {
+        let s = Scratch { package };
+        done.send(s.build(&config(), "out").map(|_| ())).unwrap();
+    });
+    assert!(finished.recv_timeout(std::time::Duration::from_secs(5)).is_err(), "the build did not wait");
+    assert!(!lib.join("build").exists(), "Lake built the package while another build held it");
+    held.unlock().unwrap();
+    finished.recv_timeout(std::time::Duration::from_secs(600)).unwrap().unwrap();
+    build.join().unwrap();
+}

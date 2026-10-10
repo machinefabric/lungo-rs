@@ -69,24 +69,65 @@ pub fn validate_project(project: &Path) -> Result<LakeProject> {
     })?;
     let manifest: Manifest = serde_json::from_slice(&bytes)
         .map_err(|e| Error::Project(format!("{} is not a valid Lake manifest: {e}", manifest_path.display())))?;
-    let packages_dir = project.join(manifest.packages_dir.as_deref().unwrap_or(".lake/packages"));
-    for p in &manifest.packages {
-        let dir = match p.kind.as_str() {
-            "git" => packages_dir.join(&p.name),
-            "path" => project.join(p.dir.as_deref().ok_or_else(|| {
-                Error::Project(format!("path dependency {} has no directory in the manifest", p.name))
-            })?),
-            other => return Err(Error::Project(format!("unknown Lake package type {other:?} for {}", p.name))),
-        };
+    for (name, dir) in package_dirs(project, &manifest)? {
         if !dir.is_dir() {
             return Err(Error::Project(format!(
-                "dependency {} is not materialized at {}; fetch it explicitly with `lake update` or `lungo setup` — builds never fetch dependencies",
-                p.name,
+                "dependency {name} is not materialized at {}; fetch it explicitly with `lake update` or `lungo setup` — builds never fetch dependencies",
                 dir.display()
             )));
         }
     }
     Ok(LakeProject { name: manifest.name })
+}
+
+/// The directory of each package the manifest locks, by name.
+fn package_dirs(project: &Path, manifest: &Manifest) -> Result<Vec<(String, PathBuf)>> {
+    let packages_dir = project.join(manifest.packages_dir.as_deref().unwrap_or(".lake/packages"));
+    manifest
+        .packages
+        .iter()
+        .map(|p| {
+            let dir = match p.kind.as_str() {
+                "git" => packages_dir.join(&p.name),
+                "path" => project.join(p.dir.as_deref().ok_or_else(|| {
+                    Error::Project(format!("path dependency {} has no directory in the manifest", p.name))
+                })?),
+                other => return Err(Error::Project(format!("unknown Lake package type {other:?} for {}", p.name))),
+            };
+            Ok((p.name.clone(), dir))
+        })
+        .collect()
+}
+
+/// Exclusive locks on the project and every package it depends on, held while Lake builds them:
+/// Lake does not coordinate processes, and two builds sharing a package (projects requiring one
+/// library by path, as Cargo runs their build scripts at once) would write its outputs together.
+/// Taken in one order (by canonical path), so builds waiting for each other cannot deadlock.
+fn lock_packages(project: &Path) -> Result<Vec<std::fs::File>> {
+    let manifest_path = project.join("lake-manifest.json");
+    let bytes =
+        std::fs::read(&manifest_path).map_err(|e| Error::io(format!("cannot read {}", manifest_path.display()), e))?;
+    let manifest: Manifest = serde_json::from_slice(&bytes)
+        .map_err(|e| Error::Project(format!("{} is not a valid Lake manifest: {e}", manifest_path.display())))?;
+    let mut dirs = vec![project.to_path_buf()];
+    dirs.extend(package_dirs(project, &manifest)?.into_iter().map(|(_, dir)| dir));
+    let mut dirs: Vec<PathBuf> = dirs
+        .into_iter()
+        .map(|d| d.canonicalize().map_err(|e| Error::io(format!("cannot resolve {}", d.display()), e)))
+        .collect::<Result<_>>()?;
+    dirs.sort();
+    dirs.dedup();
+    dirs.into_iter()
+        .map(|dir| {
+            let lake = dir.join(".lake");
+            std::fs::create_dir_all(&lake).map_err(|e| Error::io(format!("cannot create {}", lake.display()), e))?;
+            let path = lake.join("lungo-build.lock");
+            let file =
+                std::fs::File::create(&path).map_err(|e| Error::io(format!("cannot create {}", path.display()), e))?;
+            file.lock().map_err(|e| Error::io(format!("cannot lock {}", path.display()), e))?;
+            Ok(file)
+        })
+        .collect()
 }
 
 /// Builds the root modules (and everything they import) with Lake: the given modules, or the
@@ -98,6 +139,7 @@ pub fn build(
     assurance_modules: &[String],
     offline: bool,
 ) -> Result<()> {
+    let _locks = lock_packages(project)?;
     // Naming modules replaces the default targets, so the default targets are one build and the
     // assurance modules another.
     match roots {
