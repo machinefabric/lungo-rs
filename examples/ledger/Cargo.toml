@@ -1,0 +1,13 @@
+[package]
+name = "ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: an event reducer proved to refine a protocol, used from Rust, Go and Swift"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true

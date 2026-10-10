@@ -12,6 +12,7 @@ members = [
     "crates/lungo-protocol",
     "crates/lungo-runtime",
     "tools/lungo-dist",
+    "examples/ledger",
     "examples/session",
     "examples/clock",
     "examples/codec",

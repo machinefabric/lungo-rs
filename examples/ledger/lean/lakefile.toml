@@ -1,0 +1,10 @@
+name = "ledger"
+version = "0.1.0"
+defaultTargets = ["Ledger"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Ledger"

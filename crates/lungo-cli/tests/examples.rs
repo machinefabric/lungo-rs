@@ -135,3 +135,59 @@ fn test0322_deadlines_on_a_hosts_clock_from_c_and_on_a_clock_breaking_the_assump
         "round trip of 7 s: 0 s; deadline in 5 s, after 2.5 s: 0 s left\nassumes Timing.Ticks: yes\n"
     );
 }
+
+/// Generates example `name` (program `program`, Swift module `module`) for Swift and runs its
+/// XCTest tests with SwiftPM.
+#[cfg(target_os = "macos")]
+fn swift(name: &str, module: &str) -> String {
+    let dist = distribution(&["swift"]);
+    let work = fresh(&root().join(name).join("swift"));
+    let package = work.join("package");
+    support::generate(&example(name).join("lungo.toml"), "swift", &package, &dist);
+    let tests = work.join("tests");
+    let target = format!("{module}Tests");
+    std::fs::create_dir_all(tests.join("Tests").join(&target)).unwrap();
+    copy_tests(name, "swift", &tests.join("Tests").join(&target));
+    std::fs::write(
+        tests.join("Package.swift"),
+        format!(
+            r#"// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "{module}E2E",
+    platforms: [.macOS("12.0")],
+    dependencies: [.package(path: {package:?}), .package(path: {support:?})],
+    targets: [
+        .testTarget(
+            name: "{target}",
+            dependencies: [.product(name: "{module}", package: "package"), .product(name: "LungoKit", package: "lungo-swift")]
+        ),
+    ]
+)
+"#,
+            package = package.display().to_string(),
+            support = dist.join("lungo-swift").display().to_string(),
+        ),
+    )
+    .unwrap();
+    let out = Command::new("swift").arg("test").current_dir(&tests).output().unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{text}");
+    text
+}
+
+/// TEST0328: the ledger example from Go
+#[test]
+fn test0328_the_ledger_example_from_go() {
+    let out = go("ledger", "ledger");
+    assert!(out.contains("--- PASS: Test0326_TheProvedLedgerFromGo"), "{out}");
+}
+
+/// TEST0329: the ledger example from Swift
+#[cfg(target_os = "macos")]
+#[test]
+fn test0329_the_ledger_example_from_swift() {
+    let out = swift("ledger", "Ledger");
+    assert!(out.contains("Executed 1 test, with 0 failures"), "{out}");
+}
