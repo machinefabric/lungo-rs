@@ -1,0 +1,10 @@
+name = "acme"
+version = "0.1.0"
+defaultTargets = ["Acme"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Acme"

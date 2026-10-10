@@ -14,6 +14,7 @@ members = [
     "tools/lungo-dist",
     "examples/ledger",
     "examples/oracle-monitor",
+    "examples/semantic-model",
     "examples/session",
     "examples/async-store",
     "examples/clock",

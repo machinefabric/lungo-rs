@@ -1,0 +1,14 @@
+name = "inventory"
+version = "0.1.0"
+defaultTargets = ["Inventory"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[require]]
+name = "acme"
+path = "../acme"
+
+[[lean_lib]]
+name = "Inventory"

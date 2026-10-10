@@ -1,0 +1,13 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "lungo",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../lean",
+   "configFile": "lakefile.toml"}],
+ "name": "acme",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

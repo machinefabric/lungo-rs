@@ -1,0 +1,13 @@
+[package]
+name = "semantic-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: a claim under another package's own semantic model, composed across packages, from Rust and Go"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true

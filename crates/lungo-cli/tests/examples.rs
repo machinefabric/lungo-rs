@@ -228,3 +228,60 @@ fn test0340_the_async_store_example_from_typescript_and_python() {
     let out = python("async-store", "store");
     assert!(out.contains("Ran 1 test") && out.trim_end().ends_with("OK"), "{out}");
 }
+
+/// TEST0344: the semantic-model example from Go, composed with Acme's package
+#[test]
+fn test0344_the_semantic_model_example_from_go_composed_with_acmes_package() {
+    let out = go("semantic-model", "inventory");
+    assert!(out.contains("--- PASS: Test0343_TheInventoryAndAcmesClaimFromGo"), "{out}");
+    let dist = distribution(&["go"]);
+    let work = fresh(&root().join("semantic-model").join("compose"));
+    let inventory = work.join("inventory");
+    support::generate(&example("semantic-model").join("lungo.toml"), "c", &inventory, &dist);
+    let acme = work.join("acme");
+    support::generate(&example("semantic-model").join("acme/lungo.toml"), "c", &acme, &dist);
+    let compose = |other: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_lungo"))
+            .args(["assurance", "--compose"])
+            .arg(inventory.join("assurance.json"))
+            .arg("--compose")
+            .arg(other.join("assurance.json"))
+            .output()
+            .unwrap()
+    };
+    // Both describe Acme.Linear, from the package that declares it, the same way.
+    let out = compose(&acme);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("2 documents agree"));
+    // Acme changes its model: the inventory's claim was proved against the old one.
+    let changed = work.join("acme-changed");
+    let source = std::fs::read_to_string(example("semantic-model").join("acme/Acme.lean")).unwrap();
+    let edited = source.replace("fun a => k * size a + k", "fun a => k * size a");
+    assert_ne!(source, edited, "the model's definition changed: update this test");
+    std::fs::create_dir_all(&changed).unwrap();
+    for f in ["lean-toolchain", "lungo.toml"] {
+        std::fs::copy(example("semantic-model").join("acme").join(f), changed.join(f)).unwrap();
+    }
+    std::fs::write(changed.join("Acme.lean"), edited).unwrap();
+    let lungo_lib = serde_json::to_string(&repo().join("lean")).unwrap();
+    std::fs::write(
+        changed.join("lakefile.toml"),
+        format!(
+            "name = \"acme\"\nversion = \"0.1.0\"\ndefaultTargets = [\"Acme\"]\n\n[[require]]\nname = \"lungo\"\npath = {lungo_lib}\n\n[[lean_lib]]\nname = \"Acme\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        changed.join("lake-manifest.json"),
+        format!(
+            r#"{{"version": "1.2.0", "packagesDir": ".lake/packages", "packages": [{{"type": "path", "scope": "", "name": "lungo", "manifestFile": "lake-manifest.json", "inherited": false, "dir": {lungo_lib}, "configFile": "lakefile.toml"}}], "name": "acme", "lakeDir": ".lake", "fixedToolchain": false}}"#
+        ),
+    )
+    .unwrap();
+    let changed_out = work.join("acme-changed-out");
+    support::generate(&changed.join("lungo.toml"), "c", &changed_out, &dist);
+    let out = compose(&changed_out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "{stderr}");
+    assert!(stderr.contains("error[LNG0708]") && stderr.contains("Acme.Linear"), "{stderr}");
+}

@@ -1,0 +1,2 @@
+# Acme's package generated on its own, for the services that check budgets at run time.
+project = "."

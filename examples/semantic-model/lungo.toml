@@ -1,0 +1,5 @@
+# The Lake project of this crate's build.rs (the inventory, using Acme's model), for `lungo`.
+project = "lean"
+
+[assurance]
+require-claims = ["Inventory.lookup", "Inventory.lookupSteps"]

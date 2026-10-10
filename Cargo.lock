@@ -1003,6 +1003,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "semantic-model"
+version = "1.88.0"
+dependencies = [
+ "lungo",
+ "lungo-build",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
