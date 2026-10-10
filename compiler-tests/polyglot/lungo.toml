@@ -1,6 +1,6 @@
 # The polyglot fixture: one Lean program generated for every language, whose end-to-end tests
 # make the same assertions in each. Its host externs are the operations of two facilities
-# (`Polyglot/Host.lean`); every export carries a proved claim.
+# (`Polyglot/Host.lean`); the exports `[assurance]` names each carry a proved claim.
 project = "lean"
 
 [assurance]

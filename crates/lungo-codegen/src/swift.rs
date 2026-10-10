@@ -623,11 +623,14 @@ impl Emitter<'_> {
         let json = self.request.assurance.to_json();
         let hashes = raw_hashes(&json);
         w.line("");
-        w.line("/// The program's assurance document (`assurance.json`).");
+        w.line("/// The program's assurance document: the text of `assurance.json`, byte for byte.");
         w.line(format!("public let assuranceJSON = {hashes}\"\"\""));
-        for l in json.trim_end().lines() {
+        for l in json.lines() {
             w.line(l);
         }
+        // The line break before the closing delimiter is not part of the string: this one ends
+        // the document's last line, as it ends in the file.
+        w.line("");
         w.line(format!("\"\"\"{hashes}"));
         w.line("");
         w.line("/// The program's assurance document: what its Lean code claims and proves of each export, what");

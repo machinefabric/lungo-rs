@@ -3,6 +3,7 @@
 
 use host::{Token, host as callbacks};
 use lungo::{LeanClosure, List, Nat};
+use std::future::Future;
 
 fn nat(n: u64) -> Nat {
     Nat::from(n as u128)
@@ -101,4 +102,85 @@ fn test0047_pure_rust_binary_contains_no_lean_native_code() {
     assert!(symbols > 1000, "the test binary's symbol table was not read ({symbols} symbols)");
     offenders.sort();
     assert!(offenders.is_empty(), "Lean native symbols in a PureRust binary: {offenders:?}");
+}
+
+/// Runs `f` to completion on this thread, parking it while the future is pending.
+fn block_on<F: std::future::Future>(f: F) -> F::Output {
+    struct Unpark(std::thread::Thread);
+    impl std::task::Wake for Unpark {
+        fn wake(self: std::sync::Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+    let waker = std::task::Waker::from(std::sync::Arc::new(Unpark(std::thread::current())));
+    let mut cx = std::task::Context::from_waker(&waker);
+    let mut f = std::pin::pin!(f);
+    loop {
+        if let std::task::Poll::Ready(v) = f.as_mut().poll(&mut cx) {
+            return v;
+        }
+        std::thread::park();
+    }
+}
+
+/// The application's answers to `Host.Ask`: a table of values, failing for the key "down"
+/// and never answering "later"; the tool "triple" multiplies by three, holding `held` while Lean
+/// holds it.
+struct Asks {
+    held: std::sync::Arc<()>,
+}
+
+#[derive(Debug, PartialEq)]
+struct Down;
+
+impl host::AskHandler for Asks {
+    type Error = Down;
+
+    async fn fetch(&self, key: String) -> Result<Result<Nat, String>, Down> {
+        match key.as_str() {
+            "down" => Err(Down),
+            "later" => std::future::pending().await,
+            "one" => Ok(Ok(nat(1))),
+            "twenty" => Ok(Ok(nat(20))),
+            other => Ok(Err(format!("no value for {other}"))),
+        }
+    }
+
+    async fn tool(&self, name: String) -> Result<LeanClosure<fn(Nat) -> Nat>, Down> {
+        assert_eq!(name, "triple");
+        let held = self.held.clone();
+        Ok(LeanClosure::from_fn(move |n: Nat| {
+            let _held = &held;
+            &n * &nat(3)
+        }))
+    }
+}
+
+/// TEST0305: async exports run on the handler's answers
+#[test]
+fn test0305_async_exports_run_on_the_handlers_answers() {
+    let asks = Asks { held: std::sync::Arc::new(()) };
+    let keys = |ks: &[&str]| ks.iter().map(|k| k.to_string()).collect::<List<String>>();
+    assert_eq!(block_on(host::sum_keys(&asks, keys(&["one", "missing", "twenty"]))), Ok(nat(21)));
+    assert_eq!(block_on(host::sum_keys(&asks, keys(&[]))), Ok(nat(0)));
+    // A Lean closure the host made, called by Lean after a later operation.
+    assert_eq!(block_on(host::use_tool(&asks, "triple".into(), "twenty".into())), Ok(nat(60)));
+    // An error of the handler abandons the program: the function returns it.
+    assert_eq!(block_on(host::sum_keys(&asks, keys(&["one", "down", "twenty"]))), Err(Down));
+    assert_eq!(std::sync::Arc::strong_count(&asks.held), 1, "the tool was released when its program ended");
+}
+
+/// TEST0306: dropping an async export's future releases its program
+#[test]
+fn test0306_dropping_an_async_exports_future_releases_its_program() {
+    let asks = Asks { held: std::sync::Arc::new(()) };
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    {
+        let mut call = Box::pin(host::use_tool(&asks, "triple".into(), "later".into()));
+        // The program holds the tool while it waits for the fetch that never comes.
+        assert!(call.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(std::sync::Arc::strong_count(&asks.held), 2, "the waiting program holds the tool");
+    }
+    assert_eq!(std::sync::Arc::strong_count(&asks.held), 1, "dropping the future released the program");
 }
