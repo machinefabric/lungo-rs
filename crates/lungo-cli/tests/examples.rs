@@ -219,3 +219,12 @@ fn test0335_the_oracle_monitor_example_from_python() {
     let out = python("oracle-monitor", "access");
     assert!(out.contains("Ran 2 tests") && out.trim_end().ends_with("OK"), "{out}");
 }
+
+/// TEST0340: the async-store example from TypeScript and Python
+#[test]
+fn test0340_the_async_store_example_from_typescript_and_python() {
+    let out = ts("async-store", "store");
+    assert!(out.contains("# pass 1") && out.contains("# fail 0"), "{out}");
+    let out = python("async-store", "store");
+    assert!(out.contains("Ran 1 test") && out.trim_end().ends_with("OK"), "{out}");
+}

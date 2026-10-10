@@ -15,6 +15,7 @@ members = [
     "examples/ledger",
     "examples/oracle-monitor",
     "examples/session",
+    "examples/async-store",
     "examples/clock",
     "examples/codec",
     "examples/sort",

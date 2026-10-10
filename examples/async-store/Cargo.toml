@@ -1,0 +1,13 @@
+[package]
+name = "async-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: async programs over a host's key-value store, proved against a model of it, from Rust, TypeScript and Python"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true
