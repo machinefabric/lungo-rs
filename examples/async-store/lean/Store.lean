@@ -25,7 +25,7 @@ instance storeOps : Interface StoreOp where
 abbrev Contents := String → Option String
 
 /-- `contents` with `value` at `key`. -/
-def Contents.set (contents : Contents) (key value : String) : Contents :=
+private def Contents.set (contents : Contents) (key value : String) : Contents :=
   fun k => if k = key then some value else contents k
 
 /-- The store as the host is expected to keep it: `get` reads, `put` writes. -/
