@@ -2,5 +2,9 @@ name = "formal"
 version = "0.1.0"
 defaultTargets = ["Formal"]
 
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
 [[lean_lib]]
 name = "Formal"

@@ -44,5 +44,24 @@ fn test0259_metadata_identifies_the_lean_declaration() {
     assert_eq!(info.source_file, Some("lean/Formal/Session.lean"));
     assert_eq!(info.rust_path, "apply");
     assert!(!info.trust.depends_on_sorry);
-    assert!(formal::__meta::declaration("Formal.apply_preserves_inv").is_none());
+    assert!(formal::__meta::declaration("Formal.step_implements").is_none(), "a theorem is not exported");
+}
+
+/// TEST0307: step is proved to do what the specification says
+#[test]
+fn test0307_step_is_proved_to_do_what_the_specification_says() {
+    assert_eq!(formal::step(sess(false, 4), Op::Open), (true, sess(true, 4)));
+    assert_eq!(formal::step(sess(true, 4), Op::Open), (false, sess(true, 4)));
+    assert_eq!(formal::step(sess(true, 4), Op::Tick), (true, sess(true, 5)));
+    let assurance = formal::__meta::assurance();
+    let claim = assurance.claim("Formal.step_implements").expect("the claim is reported");
+    assert_eq!((claim.relation, claim.status), ("lungo.preserves", lungo::ClaimStatus::Proved));
+    assert_eq!((claim.subjects, claim.specifications), (&["Formal.step"][..], &["Formal.Spec"][..]));
+    assert!(claim.assumptions.is_empty(), "the session needs nothing of the host");
+    assert_eq!(assurance.specification("Formal.Spec").map(|s| s.kind), Some("lungo.state"));
+    let step = formal::__meta::declaration("Formal.step").unwrap();
+    assert_eq!(step.assurance.claims, ["Formal.step_implements"]);
+    let run = formal::__meta::declaration("Formal.run").unwrap();
+    assert_eq!(run.assurance.claims, ["Formal.run_ticks"]);
+    assert_eq!(formal::__meta::declaration("Formal.apply").unwrap().assurance.claims, [] as [&str; 0]);
 }

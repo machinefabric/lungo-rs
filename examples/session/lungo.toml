@@ -1,3 +1,6 @@
-# The Lake project of this crate's build.rs, for `lungo`. Its build settings are the
-# defaults, as in build.rs: the Lake package's default targets, exported.
+# The Lake project of this crate's build.rs, for `lungo`. Its settings are build.rs's: the Lake
+# package's default targets, exported, with `step` and `run` each carrying a proved claim.
 project = "lean"
+
+[assurance]
+require-claims = ["Formal.step", "Formal.run"]
