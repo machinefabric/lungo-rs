@@ -1,0 +1,10 @@
+# The Lake project of this crate's build.rs, for `lungo`: the same settings, so the bindings other
+# languages use are generated from the program the crate compiles.
+project = "lean"
+
+[rust.rust-externs]
+timing_ticks_per_second = "crate::host::ticks_per_second"
+timing_now = "crate::host::now"
+
+[assurance]
+require-claims = ["Timing.toTicks", "Timing.toSeconds", "Timing.secondsLeft"]

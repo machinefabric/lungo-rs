@@ -88,9 +88,9 @@ fn ts(name: &str, program: &str) -> String {
     run(Command::new("node").arg("--test").current_dir(&project))
 }
 
-/// Generates example `name` (program `program`) for C, builds its test program with CMake, and
-/// runs it.
-fn c(name: &str, program: &str) -> String {
+/// Generates example `name` (program `program`) for C and builds its test program with CMake;
+/// the program.
+fn c(name: &str, program: &str) -> PathBuf {
     let dist = distribution(&["runtime"]);
     let work = fresh(&root().join(name).join("c"));
     let package = work.join(program);
@@ -105,12 +105,11 @@ fn c(name: &str, program: &str) -> String {
         .arg("-DCMAKE_BUILD_TYPE=Debug"));
     run(Command::new("cmake").arg("--build").arg(&build).args(["--config", "Debug", "--parallel"]));
     let exe = format!("{name}_test");
-    let exe = [exe.clone(), format!("Debug/{exe}.exe"), format!("{exe}.exe")]
+    [exe.clone(), format!("Debug/{exe}.exe"), format!("{exe}.exe")]
         .iter()
         .map(|p| build.join(p))
         .find(|p| p.is_file())
-        .expect("the test program is built");
-    run(&mut Command::new(exe))
+        .expect("the test program is built")
 }
 
 /// TEST0319: the codec example from TypeScript and C
@@ -118,5 +117,21 @@ fn c(name: &str, program: &str) -> String {
 fn test0319_the_codec_example_from_typescript_and_c() {
     let out = ts("codec", "varint");
     assert!(out.contains("# pass 1") && out.contains("# fail 0"), "{out}");
-    assert_eq!(c("codec", "varint"), "ok\n");
+    assert_eq!(run(&mut Command::new(c("codec", "varint"))), "ok\n");
+}
+
+/// TEST0322: deadlines on a host's clock from C, and on a clock breaking the assumption
+#[test]
+fn test0322_deadlines_on_a_hosts_clock_from_c_and_on_a_clock_breaking_the_assumption() {
+    let exe = c("clock", "timing");
+    assert_eq!(
+        run(&mut Command::new(&exe)),
+        "round trip of 7 s: 7 s; deadline in 5 s, after 2.5 s: 2 s left\nassumes Timing.Ticks: yes\n"
+    );
+    // The claims are proved, and the host breaks what they assume: the round trip they promise
+    // does not happen.
+    assert_eq!(
+        run(Command::new(&exe).arg("lawless")),
+        "round trip of 7 s: 0 s; deadline in 5 s, after 2.5 s: 0 s left\nassumes Timing.Ticks: yes\n"
+    );
 }

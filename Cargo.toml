@@ -13,6 +13,7 @@ members = [
     "crates/lungo-runtime",
     "tools/lungo-dist",
     "examples/session",
+    "examples/clock",
     "examples/codec",
     "examples/sort",
     "compiler-tests/runner",

@@ -1,0 +1,13 @@
+[package]
+name = "clock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: deadlines on the host's clock, proved under an assumption about it, used from Rust and C"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true

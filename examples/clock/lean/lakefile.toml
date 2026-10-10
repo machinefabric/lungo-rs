@@ -1,0 +1,10 @@
+name = "timing"
+version = "0.1.0"
+defaultTargets = ["Timing"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Timing"
