@@ -664,11 +664,12 @@ fn inspect(analysis: &Analysis, name: &str, local_prefix: &str, program: &str) -
         print!("{}", assurance::export_block(&doc, summary).split_once('\n').map(|(_, rest)| rest).unwrap_or(""));
         let t = &e.trust;
         println!("  == Trust, in full ==");
-        println!("    axioms: {}", t.axioms.join(", "));
+        let list = |xs: &[String]| if xs.is_empty() { "(none)".to_owned() } else { xs.join(", ") };
+        println!("    axioms: {}", list(&t.axioms));
         println!("    depends on sorry: {}", t.depends_on_sorry);
-        println!("    unsafe dependencies: {}", t.unsafe_dependencies.join(", "));
-        println!("    partial dependencies: {}", t.partial_dependencies.join(", "));
-        println!("    extern dependencies: {}", t.extern_dependencies.join(", "));
+        println!("    unsafe dependencies: {}", list(&t.unsafe_dependencies));
+        println!("    partial dependencies: {}", list(&t.partial_dependencies));
+        println!("    extern dependencies: {}", list(&t.extern_dependencies));
     }
     if let Some(c) = doc.claim(name) {
         found = true;
