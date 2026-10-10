@@ -29,9 +29,11 @@ fn text(out: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
 }
 
-/// The local distribution with `components`.
-fn distribution(components: &[&str]) -> PathBuf {
-    support::distribution(&root(), components)
+/// Every component this program's tests use, built once, before any test uses the distribution.
+const COMPONENTS: &[&str] = &["runtime", "go", "python", "swift", "ts"];
+
+fn distribution() -> PathBuf {
+    support::distribution(&root(), COMPONENTS)
 }
 
 /// `provider` modified: `Pos` gains a field and `Pair` another, so both layouts change.
@@ -86,7 +88,7 @@ fn extern_tables(language: &str, package: &str, pos: &str, pair: &str) -> String
 #[test]
 fn test0105_go_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("go"));
-    let dist = distribution(&["go"]);
+    let dist = distribution();
     let module = fresh(&work.join("module"));
     let provider = |project: &Path| format!("project = {}\n[go]\nout = {}\n", t(project), t(&module.join("provider")));
     generated(generate(&work, "provider", &provider(&fixture().join("provider")), &dist));
@@ -131,7 +133,7 @@ fn test0105_go_programs_share_values_and_refuse_another_layout() {
 #[test]
 fn test0106_python_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("python"));
-    let dist = distribution(&["python"]);
+    let dist = distribution();
     let provider_pkg = work.join("provider");
     let host = fresh(&work.join("host"));
     let provider = |project: &Path| format!("project = {}\n[python]\nout = {}\n", t(project), t(&provider_pkg));
@@ -192,7 +194,7 @@ fn test0106_python_programs_share_values_and_refuse_another_layout() {
 #[test]
 fn test0107_typescript_programs_share_data_but_not_handles() {
     let work = fresh(&root().join("ts"));
-    let dist = distribution(&["ts"]);
+    let dist = distribution();
     let provider_pkg = work.join("provider");
     let host = fresh(&work.join("host"));
     let provider = |project: &Path| {
@@ -258,7 +260,7 @@ fn test0107_typescript_programs_share_data_but_not_handles() {
 #[test]
 fn test0108_swift_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("swift"));
-    let dist = distribution(&["swift"]);
+    let dist = distribution();
     let provider_pkg = work.join("provider-swift");
     let host = fresh(&work.join("host"));
     let provider = |project: &Path| {
@@ -334,7 +336,7 @@ let package = Package(
 #[test]
 fn test0109_c_programs_share_values_and_refuse_another_layout() {
     let work = fresh(&root().join("c"));
-    let dist = distribution(&["runtime"]);
+    let dist = distribution();
     let provider_pkg = work.join("provider");
     let consumer_pkg = work.join("consumer");
     let provider = |project: &Path| format!("project = {}\n[c]\nout = {}\n", t(project), t(&provider_pkg));

@@ -15,8 +15,11 @@ fn root() -> PathBuf {
     repo().join("target").join("examples-e2e")
 }
 
-fn distribution(components: &[&str]) -> PathBuf {
-    support::distribution(&root(), components)
+/// Every component this program's tests use, built once, before any test uses the distribution.
+const COMPONENTS: &[&str] = &["runtime", "go", "python", "swift", "ts"];
+
+fn distribution() -> PathBuf {
+    support::distribution(&root(), COMPONENTS)
 }
 
 fn example(name: &str) -> PathBuf {
@@ -34,7 +37,7 @@ fn copy_tests(name: &str, language: &str, into: &Path) {
 /// Generates example `name` (program `program`) for Go in a module of its own and runs its Go
 /// tests there.
 fn go(name: &str, program: &str) -> String {
-    let dist = distribution(&["go"]);
+    let dist = distribution();
     let module = fresh(&root().join(name).join("go"));
     let package = module.join(program);
     support::generate(&example(name).join("lungo.toml"), "go", &package, &dist);
@@ -67,7 +70,7 @@ fn test0313_the_sort_example_from_go() {
 
 /// Generates example `name` (program `program`) for TypeScript and runs its tests with Node.js.
 fn ts(name: &str, program: &str) -> String {
-    let dist = distribution(&["ts"]);
+    let dist = distribution();
     let work = fresh(&root().join(name).join("ts"));
     let package = work.join(program);
     support::generate(&example(name).join("lungo.toml"), "ts", &package, &dist);
@@ -91,7 +94,7 @@ fn ts(name: &str, program: &str) -> String {
 /// Generates example `name` (program `program`) for C and builds its test program with CMake;
 /// the program.
 fn c(name: &str, program: &str) -> PathBuf {
-    let dist = distribution(&["runtime"]);
+    let dist = distribution();
     let work = fresh(&root().join(name).join("c"));
     let package = work.join(program);
     support::generate(&example(name).join("lungo.toml"), "c", &package, &dist);
@@ -140,7 +143,7 @@ fn test0322_deadlines_on_a_hosts_clock_from_c_and_on_a_clock_breaking_the_assump
 /// XCTest tests with SwiftPM.
 #[cfg(target_os = "macos")]
 fn swift(name: &str, module: &str) -> String {
-    let dist = distribution(&["swift"]);
+    let dist = distribution();
     let work = fresh(&root().join(name).join("swift"));
     let package = work.join("package");
     support::generate(&example(name).join("lungo.toml"), "swift", &package, &dist);
@@ -195,7 +198,7 @@ fn test0329_the_ledger_example_from_swift() {
 /// Generates example `name` (program `program`) for Python, installs it in a virtual environment
 /// with lungo-py, and runs its tests with `unittest`.
 fn python(name: &str, program: &str) -> String {
-    let dist = distribution(&["python"]);
+    let dist = distribution();
     let work = fresh(&root().join(name).join("python"));
     let package = work.join(program);
     support::generate(&example(name).join("lungo.toml"), "python", &package, &dist);
@@ -234,7 +237,7 @@ fn test0340_the_async_store_example_from_typescript_and_python() {
 fn test0344_the_semantic_model_example_from_go_composed_with_acmes_package() {
     let out = go("semantic-model", "inventory");
     assert!(out.contains("--- PASS: Test0343_TheInventoryAndAcmesClaimFromGo"), "{out}");
-    let dist = distribution(&["go"]);
+    let dist = distribution();
     let work = fresh(&root().join("semantic-model").join("compose"));
     let inventory = work.join("inventory");
     support::generate(&example("semantic-model").join("lungo.toml"), "c", &inventory, &dist);

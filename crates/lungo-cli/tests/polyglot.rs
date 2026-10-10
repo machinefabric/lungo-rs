@@ -17,15 +17,17 @@ fn root() -> PathBuf {
     repo().join("target").join("polyglot-e2e")
 }
 
-/// The local distribution with `components`.
-fn distribution(components: &[&str]) -> PathBuf {
-    support::distribution(&root(), components)
+/// Every component this program's tests use, built once, before any test uses the distribution.
+const COMPONENTS: &[&str] = &["runtime", "go", "python", "swift", "ts"];
+
+fn distribution() -> PathBuf {
+    support::distribution(&root(), COMPONENTS)
 }
 
-/// Generates the fixture for `language` with the distribution components `components`.
-fn generate(language: &str, components: &[&str]) -> PathBuf {
+/// Generates the fixture for `language`.
+fn generate(language: &str) -> PathBuf {
     let out = root().join(language);
-    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution(components));
+    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution());
     out
 }
 
@@ -36,7 +38,7 @@ fn fixture(language: &str) -> PathBuf {
 /// TEST0111: c binding
 #[test]
 fn test0111_c_binding() {
-    let package = generate("c", &["runtime"]);
+    let package = generate("c");
     let build = root().join("c-build");
     // A fresh build: a CMake cache records the absolute paths it was configured with.
     if build.exists() {
@@ -71,10 +73,10 @@ fn test0111_c_binding() {
 
 /// A generated package in a module of the language's test program (`lungo generate` owns the
 /// package's directory).
-fn generate_into(language: &str, components: &[&str], module: &Path, package: &str) -> PathBuf {
+fn generate_into(language: &str, module: &Path, package: &str) -> PathBuf {
     std::fs::create_dir_all(module).unwrap();
     let out = module.join(package);
-    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution(components));
+    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution());
     out
 }
 
@@ -82,8 +84,8 @@ fn generate_into(language: &str, components: &[&str], module: &Path, package: &s
 #[test]
 fn test0112_go_binding() {
     let module = root().join("go-module");
-    let package = generate_into("go", &["go"], &module, "polyglot");
-    let dist = distribution(&["go"]);
+    let package = generate_into("go", &module, "polyglot");
+    let dist = distribution();
     // A quoted go.mod path is a Go string literal, which a JSON string is too.
     let support = serde_json::to_string(&dist.join("go")).unwrap();
     std::fs::write(
@@ -105,8 +107,8 @@ fn test0112_go_binding() {
 /// TEST0113: python binding
 #[test]
 fn test0113_python_binding() {
-    let dist = distribution(&["python"]);
-    let package = generate("python", &["python"]);
+    let dist = distribution();
+    let package = generate("python");
     let venv = root().join("python-venv");
     if venv.exists() {
         std::fs::remove_dir_all(&venv).unwrap();
@@ -144,8 +146,8 @@ fn test0113_python_binding() {
 #[cfg(target_os = "macos")]
 #[test]
 fn test0114_swift_binding() {
-    let dist = distribution(&["swift"]);
-    let package = generate("swift", &["swift"]);
+    let dist = distribution();
+    let package = generate("swift");
     let tests = root().join("swift-tests");
     if tests.exists() {
         std::fs::remove_dir_all(&tests).unwrap();
@@ -206,8 +208,8 @@ let package = Package(
 /// TEST0115: ts binding
 #[test]
 fn test0115_ts_binding() {
-    let dist = distribution(&["ts"]);
-    let package = generate("ts", &["ts"]);
+    let dist = distribution();
+    let package = generate("ts");
     assert!(package.join("program.wasm").is_file(), "the WebAssembly module is linked");
 
     // `program.wasm` is a platform product: `--verify` does not compare it, and
@@ -281,7 +283,7 @@ fn test0115_ts_binding() {
 /// TEST0116: WebAssembly has no child processes: a program spawning one cannot be generated for it.
 #[test]
 fn test0116_webassembly_rejects_primitives_it_lacks() {
-    let dist = distribution(&["ts"]);
+    let dist = distribution();
     let out = root().join("ts-process");
     let result = Command::new(env!("CARGO_BIN_EXE_lungo"))
         .current_dir(root())

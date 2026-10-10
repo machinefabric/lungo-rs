@@ -36,25 +36,31 @@ pub fn fresh(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-/// The local distribution under `root` (`<root>/dist`) with `components`, each built once with
-/// its own Cargo target directory (`<root>/cargo`; the outer `cargo test` holds the repository's).
+/// The local distribution under `root` (`<root>/dist`), with every one of `components` (`swift`
+/// only on macOS), built with its own Cargo target directory (`<root>/cargo`; the outer `cargo
+/// test` holds the repository's). A test program builds its whole set once, before any of its
+/// tests uses the distribution: building a component rebuilds files others read (the host
+/// runtime), so nothing is built while a test may be reading.
 pub fn distribution(root: &Path, components: &[&str]) -> PathBuf {
     static BUILT: OnceLock<Mutex<BTreeMap<PathBuf, Vec<String>>>> = OnceLock::new();
     let mut built = BUILT.get_or_init(Default::default).lock().unwrap_or_else(|p| p.into_inner());
-    let built = built.entry(root.to_path_buf()).or_default();
+    let wanted: Vec<String> =
+        components.iter().filter(|c| **c != "swift" || cfg!(target_os = "macos")).map(|c| c.to_string()).collect();
     let dist = root.join("dist");
-    let missing: Vec<&str> = components.iter().copied().filter(|c| !built.iter().any(|b| b == c)).collect();
-    if !missing.is_empty() {
-        let mut cmd = Command::new(env!("CARGO"));
-        cmd.current_dir(repo())
-            .env("CARGO_TARGET_DIR", root.join("cargo"))
-            .args(["run", "--quiet", "-p", "lungo-dist", "--", "local", "--out"])
-            .arg(&dist);
-        for c in &missing {
-            cmd.args(["--component", c]);
+    match built.get(root) {
+        Some(set) => assert_eq!(set, &wanted, "a test program builds one set of components"),
+        None => {
+            let mut cmd = Command::new(env!("CARGO"));
+            cmd.current_dir(repo())
+                .env("CARGO_TARGET_DIR", root.join("cargo"))
+                .args(["run", "--quiet", "-p", "lungo-dist", "--", "local", "--out"])
+                .arg(&dist);
+            for c in &wanted {
+                cmd.args(["--component", c]);
+            }
+            run(&mut cmd);
+            built.insert(root.to_path_buf(), wanted);
         }
-        run(&mut cmd);
-        built.extend(missing.iter().map(|c| c.to_string()));
     }
     dist
 }
