@@ -9,14 +9,12 @@
 //! Each test requires its language's toolchain (Go, Python, Node.js, Swift, CMake and a C
 //! compiler) and fails when it is missing.
 
+mod support;
+
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::{Mutex, OnceLock};
-
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().to_path_buf()
-}
+use support::{fresh, repo, run};
 
 /// Where the tests work.
 fn root() -> PathBuf {
@@ -27,52 +25,13 @@ fn fixture() -> PathBuf {
     repo().join("compiler-tests/extern")
 }
 
-#[track_caller]
-fn run(cmd: &mut Command) -> String {
-    let shown = format!("{cmd:?}");
-    let out = cmd.output().unwrap_or_else(|e| panic!("cannot run {shown}: {e} (is the toolchain installed?)"));
-    assert!(
-        out.status.success(),
-        "{shown} failed ({}):\n{}\n{}",
-        out.status,
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
 fn text(out: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
 }
 
-/// A fresh directory.
-fn fresh(dir: &Path) -> PathBuf {
-    if dir.exists() {
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    std::fs::create_dir_all(dir).unwrap();
-    dir.to_path_buf()
-}
-
-/// The local distribution with `components`, built once per component.
+/// The local distribution with `components`.
 fn distribution(components: &[&str]) -> PathBuf {
-    static BUILT: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
-    let mut built = BUILT.get_or_init(Default::default).lock().unwrap_or_else(|p| p.into_inner());
-    let dist = root().join("dist");
-    let missing: Vec<&str> = components.iter().copied().filter(|c| !built.iter().any(|b| b == c)).collect();
-    if !missing.is_empty() {
-        let mut cmd = Command::new(env!("CARGO"));
-        cmd.current_dir(repo())
-            .env("CARGO_TARGET_DIR", root().join("cargo"))
-            .args(["run", "--quiet", "-p", "lungo-dist", "--", "local", "--out"])
-            .arg(&dist);
-        for c in &missing {
-            cmd.args(["--component", c]);
-        }
-        run(&mut cmd);
-        built.extend(missing.iter().map(|c| c.to_string()));
-    }
-    dist
+    support::distribution(&root(), components)
 }
 
 /// `provider` modified: `Pos` gains a field and `Pair` another, so both layouts change.

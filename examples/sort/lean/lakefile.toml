@@ -1,0 +1,10 @@
+name = "sorting"
+version = "0.1.0"
+defaultTargets = ["Sorting"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Sorting"

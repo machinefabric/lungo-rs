@@ -1,0 +1,10 @@
+name = "varint"
+version = "0.1.0"
+defaultTargets = ["Varint"]
+
+[[require]]
+name = "lungo"
+path = "../../../lean"
+
+[[lean_lib]]
+name = "Varint"

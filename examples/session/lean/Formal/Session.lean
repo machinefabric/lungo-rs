@@ -45,7 +45,7 @@ def step (s : Sess) (op : Op) : Bool × Sess :=
 closed and closing only when open, each flipping `isOpen` and keeping the count; a tick is always
 accepted and counts one more, open or not. A rejected operation leaves the session as it was. -/
 @[lungo_spec "lungo.state"]
-def Spec : StateSpec Sess Op Bool where
+noncomputable def Spec : StateSpec Sess Op Bool where
   init s := s = { isOpen := false, count := 0 }
   invariant _ := True
   step s op accepted s' :=

@@ -1,0 +1,13 @@
+[package]
+name = "codec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: a varint codec proved to round-trip and to reject truncated input, used from Rust, TypeScript and C"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true

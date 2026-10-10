@@ -1,0 +1,13 @@
+[package]
+name = "sort"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "lungo example: merge sort meeting a contract (sorted and a permutation), used from Rust and Go"
+
+[dependencies]
+lungo.workspace = true
+
+[build-dependencies]
+lungo-build.workspace = true

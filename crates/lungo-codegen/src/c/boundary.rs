@@ -573,8 +573,11 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
     w.close("}");
     w.line("");
     let n = index;
-    // A zero-length array is not valid C; the table always has a slot.
-    w.line(format!("static uint64_t {prefix}host_callbacks[{}];", n.max(1)));
+    // A program without operations has no callbacks to hold (and a zero-length array is not
+    // valid C).
+    if n > 0 {
+        w.line(format!("static uint64_t {prefix}host_callbacks[{n}];"));
+    }
     w.line(comment("Registers the host's implementation of operation `index`, before the program is initialized."));
     w.open(format!("void {prefix}set_host_extern(size_t index, uint64_t callback) {{"));
     if n == 0 {

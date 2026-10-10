@@ -234,6 +234,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
+name = "codec"
+version = "1.88.0"
+dependencies = [
+ "lungo",
+ "lungo-build",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1054,6 +1062,14 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "sort"
+version = "1.88.0"
+dependencies = [
+ "lungo",
+ "lungo-build",
+]
 
 [[package]]
 name = "static_assertions"

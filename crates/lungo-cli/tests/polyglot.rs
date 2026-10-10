@@ -6,67 +6,26 @@
 //! Each test requires its language's toolchain (CMake and a C compiler, Go, Python, Swift,
 //! Node.js) and fails when it is missing.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
-
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().to_path_buf()
-}
+use support::{repo, run};
 
 /// Where the tests work: the fixture's distribution, generated packages and builds.
 fn root() -> PathBuf {
     repo().join("target").join("polyglot-e2e")
 }
 
-#[track_caller]
-fn run(cmd: &mut Command) -> String {
-    let shown = format!("{cmd:?}");
-    let out = cmd.output().unwrap_or_else(|e| panic!("cannot run {shown}: {e} (is the toolchain installed?)"));
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(
-        out.status.success(),
-        "{shown} failed ({}):\n{stdout}\n{}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    stdout
-}
-
-/// The local distribution with `components`, built once per component set with its own Cargo
-/// target directory (the outer `cargo test` holds the repository's).
+/// The local distribution with `components`.
 fn distribution(components: &[&str]) -> PathBuf {
-    static BUILT: OnceLock<std::sync::Mutex<Vec<String>>> = OnceLock::new();
-    let built = BUILT.get_or_init(Default::default);
-    let mut built = built.lock().unwrap_or_else(|p| p.into_inner());
-    let dist = root().join("dist");
-    let missing: Vec<&str> = components.iter().copied().filter(|c| !built.iter().any(|b| b == c)).collect();
-    if !missing.is_empty() {
-        let mut cmd = Command::new(env!("CARGO"));
-        cmd.current_dir(repo())
-            .env("CARGO_TARGET_DIR", root().join("cargo"))
-            .args(["run", "--quiet", "-p", "lungo-dist", "--", "local", "--out"])
-            .arg(&dist);
-        for c in &missing {
-            cmd.args(["--component", c]);
-        }
-        run(&mut cmd);
-        built.extend(missing.iter().map(|c| c.to_string()));
-    }
-    dist
+    support::distribution(&root(), components)
 }
 
 /// Generates the fixture for `language` with the distribution components `components`.
 fn generate(language: &str, components: &[&str]) -> PathBuf {
-    let dist = distribution(components);
     let out = root().join(language);
-    run(Command::new(env!("CARGO_BIN_EXE_lungo"))
-        .arg("--config")
-        .arg(repo().join("compiler-tests/polyglot/lungo.toml"))
-        .arg("generate")
-        .arg(format!("--{language}_out={}", out.display()))
-        .arg("--runtime-dir")
-        .arg(&dist));
+    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution(components));
     out
 }
 
@@ -113,16 +72,9 @@ fn test0111_c_binding() {
 /// A generated package in a module of the language's test program (`lungo generate` owns the
 /// package's directory).
 fn generate_into(language: &str, components: &[&str], module: &Path, package: &str) -> PathBuf {
-    let dist = distribution(components);
     std::fs::create_dir_all(module).unwrap();
     let out = module.join(package);
-    run(Command::new(env!("CARGO_BIN_EXE_lungo"))
-        .arg("--config")
-        .arg(repo().join("compiler-tests/polyglot/lungo.toml"))
-        .arg("generate")
-        .arg(format!("--{language}_out={}", out.display()))
-        .arg("--runtime-dir")
-        .arg(&dist));
+    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), language, &out, &distribution(components));
     out
 }
 
