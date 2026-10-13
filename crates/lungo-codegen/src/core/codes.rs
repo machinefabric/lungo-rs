@@ -61,6 +61,14 @@ codes! {
     /// `lungo generate --verify`: an output directory holds something other than what the
     /// project generates now.
     OutputDrift = "LNG0110", "generated output is out of date";
+    /// `lungo self update`: this `lungo` has no release to update from, or is not the one to
+    /// replace itself: it was built from source, a package manager installed it, or its release
+    /// line has published nothing for this platform.
+    UpdateUnavailable = "LNG0111", "no update available to this lungo";
+    /// `lungo self update`: what the release registry served is not a release this `lungo`
+    /// trusts: the manifest's signature does not chain to the roots it was built with, or the
+    /// archive is not the file the manifest describes.
+    UpdateUntrusted = "LNG0112", "release not trusted";
 
     // Lean (02xx).
     /// Lean rejected the program: elaboration, kernel checking, or Lean's compiler.

@@ -217,7 +217,8 @@ fn download(url: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn unpack(bytes: &[u8], into: &Path) -> std::io::Result<()> {
+/// Unpacks the `.tar.gz` `bytes` into `into`, refusing an entry that would be written outside it.
+pub(crate) fn unpack(bytes: &[u8], into: &Path) -> std::io::Result<()> {
     fs::create_dir_all(into)?;
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(bytes));
     for entry in archive.entries()? {

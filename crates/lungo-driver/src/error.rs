@@ -81,6 +81,10 @@ pub enum Error {
     RuntimeChecksum(String),
     /// An output directory is not what the project generates now.
     OutputDrift(String),
+    /// This `lungo` cannot be replaced by a newer release of itself.
+    UpdateUnavailable(String),
+    /// A release the registry served is not one this `lungo` trusts.
+    UpdateUntrusted(String),
     /// A generator plugin failed.
     Plugin(String),
 }
@@ -113,6 +117,8 @@ impl Error {
             Error::RuntimeUnavailable(_) => ErrorCode::RuntimeUnavailable,
             Error::RuntimeChecksum(_) => ErrorCode::RuntimeChecksum,
             Error::OutputDrift(_) => ErrorCode::OutputDrift,
+            Error::UpdateUnavailable(_) => ErrorCode::UpdateUnavailable,
+            Error::UpdateUntrusted(_) => ErrorCode::UpdateUntrusted,
             Error::Plugin(_) => ErrorCode::PluginFailed,
         }
     }
@@ -227,6 +233,8 @@ impl fmt::Display for Error {
             | Error::RuntimeUnavailable(msg)
             | Error::RuntimeChecksum(msg)
             | Error::OutputDrift(msg)
+            | Error::UpdateUnavailable(msg)
+            | Error::UpdateUntrusted(msg)
             | Error::Plugin(msg) => f.write_str(msg),
         }
     }

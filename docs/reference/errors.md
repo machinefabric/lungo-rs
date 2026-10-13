@@ -101,6 +101,25 @@ every file that changed, is missing, or is extra. Neither the build record (`bui
 nor a platform product (the TypeScript binding's `program.wasm`) is compared. Run
 `lungo generate` and commit the sources it writes.
 
+### LNG0111
+
+**No update available to this lungo.** `lungo self update` has nothing to install, or is not
+what updates this `lungo`. The message says which: this `lungo` is not a registry release (it
+was built from source or by `cargo install`), so it knows no release line; a package manager
+installed it, and the message names the command that updates it; the release registry cannot be
+reached, or has published nothing on this `lungo`'s channel or for this platform. The installed
+command is left as it is. See
+[updating](https://machinefabric.com/lungo/docs/reference/lungo-cli#updating).
+
+### LNG0112
+
+**Release not trusted.** `lungo self update` fetched something it does not accept as a release of
+`lungo`: the release manifest's signature does not chain to the keys this `lungo` was built
+with, or the archive is not the file the manifest describes (its size or SHA-256 digest
+differs), or the command in it does not report the version it was published as. Nothing is
+installed, and the download is discarded. A persistent failure means the registry, or the
+connection to it, is serving something that was not published.
+
 ## Lean
 
 ### LNG0201

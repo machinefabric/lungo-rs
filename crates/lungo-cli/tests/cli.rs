@@ -201,6 +201,21 @@ fn test0103_configuration_errors_are_reported() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no lungo configuration"));
 }
 
+/// TEST0369: a lungo that is not a registry release has nothing to update from
+#[test]
+fn test0369_a_lungo_that_is_not_a_registry_release_has_nothing_to_update_from() {
+    // This test's lungo is built here, with no release line: it knows no registry and no keys.
+    let out = Command::new(env!("CARGO_BIN_EXE_lungo"))
+        .args(["self", "update"])
+        .current_dir(Path::new(env!("CARGO_TARGET_TMPDIR")))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(stderr.contains("error[LNG0111]") && stderr.contains("not a registry release"), "{stderr}");
+    assert!(stderr.contains("cargo install lungo-cli"), "it says what does update it: {stderr}");
+}
+
 /// TEST0104: verify names every file that is not what the project generates
 #[test]
 fn test0104_verify_names_every_file_that_is_not_what_the_project_generates() {

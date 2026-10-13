@@ -1,5 +1,8 @@
 #!/bin/sh
 set -e
+# Whose command this is: `@{package} self update` leaves a package's command to the package
+# manager that installed it, and names it from this file.
+printf 'apt\n' > @{prefix}/installed-by
 if command -v update-alternatives >/dev/null 2>&1; then
     update-alternatives --install @{link} @{package} @{prefix}/@{package} 100 \
         || ln -sf @{prefix}/@{package} @{link}

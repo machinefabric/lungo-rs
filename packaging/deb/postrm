@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = purge ]; then
+    # The record the postinst wrote, and the directory it kept from being removed with the
+    # package's own files.
+    rm -f @{prefix}/installed-by
+    rmdir @{prefix} 2>/dev/null || true
     if command -v update-alternatives >/dev/null 2>&1; then
         update-alternatives --remove @{package} @{prefix}/@{package} || rm -f @{link}
     else

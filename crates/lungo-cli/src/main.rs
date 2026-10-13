@@ -14,7 +14,9 @@ mod assurance;
 mod config;
 mod generate;
 mod plugin;
+mod release;
 mod runtime;
+mod update;
 mod wasm;
 
 use clap::{Args, Parser, Subcommand};
@@ -91,6 +93,21 @@ enum Command {
         #[command(subcommand)]
         command: RuntimeCommand,
     },
+    /// This lungo itself.
+    #[command(name = "self")]
+    Itself {
+        #[command(subcommand)]
+        command: SelfCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SelfCommand {
+    /// Replace this lungo with the latest release of the channel it was published on, from the
+    /// release registry it was published in. The release is installed only when its manifest's
+    /// signature chains to the keys this lungo was built with; LNG0112 otherwise. A lungo that a
+    /// package manager installed, or that is not a registry release, is left as it is (LNG0111).
+    Update,
 }
 
 #[derive(Args)]
@@ -293,6 +310,15 @@ fn run(cli: Cli, flags: LanguageFlags) -> Result<ExitCode> {
         runtime_command(command)?;
         return Ok(ExitCode::SUCCESS);
     }
+    if let Command::Itself { command: SelfCommand::Update } = &cli.command {
+        let updated = update::update()?;
+        if updated.from == updated.to {
+            println!("lungo {} is the latest release", updated.to);
+        } else {
+            println!("lungo {} -> {}", updated.from, updated.to);
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Command::Assurance(args) = &cli.command {
         let configured = cli.options.config.is_some()
             || cli.options.project.is_some()
@@ -350,7 +376,7 @@ fn run(cli: Cli, flags: LanguageFlags) -> Result<ExitCode> {
             println!("worker {} at {}", worker.identity, worker.binary.display());
         }
         Command::Setup => setup(&project, file.lean.clone(), &base, &env)?,
-        Command::Runtime { .. } | Command::Assurance(_) => unreachable!("handled above"),
+        Command::Runtime { .. } | Command::Assurance(_) | Command::Itself { .. } => unreachable!("handled above"),
     }
     Ok(ExitCode::SUCCESS)
 }

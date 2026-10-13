@@ -31,10 +31,14 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}
 # An undefined macro makes rpmbuild fail, which is intended.
 cp -a %{lungo_payload}/. %{buildroot}/
+# Whose command this is: `lungo self update` leaves a package's command to the package manager
+# that installed it, and names it from this file.
+printf 'dnf\n' > %{buildroot}/opt/lungo/installed-by
 
 %files
 %dir /opt/lungo
 /opt/lungo/lungo
+/opt/lungo/installed-by
 
 %post
 if command -v update-alternatives >/dev/null 2>&1; then

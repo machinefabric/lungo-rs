@@ -25,6 +25,9 @@ class Lungo < Formula
     # this from inside that single top-level directory: what is here is its contents.
     # `Dir["@{bundle_dir}/*"]` matched nothing, and the install left no command behind.
     libexec.install Dir["*"]
+    # Whose command this is: `@{package} self update` leaves a package's command to the package
+    # manager that installed it, and names it from this file.
+    (libexec/"installed-by").write "Homebrew\n"
     bin.install_symlink libexec/"@{package}"
   end
 

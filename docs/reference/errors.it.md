@@ -104,6 +104,27 @@ il messaggio elenca ogni file modificato, mancante o in più. Non vengono confro
 registro della build (`build-info.json`) né un prodotto di piattaforma (il `program.wasm` del
 binding TypeScript). Esegui `lungo generate` e fai il commit dei sorgenti che scrive.
 
+### LNG0111
+
+**Nessun aggiornamento disponibile per questo lungo.** `lungo self update` non ha nulla da
+installare, oppure non è ciò che aggiorna questo `lungo`. Il messaggio dice quale dei casi: questo
+`lungo` non è una release del registro (è stato compilato dai sorgenti o con `cargo install`), e
+quindi non conosce alcuna linea di release; lo ha installato un gestore di pacchetti, e il
+messaggio indica il comando che lo aggiorna; il registro delle release non è raggiungibile, oppure
+non ha pubblicato nulla sul canale di questo `lungo` o per questa piattaforma. Il comando
+installato resta com'è. Vedi
+[aggiornamento](https://machinefabric.com/lungo/docs/reference/lungo-cli#updating).
+
+### LNG0112
+
+**Release non attendibile.** `lungo self update` ha scaricato qualcosa che non accetta come
+release di `lungo`: la firma del manifest della release non risale alle chiavi con cui questo
+`lungo` è stato compilato, oppure l'archivio non è il file che il manifest descrive (la dimensione
+o il digest SHA-256 differiscono), oppure il comando che contiene non dichiara la versione con cui
+è stato pubblicato. Non viene installato nulla e il download viene scartato. Un errore persistente
+significa che il registro, o la connessione verso di esso, sta servendo qualcosa che non è stato
+pubblicato.
+
 ## Lean
 
 ### LNG0201

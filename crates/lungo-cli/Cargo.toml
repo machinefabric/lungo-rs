@@ -29,6 +29,7 @@ harness = false
 
 [dependencies]
 clap.workspace = true
+ed25519-dalek.workspace = true
 flate2.workspace = true
 lungo-build.workspace = true
 lungo-driver.workspace = true
@@ -38,6 +39,7 @@ sha2.workspace = true
 tar.workspace = true
 toml.workspace = true
 ureq.workspace = true
+zip.workspace = true
 
 [build-dependencies]
 serde_json.workspace = true

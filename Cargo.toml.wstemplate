@@ -53,6 +53,8 @@ cc = "1.2"
 ciborium = "0.2.2"
 clap = { version = "4.5", features = ["derive"] }
 dunce = "1.0"
+# A release manifest is signed: raw ed25519 over its exact bytes (`lungo self update`).
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 flate2 = "1.1"
 ignore = "0.4"
 libc = "0.2"
