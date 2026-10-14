@@ -1,4 +1,4 @@
-# Rendered from lakefile.toml.wstemplate by `sdx`: edit the template, not lakefile.toml.
+# Rendered from lakefile.toml.wstemplate: edit the template, not lakefile.toml.
 #
 # lungo's Lean library: the declarations a Lean project uses to state what its exported
 # definitions are proved to do, which host facilities they need and what they assume of them,
