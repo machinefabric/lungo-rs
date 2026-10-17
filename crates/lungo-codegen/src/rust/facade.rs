@@ -1442,10 +1442,36 @@ impl<'a> Facade<'a> {
 
 /// The Lean-facing description of an export used in documentation comments.
 pub fn describe_export(export: &Export, source: Option<String>) -> Vec<String> {
-    let mut doc = vec![format!("Lean: `{} : {}`", export.name, export.lean_type)];
+    let mut doc = vec![format!("Lean: `{} : {}`", export.name, one_line(&export.lean_type))];
     if let Some(s) = source {
         doc.push(String::new());
         doc.push(format!("Source: {s}"));
     }
     doc
+}
+
+/// A Lean type on one line, for a one-line comment.
+///
+/// Lean's pretty printer wraps a long type at its width, and each line of a doc comment is
+/// written with its own `///`: a wrapped type's second line landed outside the comment, as
+/// bare text in the generated module, and the crate did not compile. Go's and Python's
+/// generators already put the type on one line the same way.
+fn one_line(lean_type: &str) -> String {
+    lean_type.replace('\n', " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::one_line;
+
+    // TEST370: a Lean type the pretty printer wrapped is written on one line, so each line
+    // of a generated doc comment stays inside the comment
+    #[test]
+    fn test370_a_wrapped_lean_type_is_written_on_one_line() {
+        let wrapped = "List String →\n  List Market.About.Spelling → Option (List Market.About.Param)";
+        let line = one_line(wrapped);
+        assert!(!line.contains('\n'), "{line}");
+        assert_eq!(line, "List String →   List Market.About.Spelling → Option (List Market.About.Param)");
+        assert_eq!(one_line("Nat → Nat"), "Nat → Nat", "a type on one line is left as it is");
+    }
 }
