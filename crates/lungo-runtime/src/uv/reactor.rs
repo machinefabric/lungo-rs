@@ -97,6 +97,8 @@ struct LoopState {
     timer_sinks: BTreeMap<u64, *const dyn TimerSink>,
     timers: BinaryHeap<Reverse<TimerEntry>>,
     pending: VecDeque<Callback>,
+    /// Sockets of finalized handles, closed by the loop thread once its poll has returned.
+    retired: Vec<Box<dyn Send>>,
     next_id: u64,
     next_seq: u64,
 }
@@ -141,6 +143,7 @@ pub fn reactor() -> &'static Reactor {
                 timer_sinks: BTreeMap::new(),
                 timers: BinaryHeap::new(),
                 pending: VecDeque::new(),
+                retired: Vec::new(),
                 next_id: 1,
                 next_seq: 0,
             }),
@@ -196,6 +199,19 @@ impl Reactor {
 
     pub fn unregister_source(&self, guard: &LoopGuard<'_>, id: u64) {
         self.state(guard).sources.remove(&id);
+    }
+
+    /// Hands a finalized handle's socket to the loop, which closes it once its current poll has
+    /// returned and before it collects interests again — as libuv closes a handle on the loop
+    /// (`uv_close`), never under it.
+    ///
+    /// Closing it here instead races the poll the loop may be in, holding that very socket: on
+    /// macOS `close` waits for the poll to let go of it and the poll has nothing to wake it, so
+    /// both threads wait for ever; Winsock fails the whole poll (WSAENOTSOCK). Kept open until
+    /// then, its descriptor cannot be reused by another socket while a poll still names it.
+    pub fn retire(&self, guard: &LoopGuard<'_>, resource: Box<dyn Send>) {
+        self.state(guard).retired.push(resource);
+        self.wake();
     }
 
     pub fn register_timer(&self, guard: &LoopGuard<'_>, sink: *const dyn TimerSink) -> u64 {
@@ -269,14 +285,14 @@ impl Reactor {
                     }
                 }
             }
-            match sys::poll(&mut entries, timeout_ms) {
-                Ok(()) => {}
-                // A source was finalized, and its socket closed, between collecting the interests
-                // and polling them: collect them again.
-                Err(e) if sys::closed_while_collected(&e) => continue,
-                Err(e) => lean_internal_panic(&format!("event loop poll failed: {e}")),
+            // Every socket collected above is open until the poll returns: a handle finalized
+            // meanwhile hands its socket to `retire`, and those are closed below.
+            if let Err(e) = sys::poll(&mut entries, timeout_ms) {
+                lean_internal_panic(&format!("event loop poll failed: {e}"));
             }
             let guard = self.lock();
+            // Closed now that no poll holds them, and before the interests are collected again.
+            drop(std::mem::take(&mut self.state(&guard).retired));
             if entries[0].readable {
                 let mut buf = [0u8; 64];
                 while self.wake_rx.recv(&mut buf).is_ok() {}
@@ -340,8 +356,9 @@ mod tests {
     }
 
     /// In the child of TEST0372: registers a socket, wakes the loop so that it collects it, and
-    /// closes it under the loop lock, as finalizing a socket handle does, many times over; the
-    /// loop polls some of those sockets after they are closed. Elsewhere, nothing.
+    /// finalizes it under the loop lock as a socket handle's finalizer does — unregistered, its
+    /// socket handed to the loop — many times over, so that the loop is often polling a socket
+    /// as it is finalized. Elsewhere, nothing.
     #[test]
     fn sockets_closed_while_polled() {
         if std::env::var_os(CHILD).is_none() {
@@ -358,26 +375,45 @@ mod tests {
             std::thread::yield_now();
             let guard = r.lock();
             r.unregister_source(&guard, id);
-            drop(socket);
+            r.retire(&guard, Box::new(socket));
             drop(guard);
         }
     }
 
-    /// TEST0372: The loop survives a socket closed between collecting the interests and polling
-    /// them. Winsock fails the whole poll for it (WSAENOTSOCK), which stopped the process with
-    /// "event loop poll failed"; the child runs in a process of its own because that stop ends it.
+    /// TEST0372: The loop survives a socket handle finalized while it is polling that socket.
+    /// Closed under the poll, Winsock failed the whole poll (WSAENOTSOCK), which stopped the
+    /// process with "event loop poll failed", and on macOS `close` waited for the poll and the
+    /// poll for nothing, so both threads waited for ever — a release stood still for over an
+    /// hour inside this test. The child runs in a process of its own because either ends it, and
+    /// is given a deadline, so that a loop that stands still fails this rather than hangs it.
     #[test]
     fn test0372_the_loop_survives_a_socket_closed_while_polled() {
         let exe = std::env::current_exe().expect("the test binary");
-        let out = std::process::Command::new(&exe)
+        let mut child = std::process::Command::new(&exe)
             .args(["--exact", "uv::reactor::tests::sockets_closed_while_polled", "--test-threads", "1"])
             .env(CHILD, "1")
-            .output()
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .expect("run the child");
+        // Twenty thousand finalizations take well under a second where none of them waits.
+        let deadline = Instant::now() + Duration::from_secs(120);
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("the child's state") {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("the loop stood still: the child did not finish within 120 s");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let out = child.wait_with_output().expect("the child's output");
         assert!(
-            out.status.success(),
+            status.success(),
             "the child exited {}:\n{}{}",
-            out.status,
+            status,
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );

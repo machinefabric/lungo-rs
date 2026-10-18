@@ -62,7 +62,7 @@ unsafe fn finalize(p: *mut ()) {
         let guard = r.lock();
         let tcp = Box::from_raw(p as *mut Tcp);
         r.unregister_source(&guard, tcp.source);
-        let inner = &*tcp.inner.get();
+        let inner = &mut *tcp.inner.get();
         if !inner.promise_shutdown.is_null()
             || !inner.promise_accept.is_null()
             || !inner.promise_read.is_null()
@@ -71,6 +71,14 @@ unsafe fn finalize(p: *mut ()) {
             || !inner.writes.is_empty()
         {
             lean_internal_panic("a TCP socket with pending operations was finalized");
+        }
+        // The loop may be polling the socket right now: it closes it once that poll returns
+        // (`Reactor::retire`), never this thread under it.
+        if let Some(sock) = inner.sock.take() {
+            r.retire(&guard, Box::new(sock));
+        }
+        if let Some(sock) = inner.accepted.take() {
+            r.retire(&guard, Box::new(sock));
         }
         drop(tcp);
         drop(guard);

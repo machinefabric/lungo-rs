@@ -44,9 +44,14 @@ unsafe fn finalize(p: *mut ()) {
         let guard = r.lock();
         let udp = Box::from_raw(p as *mut Udp);
         r.unregister_source(&guard, udp.source);
-        let inner = &*udp.inner.get();
+        let inner = &mut *udp.inner.get();
         if !inner.promise_read.is_null() || !inner.byte_array.is_null() || !inner.sends.is_empty() {
             lean_internal_panic("a UDP socket with pending operations was finalized");
+        }
+        // The loop may be polling the socket right now: it closes it once that poll returns
+        // (`Reactor::retire`), never this thread under it.
+        if let Some(sock) = inner.sock.take() {
+            r.retire(&guard, Box::new(sock));
         }
         drop(udp);
         drop(guard);
