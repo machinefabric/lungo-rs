@@ -153,6 +153,12 @@ fn drift(
 
 /// Runs the generation, or with `verify` the comparison; one report line per output.
 pub fn run(s: &Settings) -> Result<Vec<String>> {
+    // An output is read where neither the configuration nor the Lake project is: every output
+    // names the project's files relative to the project, wherever the configuration and the
+    // output directory are.
+    let project = std::path::absolute(s.env.manifest_dir.join(s.project))
+        .map_err(|e| Error::io(format!("cannot resolve {}", s.project.display()), e))?;
+    let base = Environment { manifest_dir: project.clone(), ..s.env.clone() };
     let analyses = Analyses { lean: s.lean, assurance: s.assurance, host: OnceCell::new(), wasm: OnceCell::new() };
     let mut report = Vec::new();
     let mut drifts = Vec::new();
@@ -168,8 +174,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
                 dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                 std::process::id()
             ));
-            let env = Environment { out_dir: scratch.clone(), ..s.env.clone() };
-            let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env));
+            let env = Environment { out_dir: scratch.clone(), ..base.clone() };
+            let outcome = builder.run_with(&project, &env, &|ctx| analyses.get(ctx, &env));
             let compared = outcome.and_then(|o| {
                 let expected = output::output_files(&scratch.join(&o.name))?;
                 let actual = output::output_files(&dir.join(&o.name))?;
@@ -185,8 +191,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
                 None => report.push(format!("verified: rust {}", at.display())),
             }
         } else {
-            let env = Environment { out_dir: dir.clone(), ..s.env.clone() };
-            let outcome = builder.run_with(s.project, &env, &|ctx| analyses.get(ctx, &env))?;
+            let env = Environment { out_dir: dir.clone(), ..base.clone() };
+            let outcome = builder.run_with(&project, &env, &|ctx| analyses.get(ctx, &env))?;
             let at = dir.join(&outcome.name);
             report.push(if outcome.reused {
                 format!("up to date: rust {}", at.display())
@@ -212,10 +218,10 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
     }
     let runtime = runtime::select(s.runtime_dir.as_deref())?;
     let distribution_digest = runtime::distribution_digest(&runtime)?;
-    let ctx = s.lean.context(s.project, s.env)?;
-    let wasm = wasm_env(s.env);
+    let ctx = s.lean.context(&project, &base)?;
+    let wasm = wasm_env(&base);
     for (o, generator) in s.outputs.iter().zip(&generators) {
-        let env = if o.language == "ts" { &wasm } else { s.env };
+        let env = if o.language == "ts" { &wasm } else { &base };
         let identity = match generator {
             Generator::Builtin(_) => format!("builtin {}", lungo_build::codegen::GENERATOR_VERSION),
             Generator::Plugin { program, digest } => format!("plugin {} {digest}", program.display()),
@@ -255,12 +261,11 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         let analysis = analyses.get(&ctx, env)?;
         let dir =
             std::path::absolute(&o.dir).map_err(|e| Error::io(format!("cannot resolve {}", o.dir.display()), e))?;
-        let local_prefix = lungo_build::relative_path(&dir, &ctx.project);
         let program = generate_program(&ProgramInput {
             success: &analysis.success,
             toolchain: &analysis.toolchain,
             name: &ctx.name,
-            local_prefix: &local_prefix,
+            local_prefix: &ctx.local_prefix,
             target: &env.target.triple,
         })
         .map_err(|errors| codegen_error(analysis, errors))?;
@@ -325,8 +330,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             report.push(format!("linked: {} {} for this machine", o.language, o.dir.display()));
             continue;
         }
-        let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
-        let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &[])?;
+        let info = output::BuildInfo::new(&key, &ctx, analysis, &analysis.success.input_files, &[])?;
         output::publish(&dir, &files, &binary, &info)?;
         if work.exists() {
             std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;

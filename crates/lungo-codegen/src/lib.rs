@@ -134,18 +134,25 @@ impl SourceIndex {
     }
 }
 
-/// A source location without machine-specific absolute paths: local files relative to the Cargo
-/// package, dependency and toolchain files under a symbolic root.
+/// A source location that names no directory outside the output's own base: the project's files
+/// relative to it (`local_prefix` is the Lean project's path from that base), and dependency and
+/// toolchain files under a symbolic root. A project outside the base, and a Lake dependency
+/// wherever it is (a `path` requirement names a directory of the machine that generated the
+/// output), are written by their package: `<package:NAME>/…`.
 pub fn display_path(loc: &SourceLocation, local_prefix: &str) -> String {
-    let join = |a: &str, b: &str| {
-        if a.is_empty() { b.to_owned() } else { format!("{}/{b}", a.trim_end_matches('/')) }
-    };
+    let by_package = || format!("<package:{}>/{}", loc.package, loc.path);
     match &loc.origin {
-        PackageOrigin::Root => join(local_prefix, &loc.path),
-        PackageOrigin::Path { dir } => join(&join(local_prefix, dir), &loc.path),
-        PackageOrigin::Git { .. } => format!("<package:{}>/{}", loc.package, loc.path),
+        PackageOrigin::Root if local_prefix.is_empty() => loc.path.clone(),
+        PackageOrigin::Root if leaves_base(local_prefix) => by_package(),
+        PackageOrigin::Root => format!("{}/{}", local_prefix.trim_end_matches('/'), loc.path),
+        PackageOrigin::Path { .. } | PackageOrigin::Git { .. } => by_package(),
         PackageOrigin::Toolchain => format!("<lean>/{}", loc.path),
     }
+}
+
+/// Whether the relative path `rel` climbs out of the directory it is relative to.
+fn leaves_base(rel: &str) -> bool {
+    rel.split(['/', '\\']).next() == Some("..")
 }
 
 pub(crate) fn describe_source(src: &Option<DeclSource>, local_prefix: &str) -> Option<String> {
@@ -168,4 +175,32 @@ pub(crate) fn to_json<T: Serialize>(v: &T) -> String {
 /// Whether `decl` is an extern declaration.
 pub fn is_extern(decl: &Declaration) -> bool {
     matches!(decl.body, Body::Extern { .. })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(package: &str, origin: PackageOrigin, path: &str) -> SourceLocation {
+        SourceLocation { package: package.into(), origin, path: path.into() }
+    }
+
+    /// TEST0371: A source location names no directory outside the output's base: the project's
+    /// files relative to it, and a dependency's (a `path` requirement included) and a project
+    /// outside the base by their package.
+    #[test]
+    fn test0371_source_paths_never_climb_out_of_the_base() {
+        let root = at("capdag_formal", PackageOrigin::Root, "CapDAG/Cap.lean");
+        assert_eq!(display_path(&root, ""), "CapDAG/Cap.lean");
+        assert_eq!(display_path(&root, "lean"), "lean/CapDAG/Cap.lean");
+        assert_eq!(display_path(&root, "../../formal"), "<package:capdag_formal>/CapDAG/Cap.lean");
+        let path_dep =
+            at("tagged_urn_formal", PackageOrigin::Path { dir: "../../tagged-urn/formal".into() }, "TaggedUrn/Urn.lean");
+        assert_eq!(display_path(&path_dep, "formal"), "<package:tagged_urn_formal>/TaggedUrn/Urn.lean");
+        assert_eq!(display_path(&path_dep, ""), "<package:tagged_urn_formal>/TaggedUrn/Urn.lean");
+        let git_dep = at("lungo", PackageOrigin::Git { url: "u".into(), rev: "r".into() }, "Lungo.lean");
+        assert_eq!(display_path(&git_dep, "lean"), "<package:lungo>/Lungo.lean");
+        let toolchain = at("Init", PackageOrigin::Toolchain, "Init/Prelude.lean");
+        assert_eq!(display_path(&toolchain, "../x"), "<lean>/Init/Prelude.lean");
+    }
 }

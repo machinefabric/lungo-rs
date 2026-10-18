@@ -6,6 +6,9 @@
 //! from neutral descriptions by per-module constructors, and results are compared through their
 //! `Debug` rendering, which covers every field. Floats are rendered with `{:?}`, which is exact
 //! and distinguishes `-0.0` and NaN.
+//!
+//! Built only where the build script generated the oracle: not on an MSVC target.
+#![cfg(lean_oracle)]
 
 use facade_runner::{oracle, pure};
 use lungo::{ByteArray, FloatArray, Int, LeanClosure, List, Nat};

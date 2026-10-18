@@ -80,6 +80,17 @@ pub fn validate_project(project: &Path) -> Result<LakeProject> {
     Ok(LakeProject { name: manifest.name })
 }
 
+/// The directory of each package the project's committed manifest locks, by name: every package
+/// of its Lake workspace but the project itself.
+pub fn packages(project: &Path) -> Result<Vec<(String, PathBuf)>> {
+    let manifest_path = project.join("lake-manifest.json");
+    let bytes =
+        std::fs::read(&manifest_path).map_err(|e| Error::io(format!("cannot read {}", manifest_path.display()), e))?;
+    let manifest: Manifest = serde_json::from_slice(&bytes)
+        .map_err(|e| Error::Project(format!("{} is not a valid Lake manifest: {e}", manifest_path.display())))?;
+    package_dirs(project, &manifest)
+}
+
 /// The directory of each package the manifest locks, by name.
 fn package_dirs(project: &Path, manifest: &Manifest) -> Result<Vec<(String, PathBuf)>> {
     let packages_dir = project.join(manifest.packages_dir.as_deref().unwrap_or(".lake/packages"));
@@ -104,13 +115,8 @@ fn package_dirs(project: &Path, manifest: &Manifest) -> Result<Vec<(String, Path
 /// library by path, as Cargo runs their build scripts at once) would write its outputs together.
 /// Taken in one order (by canonical path), so builds waiting for each other cannot deadlock.
 fn lock_packages(project: &Path) -> Result<Vec<std::fs::File>> {
-    let manifest_path = project.join("lake-manifest.json");
-    let bytes =
-        std::fs::read(&manifest_path).map_err(|e| Error::io(format!("cannot read {}", manifest_path.display()), e))?;
-    let manifest: Manifest = serde_json::from_slice(&bytes)
-        .map_err(|e| Error::Project(format!("{} is not a valid Lake manifest: {e}", manifest_path.display())))?;
     let mut dirs = vec![project.to_path_buf()];
-    dirs.extend(package_dirs(project, &manifest)?.into_iter().map(|(_, dir)| dir));
+    dirs.extend(packages(project)?.into_iter().map(|(_, dir)| dir));
     let mut dirs: Vec<PathBuf> = dirs
         .into_iter()
         .map(|d| d.canonicalize().map_err(|e| Error::io(format!("cannot resolve {}", d.display()), e)))

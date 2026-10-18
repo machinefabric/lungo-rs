@@ -32,7 +32,7 @@ pub struct DeclarationInfo {
     /// The fully qualified Lean name: the canonical identity of the declaration.
     pub lean_name: &'static str,
     pub module: &'static str,
-    /// The Lean source file, relative to the Cargo package (or `<package>/…` for dependencies).
+    /// The Lean source file, relative to the Cargo package (or `<package:NAME>/…` for dependencies).
     pub source_file: Option<&'static str>,
     pub range: Option<SourceRange>,
     /// The declaration's Lean type.

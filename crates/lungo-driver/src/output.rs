@@ -2,12 +2,12 @@
 
 use crate::error::{Error, Result};
 use crate::fingerprint::hash_bytes;
-use crate::{Analysis, BuildKey, Context, relative_path};
+use crate::{Analysis, BuildKey, Context, lake, relative_path};
 use lungo_protocol::{PackageOrigin, Success};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// The record of one generation (`build-info.json`): the build key and everything it covers.
 /// Paths are relative, so the record carries no machine-specific absolute paths.
@@ -21,9 +21,11 @@ pub struct BuildInfo {
     pub lungo_version: String,
     pub runtime_abi: u32,
     pub worker_identity: String,
-    /// Input files, relative to the Lean project directory, with their content digests.
+    /// Input files with their content digests: the project's relative to the Lean project
+    /// directory, a Lake dependency's as `<package:NAME>/…`, relative to that package's directory.
     pub input_digests: BTreeMap<String, String>,
-    /// The Lean project directory, relative to the Cargo package.
+    /// The Lean project directory, relative to the Cargo package (`.` when it is the package), or
+    /// `<package:NAME>` when it is outside the package.
     pub project: String,
     pub link_directives: Vec<String>,
     /// The generated sources, relative to the output directory, with their content digests: an
@@ -41,14 +43,23 @@ impl BuildInfo {
         key: &BuildKey,
         ctx: &Context,
         analysis: &Analysis,
-        inputs: &[PathBuf],
+        input_files: &[String],
         link_directives: &[String],
     ) -> Result<Self> {
+        let packages = lake::packages(&ctx.project)?;
         let mut input_digests = BTreeMap::new();
-        for p in inputs {
-            let bytes = fs::read(p).map_err(|e| Error::io(format!("cannot read input {}", p.display()), e))?;
-            input_digests.insert(relative_path(&ctx.project, p), hash_bytes(&bytes));
+        for rel in input_files {
+            let p = ctx.project.join(rel);
+            let bytes = fs::read(&p).map_err(|e| Error::io(format!("cannot read input {}", p.display()), e))?;
+            input_digests.insert(input_key(&ctx.project, &packages, rel)?, hash_bytes(&bytes));
         }
+        let project = if ctx.local_prefix.is_empty() {
+            ".".to_owned()
+        } else if leaves_base(&ctx.local_prefix) {
+            format!("<package:{}>", lake::validate_project(&ctx.project)?.name)
+        } else {
+            ctx.local_prefix.clone()
+        };
         Ok(BuildInfo {
             build_key: key.value.clone(),
             lean_version: analysis.toolchain.lean_version.clone(),
@@ -59,7 +70,7 @@ impl BuildInfo {
             runtime_abi: lungo_runtime::ABI_VERSION,
             worker_identity: ctx.worker_identity.clone(),
             input_digests,
-            project: ctx.local_prefix.clone(),
+            project,
             link_directives: link_directives.to_vec(),
             output_digests: BTreeMap::new(),
             platform_products: Vec::new(),
@@ -80,12 +91,66 @@ pub struct PreviousBuild {
 /// The record of how an output directory was generated.
 pub const BUILD_INFO: &str = "build-info.json";
 
+/// The name `build-info.json` records an input by, given its path relative to the Lean project:
+/// relative to the project when the project holds it, `<package:NAME>/…` when a Lake dependency
+/// does. Recording a path that climbs out of the project would write where the dependencies sit
+/// on this machine into the output.
+fn input_key(project: &Path, packages: &[(String, PathBuf)], rel: &str) -> Result<String> {
+    let path = lexical(&project.join(rel));
+    let owner = std::iter::once((None, lexical(project)))
+        .chain(packages.iter().map(|(name, dir)| (Some(name.as_str()), lexical(dir))))
+        .filter(|(_, dir)| path.starts_with(dir))
+        .max_by_key(|(_, dir)| dir.components().count());
+    match owner {
+        Some((None, _)) => Ok(rel.to_owned()),
+        Some((Some(name), dir)) => Ok(format!("<package:{name}>/{}", relative_path(&dir, &path))),
+        None => Err(Error::Project(format!(
+            "the input {rel} is neither in the Lean project nor in a package its manifest locks"
+        ))),
+    }
+}
+
+/// The file `build-info.json` names `key` (see [`input_key`]), or `None` when it names a
+/// package the manifest no longer locks.
+fn resolve_input(project: &Path, packages: &[(String, PathBuf)], key: &str) -> Option<PathBuf> {
+    match key.strip_prefix("<package:").and_then(|k| k.split_once(">/")) {
+        Some((name, rel)) => packages.iter().find(|(n, _)| n == name).map(|(_, dir)| dir.join(rel)),
+        None => Some(project.join(key)),
+    }
+}
+
+/// `path` with `.` and `name/..` removed, without consulting the file system: a dependency may be
+/// named through a directory the project's own path climbs out of.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir if matches!(out.components().next_back(), Some(Component::Normal(_))) => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Whether the relative path `rel` climbs out of the directory it is relative to.
+fn leaves_base(rel: &str) -> bool {
+    rel.split(['/', '\\']).next() == Some("..")
+}
+
 /// Reads the build record of the output in `out_dir`, if it exists and is intact, resolving its
-/// input paths against the Lean project directory `project`.
+/// input paths against the Lean project directory `project` and the packages its manifest locks.
 pub fn read_build_info(out_dir: &Path, project: &Path) -> Option<PreviousBuild> {
     let info: BuildInfo = serde_json::from_slice(&fs::read(out_dir.join(BUILD_INFO)).ok()?).ok()?;
-    let digests: Vec<(PathBuf, String)> =
-        info.input_digests.iter().map(|(rel, d)| (project.join(rel), d.clone())).collect();
+    let by_package = info.input_digests.keys().any(|k| k.starts_with("<package:"));
+    let packages = if by_package { lake::packages(project).ok()? } else { Vec::new() };
+    let digests: Vec<(PathBuf, String)> = info
+        .input_digests
+        .iter()
+        .map(|(key, d)| resolve_input(project, &packages, key).map(|p| (p, d.clone())))
+        .collect::<Option<_>>()?;
     Some(PreviousBuild {
         build_key: info.build_key,
         inputs: digests.iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect(),
@@ -345,5 +410,43 @@ mod platform_product_tests {
         let products: BTreeMap<String, Vec<u8>> = [("program.wasm".to_string(), b"x".to_vec())].into();
         assert!(replace_products(root.path(), &products).is_err());
         assert!(!root.path().join("program.wasm").exists());
+    }
+}
+
+#[cfg(test)]
+mod input_path_tests {
+    use super::*;
+
+    /// A project whose manifest locks one package beside it, by a `path` requirement, and one
+    /// fetched into `.lake/packages`, as capdag's model requires tagged-urn's and lungo's.
+    fn layout() -> (PathBuf, Vec<(String, PathBuf)>) {
+        let project = PathBuf::from("/w/capdag/formal");
+        let packages = vec![
+            ("tagged_urn_formal".to_string(), project.join("../../tagged-urn/formal")),
+            ("lungo".to_string(), project.join(".lake/packages/lungo")),
+        ];
+        (project, packages)
+    }
+
+    /// TEST0370: build-info.json records a dependency's input by its package, never by a path
+    /// that climbs out of the project, and reads every key back to the file it was made from.
+    #[test]
+    fn test0370_inputs_are_recorded_by_package_not_by_where_it_sits() {
+        let (project, packages) = layout();
+        let cases = [
+            ("CapDAG/Cap.lean", "CapDAG/Cap.lean"),
+            ("lakefile.lean", "lakefile.lean"),
+            ("../../tagged-urn/formal/TaggedUrn/Urn.lean", "<package:tagged_urn_formal>/TaggedUrn/Urn.lean"),
+            ("../../tagged-urn/formal/./lakefile.toml", "<package:tagged_urn_formal>/lakefile.toml"),
+            (".lake/packages/lungo/Lungo/Attr.lean", "<package:lungo>/Lungo/Attr.lean"),
+        ];
+        for (rel, key) in cases {
+            assert_eq!(input_key(&project, &packages, rel).unwrap(), key, "{rel}");
+            let back = resolve_input(&project, &packages, key).expect("the package is locked");
+            assert_eq!(lexical(&back), lexical(&project.join(rel)), "{key} does not name {rel}");
+        }
+        let outside = input_key(&project, &packages, "../../elsewhere/Other.lean");
+        assert!(outside.is_err(), "an input outside the project and its packages was recorded: {outside:?}");
+        assert_eq!(resolve_input(&project, &packages, "<package:gone>/X.lean"), None);
     }
 }

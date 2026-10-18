@@ -417,7 +417,8 @@ impl Builder {
         let analysis = analysis(&ctx)?;
         let generated = self.generate_with(&ctx, env, analysis)?;
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
-        let info = output::BuildInfo::new(&key, &ctx, analysis, &inputs, &generated.link_directives)?;
+        let info =
+            output::BuildInfo::new(&key, &ctx, analysis, &analysis.success.input_files, &generated.link_directives)?;
         output::publish(&ctx.out_dir, &generated.files, &generated.binary_files, &info)?;
         Ok(BuildOutcome { name: ctx.name, inputs, link_directives: generated.link_directives, reused: false })
     }
