@@ -136,7 +136,7 @@ pub fn builtin(language: &str) -> Option<&'static dyn Generator> {
 /// The extern types of `request`, by the index of the boundary type each provides. An extern
 /// type the program's boundary does not have is an error: it would provide nothing, and a
 /// misspelled name would otherwise be silently ignored.
-pub fn extern_types<'r>(request: &'r GenerateRequest) -> Result<BTreeMap<usize, &'r ExternType>, CodegenError> {
+pub fn extern_types(request: &GenerateRequest) -> Result<BTreeMap<usize, &ExternType>, CodegenError> {
     let mut out = BTreeMap::new();
     for (lean, ext) in &request.extern_types {
         let index = request.boundary.types.iter().position(|t| &t.lean_name == lean).ok_or_else(|| {

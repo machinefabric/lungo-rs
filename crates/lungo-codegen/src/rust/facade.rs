@@ -411,6 +411,7 @@ impl<'a> Facade<'a> {
         w.line(format!("/// Performs the operations of the async facility over `{op}`: a method per constructor,"));
         w.line("/// answering it. An async function asks a handler for each operation its program waits for; a");
         w.line("/// method's error abandons the program, and the function returns it.");
+        w.line("#[allow(clippy::all)]");
         w.open(format!("pub trait {} {{", placement.ident));
         w.line("/// What a method fails with.");
         w.line("type Error;");
@@ -1263,9 +1264,9 @@ impl<'a> Facade<'a> {
             w.line(format!("return ::core::result::Result::Ok(unsafe {{ __program.value::<{ret}>() }});"));
             w.close("}");
             w.open(format!("match unsafe {{ __program.operation::<{op_ty}>() }} {{"));
-            for k in 0..t.ctors.len() {
+            for (k, ret) in rets.iter().enumerate().take(t.ctors.len()) {
                 let (pattern, n) = self.ctor_pattern(t, k, depth)?;
-                let answer = self.rust_type(&rets[k], depth, &generics)?;
+                let answer = self.rust_type(ret, depth, &generics)?;
                 let args: Vec<String> = (0..n).map(|i| format!("__f{i}")).collect();
                 w.open(format!("{pattern} => {{"));
                 w.line(format!("let __a: {answer} = handler.{}({}).await?;", handler.methods[k], args.join(", ")));

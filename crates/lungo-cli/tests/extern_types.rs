@@ -150,7 +150,12 @@ fn test0106_python_programs_share_values_and_refuse_another_layout() {
         ),
         &dist,
     ));
-    let file_url = |p: &Path| format!("file://{}", p.display());
+    // A `file:` URL of an absolute path: `/`-separated, a Windows drive after `file:///` (a `\` is
+    // also an escape in the TOML string it is written into).
+    let file_url = |p: &Path| {
+        let path = p.to_string_lossy().replace('\\', "/");
+        if path.starts_with('/') { format!("file://{path}") } else { format!("file:///{path}") }
+    };
     std::fs::write(host.join("src/host/__init__.py"), "").unwrap();
     std::fs::write(
         host.join("pyproject.toml"),

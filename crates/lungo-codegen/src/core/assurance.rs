@@ -538,10 +538,10 @@ pub fn document(
                 .iter()
                 .filter_map(|s| symbol_facility.get(s.as_str()).map(|c| (*c).to_owned()))
                 .collect();
-            if let Some(op) = async_op(e) {
-                if let Some(c) = async_facility.get(op) {
-                    facilities.insert((*c).to_owned());
-                }
+            if let Some(op) = async_op(e)
+                && let Some(c) = async_facility.get(op)
+            {
+                facilities.insert((*c).to_owned());
             }
             ExportSummary {
                 name: e.name.clone(),

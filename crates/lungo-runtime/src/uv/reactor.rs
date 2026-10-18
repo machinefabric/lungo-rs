@@ -269,8 +269,12 @@ impl Reactor {
                     }
                 }
             }
-            if let Err(e) = sys::poll(&mut entries, timeout_ms) {
-                lean_internal_panic(&format!("event loop poll failed: {e}"));
+            match sys::poll(&mut entries, timeout_ms) {
+                Ok(()) => {}
+                // A source was finalized, and its socket closed, between collecting the interests
+                // and polling them: collect them again.
+                Err(e) if sys::closed_while_collected(&e) => continue,
+                Err(e) => lean_internal_panic(&format!("event loop poll failed: {e}")),
             }
             let guard = self.lock();
             if entries[0].readable {
@@ -314,5 +318,68 @@ impl Reactor {
             }
             drop(guard);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Set in the child process of TEST0372.
+    const CHILD: &str = "LUNGO_TEST_SOCKETS_CLOSED_WHILE_POLLED";
+
+    /// A source whose socket is of interest for reading, as a socket handle's is while it reads.
+    struct Watched(RawSock);
+
+    impl IoSource for Watched {
+        fn interest(&self) -> Option<(RawSock, bool, bool)> {
+            Some((self.0, true, false))
+        }
+
+        unsafe fn on_ready(&self, _readable: bool, _writable: bool) {}
+    }
+
+    /// In the child of TEST0372: registers a socket, wakes the loop so that it collects it, and
+    /// closes it under the loop lock, as finalizing a socket handle does, many times over; the
+    /// loop polls some of those sockets after they are closed. Elsewhere, nothing.
+    #[test]
+    fn sockets_closed_while_polled() {
+        if std::env::var_os(CHILD).is_none() {
+            return;
+        }
+        let r = reactor();
+        for _ in 0..20_000 {
+            let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0)).expect("a socket");
+            let source = Box::new(Watched(raw_of(&socket)));
+            let guard = r.lock();
+            let id = r.register_source(&guard, &*source as *const Watched as *const dyn IoSource);
+            drop(guard);
+            r.wake();
+            std::thread::yield_now();
+            let guard = r.lock();
+            r.unregister_source(&guard, id);
+            drop(socket);
+            drop(guard);
+        }
+    }
+
+    /// TEST0372: The loop survives a socket closed between collecting the interests and polling
+    /// them. Winsock fails the whole poll for it (WSAENOTSOCK), which stopped the process with
+    /// "event loop poll failed"; the child runs in a process of its own because that stop ends it.
+    #[test]
+    fn test0372_the_loop_survives_a_socket_closed_while_polled() {
+        let exe = std::env::current_exe().expect("the test binary");
+        let out = std::process::Command::new(&exe)
+            .args(["--exact", "uv::reactor::tests::sockets_closed_while_polled", "--test-threads", "1"])
+            .env(CHILD, "1")
+            .output()
+            .expect("run the child");
+        assert!(
+            out.status.success(),
+            "the child exited {}:\n{}{}",
+            out.status,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }

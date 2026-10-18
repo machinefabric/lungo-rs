@@ -84,7 +84,7 @@ fn copy_library(dir: &Path, to: &Path, skip: &dyn Fn(&Path) -> bool) -> Result<(
         if let Some(parent) = dest.parent() {
             io(format!("cannot create {}", parent.display()), fs::create_dir_all(parent))?;
         }
-        io(format!("cannot copy {}", path.display()), fs::copy(&path, &dest).map(|_| ()))?;
+        io(format!("cannot copy {}", path.display()), fs::copy(path, &dest).map(|_| ()))?;
     }
     Ok(())
 }

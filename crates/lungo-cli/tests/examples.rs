@@ -117,12 +117,18 @@ fn c(name: &str, program: &str) -> PathBuf {
         .expect("the test program is built")
 }
 
+/// What the C program `cmd` prints, with its lines ending `\n`: a C program's standard output is
+/// a text stream, which ends a line with `\r\n` on Windows.
+fn printed(cmd: &mut Command) -> String {
+    run(cmd).replace("\r\n", "\n")
+}
+
 /// TEST0319: the codec example from TypeScript and C
 #[test]
 fn test0319_the_codec_example_from_typescript_and_c() {
     let out = ts("codec", "varint");
     assert!(out.contains("# pass 1") && out.contains("# fail 0"), "{out}");
-    assert_eq!(run(&mut Command::new(c("codec", "varint"))), "ok\n");
+    assert_eq!(printed(&mut Command::new(c("codec", "varint"))), "ok\n");
 }
 
 /// TEST0322: deadlines on a host's clock from C, and on a clock breaking the assumption
@@ -130,13 +136,13 @@ fn test0319_the_codec_example_from_typescript_and_c() {
 fn test0322_deadlines_on_a_hosts_clock_from_c_and_on_a_clock_breaking_the_assumption() {
     let exe = c("clock", "timing");
     assert_eq!(
-        run(&mut Command::new(&exe)),
+        printed(&mut Command::new(&exe)),
         "round trip of 7 s: 7 s; deadline in 5 s, after 2.5 s: 2 s left\nassumes Timing.Ticks: yes\n"
     );
     // The claims are proved, and the host breaks what they assume: the round trip they promise
     // does not happen.
     assert_eq!(
-        run(Command::new(&exe).arg("lawless")),
+        printed(Command::new(&exe).arg("lawless")),
         "round trip of 7 s: 0 s; deadline in 5 s, after 2.5 s: 0 s left\nassumes Timing.Ticks: yes\n"
     );
 }

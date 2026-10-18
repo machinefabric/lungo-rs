@@ -262,8 +262,10 @@ impl Names {
         let mut facilities = Vec::new();
         for c in &b.facilities {
             let base = facility_name(&c.id);
-            let key =
-                keys.claim(camel(&[base.clone()]).trim_end_matches('_').to_owned(), format!("facility {}", c.id))?;
+            let key = keys.claim(
+                camel(std::slice::from_ref(&base)).trim_end_matches('_').to_owned(),
+                format!("facility {}", c.id),
+            )?;
             let interface = scope.claim(format!("{class}{}", pascal(&[base])), format!("facility {}", c.id))?;
             let mut methods = Scope::new("TypeScript");
             let ms = c

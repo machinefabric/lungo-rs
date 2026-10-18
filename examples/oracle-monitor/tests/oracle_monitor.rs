@@ -14,7 +14,7 @@ fn policy(seed: u64, n: usize) -> Vec<Rule> {
             Rule {
                 role: ROLES[(x >> 40) as usize % 3].into(),
                 action: ACTIONS[(x >> 50) as usize % 3].into(),
-                effect: if (x >> 33) % 4 == 0 { Effect::Deny } else { Effect::Allow },
+                effect: if (x >> 33).is_multiple_of(4) { Effect::Deny } else { Effect::Allow },
             }
         })
         .collect()

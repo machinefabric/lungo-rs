@@ -38,6 +38,21 @@ pub fn init() {
     });
 }
 
+/// Whether `e`, from [`poll`], means a socket of the poll was closed after it was collected (a
+/// handle finalized on another thread). Unix reports such an entry invalid and polls the rest;
+/// Winsock fails the whole call with WSAENOTSOCK.
+pub fn closed_while_collected(e: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        let _ = e;
+        false
+    }
+    #[cfg(windows)]
+    {
+        e.raw_os_error() == Some(windows_sys::Win32::Networking::WinSock::WSAENOTSOCK)
+    }
+}
+
 fn last_error() -> io::Error {
     #[cfg(unix)]
     {

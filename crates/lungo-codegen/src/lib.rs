@@ -194,8 +194,11 @@ mod tests {
         assert_eq!(display_path(&root, ""), "CapDAG/Cap.lean");
         assert_eq!(display_path(&root, "lean"), "lean/CapDAG/Cap.lean");
         assert_eq!(display_path(&root, "../../formal"), "<package:capdag_formal>/CapDAG/Cap.lean");
-        let path_dep =
-            at("tagged_urn_formal", PackageOrigin::Path { dir: "../../tagged-urn/formal".into() }, "TaggedUrn/Urn.lean");
+        let path_dep = at(
+            "tagged_urn_formal",
+            PackageOrigin::Path { dir: "../../tagged-urn/formal".into() },
+            "TaggedUrn/Urn.lean",
+        );
         assert_eq!(display_path(&path_dep, "formal"), "<package:tagged_urn_formal>/TaggedUrn/Urn.lean");
         assert_eq!(display_path(&path_dep, ""), "<package:tagged_urn_formal>/TaggedUrn/Urn.lean");
         let git_dep = at("lungo", PackageOrigin::Git { url: "u".into(), rev: "r".into() }, "Lungo.lean");

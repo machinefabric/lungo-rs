@@ -177,7 +177,7 @@ impl Names {
         let mut facilities = Vec::new();
         for c in &b.facilities {
             let base = facility_name(&c.id);
-            let protocol = scope.claim(py_class(&[base.clone()]), format!("facility {}", c.id))?;
+            let protocol = scope.claim(py_class(std::slice::from_ref(&base)), format!("facility {}", c.id))?;
             let setter =
                 scope.claim(format!("set_{}", py_snake(&[base])), format!("the installer of facility {}", c.id))?;
             let mut methods = Scope::new("Python");
@@ -197,7 +197,7 @@ impl Names {
         for c in &b.async_facilities {
             let op = types[c.op_type as usize].class.clone();
             let handler = scope.claim(format!("{op}Handler"), format!("the handler of async facility {}", c.id))?;
-            let perform = format!("_perform_{}", py_snake(&[op.clone()]));
+            let perform = format!("_perform_{}", py_snake(std::slice::from_ref(&op)));
             let mut methods = Scope::new("Python");
             let ms = c
                 .operations

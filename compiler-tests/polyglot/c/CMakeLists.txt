@@ -3,7 +3,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(polyglot_c_test C)
 
-add_subdirectory(${POLYGLOT_PACKAGE} polyglot)
+# `/`-separated: the path is also written into a C string below, where a Windows `\` would begin
+# an escape sequence.
+file(TO_CMAKE_PATH "${POLYGLOT_PACKAGE}" package)
+add_subdirectory(${package} polyglot)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(polyglot PRIVATE -Wall -Wextra -Werror)
 elseif(MSVC)
@@ -13,4 +16,4 @@ endif()
 add_executable(polyglot_test test.c)
 target_link_libraries(polyglot_test PRIVATE polyglot)
 # The package's assurance document, which the program embeds byte for byte.
-target_compile_definitions(polyglot_test PRIVATE POLYGLOT_ASSURANCE="${POLYGLOT_PACKAGE}/assurance.json")
+target_compile_definitions(polyglot_test PRIVATE POLYGLOT_ASSURANCE="${package}/assurance.json")
