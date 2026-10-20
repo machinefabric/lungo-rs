@@ -339,10 +339,13 @@ pub enum Linker {
 /// builds for every target of [`release::RUNTIME_TARGETS`] from one machine, and that machine's
 /// copy of the pinned toolchain had none of them. The release failed in its first build with
 /// `can't find crate for core: the x86_64-unknown-linux-gnu target may not be installed`.
-/// Asked of rustup in the repository, so it is the pinned toolchain that is given the target;
-/// adding one that is already installed changes nothing.
+/// Asked of QuickRust in the repository, which manages the toolchains this is built with and
+/// selects the pinned one from `rust-toolchain.toml` as rustup did, so it is the pinned toolchain
+/// that is given the target; adding one that is already installed changes nothing. rustup is not
+/// asked: a machine that builds with QuickRust need not have it, and on one that had removed it
+/// the distribution could not be built at all.
 pub fn ensure_target(target: &str) -> Result<()> {
-    run(Command::new("rustup").current_dir(repo()).args(["target", "add", target]))?;
+    run(Command::new("qrust").current_dir(repo()).args(["toolchain", "target", "add", target]))?;
     Ok(())
 }
 
