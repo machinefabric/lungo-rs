@@ -339,13 +339,28 @@ pub enum Linker {
 /// builds for every target of [`release::RUNTIME_TARGETS`] from one machine, and that machine's
 /// copy of the pinned toolchain had none of them. The release failed in its first build with
 /// `can't find crate for core: the x86_64-unknown-linux-gnu target may not be installed`.
-/// Asked of QuickRust in the repository, which manages the toolchains this is built with and
-/// selects the pinned one from `rust-toolchain.toml` as rustup did, so it is the pinned toolchain
-/// that is given the target; adding one that is already installed changes nothing. rustup is not
-/// asked: a machine that builds with QuickRust need not have it, and on one that had removed it
-/// the distribution could not be built at all.
+/// Asked of the toolchain manager whose Cargo is running this build, in the repository: each
+/// selects the pinned toolchain from `rust-toolchain.toml`, so it is the pinned toolchain that is
+/// given the target, and adding one that is already installed changes nothing. Under QuickRust's
+/// Cargo, which sets `QRUST_SESSION_ID` for every process it starts, that is QuickRust; under
+/// rustup's, rustup. Never one for the other: a machine that builds with QuickRust need not have
+/// rustup, and on one that had removed it the distribution could not be built at all, while a
+/// Windows release guest builds with rustup and has no `qrust`, and the release stopped there with
+/// `cannot run "qrust" … program not found` (20 Oct 2026).
 pub fn ensure_target(target: &str) -> Result<()> {
-    run(Command::new("qrust").current_dir(repo()).args(["toolchain", "target", "add", target]))?;
+    let mut add = match std::env::var_os("QRUST_SESSION_ID") {
+        Some(_) => {
+            let mut c = Command::new("qrust");
+            c.args(["toolchain", "target", "add", target]);
+            c
+        }
+        None => {
+            let mut c = Command::new("rustup");
+            c.args(["target", "add", target]);
+            c
+        }
+    };
+    run(add.current_dir(repo()))?;
     Ok(())
 }
 
