@@ -1,9 +1,16 @@
 //! The releases of the `lungo` command: where they are published, and what makes one trusted.
 //!
-//! The command is published in a release registry, as one manifest at
-//! `<registry>/lungo-cli/manifest` with a signature beside it at `<registry>/lungo-cli/manifest.sig`.
-//! The manifest lists, per channel (`release`, `nightly`), every version with the archive of each
-//! platform, its SHA-256 digest and its size.
+//! The command is published in a release registry, named by its **anchor**. The registry exists
+//! because MachineFabric chartered it: `<anchor>/charter.json` states, among the rest, where each
+//! product's manifest is, and `<anchor>/charter.json.sig` signs those exact bytes with
+//! MachineFabric's prod release key, whatever environment the registry's contents are signed
+//! under. Nothing about the registry is read from the shape of its URL: the charter is verified
+//! against the charter roots this `lungo` was built with — the chain below, under the `prod`
+//! label — and must be the charter of the anchor asked, of a release registry, for this build's
+//! environment, and within its own validity. The command's manifest is then read where the charter
+//! says, with a signature beside it at the same address and `.sig`. The manifest lists, per
+//! channel (`release`, `nightly`), every version with the archive of each platform, its SHA-256
+//! digest and its size.
 //!
 //! Nothing in a manifest is believed until its signature chains to the root keys this `lungo` was
 //! built with:
@@ -35,6 +42,13 @@ pub const APP_ID: &str = "lungo-cli";
 pub const ARCHIVE_ROOT: &str = "lungo";
 const CERTIFICATE_FORMAT: &str = "machinefabric-release-key-cert/1";
 const ENVELOPE_FORMAT: &str = "machinefabric-manifest-sig/1";
+/// A registry's charter and its signature, under the registry's anchor.
+const CHARTER_FILE: &str = "charter.json";
+const CHARTER_SIG_FILE: &str = "charter.json.sig";
+const CHARTER_FORMAT: &str = "machinefabric-registry-charter/1";
+const CHARTER_ENVELOPE_FORMAT: &str = "machinefabric-charter-sig/1";
+/// The label a charter's certificate carries: charters are signed by prod for every environment.
+const CHARTER_SIGNING_ENVIRONMENT: &str = "prod";
 const MANIFEST_SCHEMA_MAJOR: &str = "5";
 /// Distinct roots that must have signed a certificate.
 const REQUIRED_ROOT_SIGNATURES: usize = 2;
@@ -42,11 +56,13 @@ const REQUIRED_ROOT_SIGNATURES: usize = 2;
 /// What a released `lungo` knows about its own release line, baked in by its build (`build.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
-    /// The release registry this `lungo` was published in.
+    /// The anchor of the release registry this `lungo` was published in.
     pub registry: String,
     /// The channel it was published on: `release` or `nightly`.
     pub channel: String,
     pub trust: Trust,
+    /// MachineFabric's roots, which the registry's charter must chain to.
+    pub charter_roots: Vec<String>,
 }
 
 /// The roots a release-key certificate is checked against, and the environment it must be for.
@@ -54,7 +70,7 @@ pub struct Identity {
 pub struct Trust {
     /// Root public keys, in minisign's base64 form.
     pub roots: Vec<String>,
-    /// `prod` or `staging`.
+    /// `prod`, `staging` or `lab`.
     pub environment: String,
 }
 
@@ -63,18 +79,19 @@ pub fn identity() -> Option<Identity> {
     option_env!("LUNGO_BAKED_RELEASE_LINE").map(parse_baked)
 }
 
-/// The release line as `build.rs` wrote it: registry, channel, environment and the roots
-/// (comma-separated), with a space between them. It checked every part before it wrote them, so
-/// a value of another shape is not something a build can produce.
+/// The release line as `build.rs` wrote it: the registry's anchor, channel, environment, the roots
+/// and the charter roots (each comma-separated), with a space between them. It checked every part
+/// before it wrote them, so a value of another shape is not something a build can produce.
 fn parse_baked(baked: &str) -> Identity {
     let parts: Vec<&str> = baked.split(' ').collect();
-    let [registry, channel, environment, roots] = parts[..] else {
-        panic!("this lungo's baked release line has {} parts, not 4: {baked:?}", parts.len());
+    let [registry, channel, environment, roots, charter_roots] = parts[..] else {
+        panic!("this lungo's baked release line has {} parts, not 5: {baked:?}", parts.len());
     };
     Identity {
         registry: registry.to_owned(),
         channel: channel.to_owned(),
         trust: Trust { roots: roots.split(',').map(str::to_owned).collect(), environment: environment.to_owned() },
+        charter_roots: charter_roots.split(',').map(str::to_owned).collect(),
     }
 }
 
@@ -153,7 +170,15 @@ impl fmt::Display for ChainError {
 struct Envelope {
     format: String,
     certificates: Vec<CertificateEntry>,
-    manifest_signature: ManifestSignature,
+    manifest_signature: DocumentSignature,
+}
+
+/// A charter's signature file: the manifests' chain, with a format word and a signature field of
+/// its own, so that no signed manifest can be passed off as a charter.
+#[derive(Deserialize)]
+struct CharterEnvelope {
+    certificates: Vec<CertificateEntry>,
+    charter_signature: DocumentSignature,
 }
 
 #[derive(Deserialize)]
@@ -169,7 +194,7 @@ struct RootSignature {
 }
 
 #[derive(Deserialize)]
-struct ManifestSignature {
+struct DocumentSignature {
     key_id: String,
     signature: String,
 }
@@ -197,22 +222,175 @@ pub fn verify_manifest(
     if envelope.format != ENVELOPE_FORMAT {
         return Err(ChainError::UnsupportedEnvelopeFormat(envelope.format));
     }
-    if envelope.certificates.is_empty() {
+    authorize(&envelope.certificates, &envelope.manifest_signature, manifest, trust, now)
+}
+
+/// The chain under every signed document: every certificate valid under `trust`, and `signature`
+/// over the exact `bytes` by a release key one of them certifies.
+fn authorize(
+    certificates: &[CertificateEntry],
+    signature: &DocumentSignature,
+    bytes: &[u8],
+    trust: &Trust,
+    now: u64,
+) -> std::result::Result<(), ChainError> {
+    if certificates.is_empty() {
         return Err(ChainError::NoCertificates);
     }
     let mut release_keys: Vec<(String, String)> = Vec::new();
-    for entry in &envelope.certificates {
+    for entry in certificates {
         let certificate = verify_certificate(entry, trust, now)?;
         release_keys.push((certificate.key_id, certificate.release_pubkey));
     }
-    let signer = &envelope.manifest_signature.key_id;
+    let signer = &signature.key_id;
     let Some((_, release_key)) = release_keys.iter().find(|(id, _)| id == signer) else {
         return Err(ChainError::NoCertificateForSigner { key_id: signer.clone() });
     };
-    verify_signature(release_key, &envelope.manifest_signature.signature, manifest).map_err(|e| match e {
+    verify_signature(release_key, &signature.signature, bytes).map_err(|e| match e {
         SignatureError::Malformed(why) => ChainError::MalformedKey(why),
         SignatureError::Mismatch(why) => ChainError::ManifestSignatureInvalid(why),
     })
+}
+
+/// Why a registry's charter is not one this `lungo` can read its releases through.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CharterError {
+    /// The signature file is not a charter's.
+    MalformedEnvelope(String),
+    UnsupportedEnvelopeFormat(String),
+    /// The certificates do not chain to MachineFabric's roots under the `prod` label, or the
+    /// charter is not signed by a key they certify.
+    Chain(ChainError),
+    /// The charter's signature does not match its bytes.
+    SignatureInvalid(String),
+    Malformed(String),
+    UnsupportedFormat(String),
+    AnchorMismatch { charter: String, asked: String },
+    KindMismatch(String),
+    EnvironmentMismatch { charter: String, build: String },
+    NotYetValid { issued_at: u64, now: u64 },
+    Expired { not_after: u64, now: u64 },
+    /// The charter's manifest location is not one the command's manifest address can be read
+    /// from.
+    Location(String),
+}
+
+impl fmt::Display for CharterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CharterError::MalformedEnvelope(e) => write!(f, "its signature file is not a charter signature: {e}"),
+            CharterError::UnsupportedEnvelopeFormat(found) => {
+                write!(f, "its signature file is of format {found:?}, not {CHARTER_ENVELOPE_FORMAT:?}")
+            }
+            CharterError::Chain(ChainError::WrongEnvironment { key_id, certificate, .. }) => write!(
+                f,
+                "it is signed by release key {key_id}, certified for {certificate}; a charter is signed by \
+                 MachineFabric's {CHARTER_SIGNING_ENVIRONMENT} release key"
+            ),
+            CharterError::Chain(e) => write!(f, "it does not chain to MachineFabric's roots: {e}"),
+            CharterError::SignatureInvalid(e) => write!(f, "its signature does not match it: {e}"),
+            CharterError::Malformed(e) => write!(f, "it is not a charter: {e}"),
+            CharterError::UnsupportedFormat(found) => write!(f, "it is of format {found:?}, not {CHARTER_FORMAT:?}"),
+            CharterError::AnchorMismatch { charter, asked } => write!(f, "it is the charter of {charter}, not of {asked}"),
+            CharterError::KindMismatch(kind) => write!(f, "it charters a {kind} registry, not a release registry"),
+            CharterError::EnvironmentMismatch { charter, build } => {
+                write!(f, "its registry is signed under {charter}; this lungo was built for {build}")
+            }
+            CharterError::NotYetValid { issued_at, now } => write!(f, "it is valid from {issued_at} (it is {now})"),
+            CharterError::Expired { not_after, now } => write!(f, "it expired at {not_after} (it is {now})"),
+            CharterError::Location(e) => f.write_str(e),
+        }
+    }
+}
+
+/// A charter body, as signed: every field a charter has, and no other.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct Charter {
+    format: String,
+    anchor: String,
+    kind: String,
+    slug: String,
+    environment: String,
+    #[serde(default)]
+    experiment: Option<String>,
+    locations: BTreeMap<String, String>,
+    #[serde(default)]
+    fabric: Option<String>,
+    issued_at: u64,
+    not_after: Option<u64>,
+}
+
+/// Checks that `envelope` (the bytes of `charter.json.sig`) authorizes `charter` (the exact bytes
+/// of `charter.json`) under MachineFabric's `charter_roots`, and that it charters the release
+/// registry at `anchor` for the `environment` this `lungo` verifies, at the time `now`. Returns
+/// the address of the command's manifest, as the charter states it.
+pub fn verify_charter(
+    charter: &[u8],
+    envelope: &[u8],
+    charter_roots: &[String],
+    anchor: &str,
+    environment: &str,
+    now: u64,
+) -> std::result::Result<String, CharterError> {
+    let probe: serde_json::Value =
+        serde_json::from_slice(envelope).map_err(|e| CharterError::MalformedEnvelope(e.to_string()))?;
+    match probe.get("format").and_then(|f| f.as_str()) {
+        Some(CHARTER_ENVELOPE_FORMAT) => {}
+        Some(other) => return Err(CharterError::UnsupportedEnvelopeFormat(other.to_owned())),
+        None => return Err(CharterError::MalformedEnvelope("it has no format".to_owned())),
+    }
+    let envelope: CharterEnvelope =
+        serde_json::from_value(probe).map_err(|e| CharterError::MalformedEnvelope(e.to_string()))?;
+    let trust = Trust { roots: charter_roots.to_vec(), environment: CHARTER_SIGNING_ENVIRONMENT.to_owned() };
+    authorize(&envelope.certificates, &envelope.charter_signature, charter, &trust, now).map_err(|e| match e {
+        ChainError::ManifestSignatureInvalid(why) => CharterError::SignatureInvalid(why),
+        other => CharterError::Chain(other),
+    })?;
+
+    // Only now is the body read: nothing about an unsigned document is believed, including what
+    // it says its format is.
+    let body: serde_json::Value = serde_json::from_slice(charter).map_err(|e| CharterError::Malformed(e.to_string()))?;
+    match body.get("format").and_then(|f| f.as_str()) {
+        Some(CHARTER_FORMAT) => {}
+        Some(other) => return Err(CharterError::UnsupportedFormat(other.to_owned())),
+        None => return Err(CharterError::Malformed("it has no format".to_owned())),
+    }
+    let body: Charter = serde_json::from_value(body).map_err(|e| CharterError::Malformed(e.to_string()))?;
+    if body.anchor != anchor {
+        return Err(CharterError::AnchorMismatch { charter: body.anchor, asked: anchor.to_owned() });
+    }
+    if body.kind != "releases" {
+        return Err(CharterError::KindMismatch(body.kind));
+    }
+    if body.environment != environment {
+        return Err(CharterError::EnvironmentMismatch { charter: body.environment, build: environment.to_owned() });
+    }
+    if body.issued_at > now {
+        return Err(CharterError::NotYetValid { issued_at: body.issued_at, now });
+    }
+    if let Some(not_after) = body.not_after {
+        if now > not_after {
+            return Err(CharterError::Expired { not_after, now });
+        }
+    }
+    manifest_location(&body.locations)
+}
+
+/// The command's manifest address from a release registry's `manifest` location: a template that
+/// takes `{app_id}` and nothing else.
+fn manifest_location(locations: &BTreeMap<String, String>) -> std::result::Result<String, CharterError> {
+    let Some(template) = locations.get("manifest") else {
+        return Err(CharterError::Location("the charter states no manifest location".to_owned()));
+    };
+    let filled = template.replace("{app_id}", APP_ID);
+    if filled == *template || filled.contains(['{', '}']) {
+        return Err(CharterError::Location(format!(
+            "the charter's manifest location {template:?} does not take exactly {{app_id}}"
+        )));
+    }
+    Ok(filled)
 }
 
 fn verify_certificate(
@@ -490,17 +668,33 @@ impl Source for Https {
     }
 }
 
-/// Fetches the command's manifest and its signature from `registry`, verifies the one against
-/// the other under `trust`, and returns the latest release of `channel` for `platform`.
+/// Fetches the charter of the release registry at `registry` (its anchor) and verifies it against
+/// `charter_roots`; then the command's manifest and its signature from where the charter says,
+/// verifies the one against the other under `trust`, and returns the latest release of `channel`
+/// for `platform`. A registry with no charter is not read at all.
 pub fn fetch_latest(
     source: &dyn Source,
     registry: &str,
     trust: &Trust,
+    charter_roots: &[String],
     channel: &str,
     platform: &str,
     now: u64,
 ) -> Result<Option<Release>> {
-    let url = format!("{}/{APP_ID}/manifest", registry.trim_end_matches('/'));
+    let charter_url = format!("{registry}/{CHARTER_FILE}");
+    let Some(charter) = source.get(&charter_url)? else {
+        return Err(Error::UpdateUntrusted(format!(
+            "{registry} has no charter ({charter_url} is missing), so it is not a release registry MachineFabric chartered"
+        )));
+    };
+    let charter_sig_url = format!("{registry}/{CHARTER_SIG_FILE}");
+    let Some(charter_sig) = source.get(&charter_sig_url)? else {
+        return Err(Error::UpdateUntrusted(format!(
+            "{registry} has a charter and no signature for it ({charter_sig_url} is missing)"
+        )));
+    };
+    let url = verify_charter(&charter, &charter_sig, charter_roots, registry, &trust.environment, now)
+        .map_err(|e| Error::UpdateUntrusted(format!("the charter of {registry} was refused: {e}")))?;
     let Some(manifest) = source.get(&url)? else {
         return Err(Error::UpdateUnavailable(format!("no lungo release is published at {registry} yet")));
     };
@@ -630,6 +824,52 @@ pub(crate) mod testing {
         pub fn sign(&self, manifest: &[u8]) -> Vec<u8> {
             self.sign_for(manifest, "prod")
         }
+
+        /// The roots' public keys, as a build is given them.
+        pub fn root_keys(&self) -> Vec<String> {
+            self.roots.iter().map(Key::public).collect()
+        }
+
+        /// The charter of the `kind` registry at `anchor`, whose contents are signed under
+        /// `environment`: its manifest at `<anchor>/{app_id}/manifest`, valid from [`ISSUED_AT`]
+        /// with no end of its own.
+        pub fn charter(anchor: &str, kind: &str, environment: &str) -> Vec<u8> {
+            json!({
+                "format": "machinefabric-registry-charter/1",
+                "anchor": anchor,
+                "kind": kind,
+                "slug": "test-releases",
+                "environment": environment,
+                "locations": { "manifest": format!("{anchor}/{{app_id}}/manifest") },
+                "issued_at": ISSUED_AT,
+                "not_after": null,
+            })
+            .to_string()
+            .into_bytes()
+        }
+
+        /// The signature file of `charter`: `certificate` signed by `signers`, the charter by
+        /// `by`.
+        pub fn charter_envelope(charter: &[u8], certificate: &str, signers: &[&Key], by: &Key) -> Vec<u8> {
+            let root_signatures: Vec<_> = signers
+                .iter()
+                .map(|root| json!({ "root_key_id": root.id(), "signature": root.sign(certificate.as_bytes()) }))
+                .collect();
+            json!({
+                "format": "machinefabric-charter-sig/1",
+                "certificates": [{ "certificate": certificate, "root_signatures": root_signatures }],
+                "charter_signature": { "key_id": by.id(), "signature": by.sign(charter) },
+            })
+            .to_string()
+            .into_bytes()
+        }
+
+        /// `charter` signed as MachineFabric signs charters: the release key certified for
+        /// `prod` by roots A and B.
+        pub fn sign_charter(&self, charter: &[u8]) -> Vec<u8> {
+            let certificate = Line::certificate(&self.release, "prod", ISSUED_AT, NOT_AFTER);
+            Line::charter_envelope(charter, &certificate, &[&self.roots[0], &self.roots[1]], &self.release)
+        }
     }
 
     /// The command's manifest with one version on `channel` for `platform`, and the other
@@ -676,7 +916,7 @@ mod tests {
     /// TEST0349: the baked release line is read back as it was given
     #[test]
     fn test0349_the_baked_release_line_is_read_back_as_it_was_given() {
-        let line = parse_baked("https://release.example nightly staging RWAAAA,RWBBBB,RWCCCC");
+        let line = parse_baked("https://release.example nightly staging RWAAAA,RWBBBB,RWCCCC RWDDDD,RWEEEE,RWFFFF");
         assert_eq!(
             line,
             Identity {
@@ -686,7 +926,95 @@ mod tests {
                     roots: vec!["RWAAAA".into(), "RWBBBB".into(), "RWCCCC".into()],
                     environment: "staging".into()
                 },
+                charter_roots: vec!["RWDDDD".into(), "RWEEEE".into(), "RWFFFF".into()],
             }
+        );
+    }
+
+    /// TEST0373: a release registry is read through its charter
+    #[test]
+    fn test0373_a_release_registry_is_read_through_its_charter() {
+        // The manifest is where the charter says — here a path no URL convention would put it
+        // at — and the charter is held to the registry asked, to its kind, to this build's
+        // environment and to its own validity.
+        let line = Line::new();
+        let anchor = "https://release.example/exp/t1/releases";
+        let roots = line.root_keys();
+        let charter_at = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut body: serde_json::Value = serde_json::from_slice(&Line::charter(anchor, "releases", "prod")).unwrap();
+            body["locations"]["manifest"] = serde_json::json!(format!("{anchor}/catalogue/{{app_id}}.json"));
+            edit(&mut body);
+            body.to_string().into_bytes()
+        };
+        let verify = |charter: &[u8], environment: &str, now: u64| {
+            verify_charter(charter, &line.sign_charter(charter), &roots, anchor, environment, now)
+        };
+        let charter = charter_at(&|_| {});
+        assert_eq!(verify(&charter, "prod", NOW), Ok(format!("{anchor}/catalogue/lungo-cli.json")));
+
+        let other = charter_at(&|b| b["anchor"] = serde_json::json!("https://release.example/elsewhere"));
+        assert_eq!(
+            verify(&other, "prod", NOW),
+            Err(CharterError::AnchorMismatch { charter: "https://release.example/elsewhere".into(), asked: anchor.into() })
+        );
+        let cartridges = charter_at(&|b| b["kind"] = serde_json::json!("cartridges"));
+        assert_eq!(verify(&cartridges, "prod", NOW), Err(CharterError::KindMismatch("cartridges".into())));
+        assert_eq!(
+            verify(&charter, "staging", NOW),
+            Err(CharterError::EnvironmentMismatch { charter: "prod".into(), build: "staging".into() })
+        );
+        let lab = charter_at(&|b| {
+            b["environment"] = serde_json::json!("lab");
+            b["experiment"] = serde_json::json!("t1");
+            b["not_after"] = serde_json::json!(NOW + 10);
+        });
+        assert_eq!(verify(&lab, "lab", NOW), Ok(format!("{anchor}/catalogue/lungo-cli.json")));
+        assert_eq!(
+            verify(&lab, "lab", NOW + 11),
+            Err(CharterError::Expired { not_after: NOW + 10, now: NOW + 11 }),
+            "a lab charter lapses on its own"
+        );
+        let later = charter_at(&|b| b["issued_at"] = serde_json::json!(NOW + 100));
+        assert_eq!(verify(&later, "prod", NOW), Err(CharterError::NotYetValid { issued_at: NOW + 100, now: NOW }));
+        let no_app = charter_at(&|b| b["locations"]["manifest"] = serde_json::json!(format!("{anchor}/manifest")));
+        assert!(matches!(verify(&no_app, "prod", NOW), Err(CharterError::Location(_))));
+        let unknown = charter_at(&|b| b["mirror"] = serde_json::json!("https://elsewhere.example"));
+        assert!(matches!(verify(&unknown, "prod", NOW), Err(CharterError::Malformed(_))), "a field a charter does not have");
+    }
+
+    /// TEST0374: a charter is prods and is signed as itself
+    #[test]
+    fn test0374_a_charter_is_prods_and_is_signed_as_itself() {
+        let line = Line::new();
+        let anchor = "https://release.example";
+        let roots = line.root_keys();
+        let charter = Line::charter(anchor, "releases", "staging");
+        let verify = |envelope: &[u8], body: &[u8], roots: &[String]| {
+            verify_charter(body, envelope, roots, anchor, "staging", NOW)
+        };
+        assert!(verify(&line.sign_charter(&charter), &charter, &roots).is_ok());
+
+        let mut changed = charter.clone();
+        let at = changed.iter().position(|b| *b == b'r').unwrap();
+        changed[at] = b's';
+        assert!(matches!(verify(&line.sign_charter(&charter), &changed, &roots), Err(CharterError::SignatureInvalid(_))));
+        // A certificate for staging, by the same roots: charters are signed by prod alone.
+        let staging = Line::certificate(&line.release, "staging", ISSUED_AT, NOT_AFTER);
+        let envelope = Line::charter_envelope(&charter, &staging, &[&line.roots[0], &line.roots[1]], &line.release);
+        assert!(matches!(
+            verify(&envelope, &charter, &roots),
+            Err(CharterError::Chain(ChainError::WrongEnvironment { .. }))
+        ));
+        // Roots other than the charter roots.
+        let strangers = Line { roots: [Key::new(21), Key::new(22), Key::new(23)], release: Key::new(29) };
+        assert!(matches!(
+            verify(&line.sign_charter(&charter), &charter, &strangers.root_keys()),
+            Err(CharterError::Chain(ChainError::TooFewRootSignatures { .. }))
+        ));
+        // A prod-signed manifest signature over the same bytes is not a charter's.
+        assert_eq!(
+            verify(&line.sign(&charter), &charter, &roots),
+            Err(CharterError::UnsupportedEnvelopeFormat(ENVELOPE_FORMAT.into()))
         );
     }
 

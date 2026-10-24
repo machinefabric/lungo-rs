@@ -1,6 +1,7 @@
 //! `lungo self update`: this `lungo` replaced by the latest release of its channel.
 //!
-//! The release registry's manifest is trusted only through its signature ([`crate::release`]),
+//! The release registry is read only through its charter, and its manifest is trusted only
+//! through its signature ([`crate::release`]),
 //! the archive only as the file the manifest describes (its size and SHA-256 digest), and the
 //! command in it only once it runs and says it is the version it was published as. Then it
 //! replaces the running one, where that one is.
@@ -60,6 +61,7 @@ pub fn update() -> Result<Updated> {
         registry: &identity.registry,
         channel: &identity.channel,
         trust: &identity.trust,
+        charter_roots: &identity.charter_roots,
         now,
         installed: &installed,
         current: env!("CARGO_PKG_VERSION"),
@@ -74,6 +76,8 @@ pub struct Installation<'a> {
     pub registry: &'a str,
     pub channel: &'a str,
     pub trust: &'a Trust,
+    /// MachineFabric's roots, which the registry's charter must chain to.
+    pub charter_roots: &'a [String],
     /// Seconds since 1970.
     pub now: u64,
     /// The command to replace: a file, not a link to one.
@@ -95,7 +99,7 @@ pub fn update_from(at: &Installation) -> Result<Updated> {
         )));
     }
     let Some(release) =
-        release::fetch_latest(at.source, at.registry, at.trust, at.channel, at.platform, at.now)?
+        release::fetch_latest(at.source, at.registry, at.trust, at.charter_roots, at.channel, at.platform, at.now)?
     else {
         return Err(Error::UpdateUnavailable(format!(
             "no lungo release is published on the {} channel at {} yet",
@@ -355,12 +359,21 @@ mod tests {
         path
     }
 
+    /// A registry `line` charters, and nothing published in it.
+    fn chartered(line: &Line) -> Served {
+        let charter = Line::charter(REGISTRY, "releases", "prod");
+        let mut served = Served::default();
+        served.files.insert(format!("{REGISTRY}/charter.json.sig"), line.sign_charter(&charter));
+        served.files.insert(format!("{REGISTRY}/charter.json"), charter);
+        served
+    }
+
     /// A registry publishing `version` on the release channel as `archive`, signed by `line`.
     fn registry(line: &Line, version: &str, archive: &[u8]) -> Served {
         let url = format!("{REGISTRY}/lungo-cli/release/{version}/lungo-{version}-{PLATFORM}.tar.gz");
         let digest = crate::runtime::hex(&Sha256::digest(archive));
         let manifest = manifest("release", version, PLATFORM, &url, &digest, archive.len() as u64);
-        let mut served = Served::default();
+        let mut served = chartered(line);
         served.files.insert(format!("{REGISTRY}/lungo-cli/manifest.sig"), line.sign(&manifest));
         served.files.insert(format!("{REGISTRY}/lungo-cli/manifest"), manifest);
         served.files.insert(url, archive.to_vec());
@@ -374,6 +387,7 @@ mod tests {
             registry: REGISTRY,
             channel: "release",
             trust: &trust,
+            charter_roots: &line.root_keys(),
             now: NOW,
             installed,
             current,
@@ -426,8 +440,13 @@ mod tests {
             assert_eq!(says(&lungo), format!("lungo {current}"));
             assert_eq!(
                 *served.asked.borrow(),
-                [format!("{REGISTRY}/lungo-cli/manifest"), format!("{REGISTRY}/lungo-cli/manifest.sig")],
-                "only the manifest and its signature were read"
+                [
+                    format!("{REGISTRY}/charter.json"),
+                    format!("{REGISTRY}/charter.json.sig"),
+                    format!("{REGISTRY}/lungo-cli/manifest"),
+                    format!("{REGISTRY}/lungo-cli/manifest.sig")
+                ],
+                "only the charter, the manifest and their signatures were read"
             );
         }
     }
@@ -458,7 +477,7 @@ mod tests {
         assert_eq!(e.code(), lungo_build::ErrorCode::UpdateUntrusted);
         assert!(e.to_string().contains("signed by 0 of this lungo's roots"), "{e}");
         assert_eq!(says(&lungo), "lungo 1.100.0");
-        assert_eq!(served.asked.borrow().len(), 2, "no archive is fetched on the word of an untrusted manifest");
+        assert_eq!(served.asked.borrow().len(), 4, "no archive is fetched on the word of an untrusted manifest");
 
         // And one published with no signature at all.
         served.files.remove(&format!("{REGISTRY}/lungo-cli/manifest.sig"));
@@ -565,6 +584,7 @@ mod tests {
             registry: REGISTRY,
             channel: "nightly",
             trust: &trust,
+            charter_roots: &line.root_keys(),
             now: NOW,
             installed: &lungo,
             current: "1.100.0",
@@ -574,8 +594,31 @@ mod tests {
         assert_eq!(e.code(), lungo_build::ErrorCode::UpdateUnavailable);
         assert!(e.to_string().contains("no lungo release is published on the nightly channel"), "{e}");
         // And a registry with no manifest at all.
-        let e = run(&Served::default(), &line, &lungo, "1.100.0").unwrap_err();
+        let e = run(&chartered(&line), &line, &lungo, "1.100.0").unwrap_err();
         assert!(e.to_string().contains("no lungo release is published at https://release.example yet"), "{e}");
+    }
+
+    /// TEST0375: a registry with no charter is not asked for a manifest
+    #[test]
+    fn test0375_a_registry_with_no_charter_is_not_asked_for_a_manifest() {
+        let scratch = Scratch::new("unchartered");
+        let line = Line::new();
+        let lungo = installed(&scratch, "1.100.0");
+        let mut served = registry(&line, "1.200.0", &archive("lungo", &command("1.200.0")));
+        served.files.remove(&format!("{REGISTRY}/charter.json"));
+        let e = run(&served, &line, &lungo, "1.100.0").unwrap_err();
+        assert_eq!(e.code(), lungo_build::ErrorCode::UpdateUntrusted);
+        assert!(e.to_string().contains("has no charter (https://release.example/charter.json is missing)"), "{e}");
+        assert_eq!(*served.asked.borrow(), [format!("{REGISTRY}/charter.json")], "nothing else is read");
+        // A charter of another anchor, served here, is refused before the manifest is read.
+        let elsewhere = Line::charter("https://release.example/elsewhere", "releases", "prod");
+        served.files.insert(format!("{REGISTRY}/charter.json.sig"), line.sign_charter(&elsewhere));
+        served.files.insert(format!("{REGISTRY}/charter.json"), elsewhere);
+        served.asked.borrow_mut().clear();
+        let e = run(&served, &line, &lungo, "1.100.0").unwrap_err();
+        assert!(e.to_string().contains("it is the charter of https://release.example/elsewhere"), "{e}");
+        assert_eq!(served.asked.borrow().len(), 2, "the manifest is not read");
+        assert_eq!(says(&lungo), "lungo 1.100.0");
     }
 
     /// TEST0368: a command this user cannot replace is said with where it is

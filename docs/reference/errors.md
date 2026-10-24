@@ -114,8 +114,9 @@ command is left as it is. See
 ### LNG0112
 
 **Release not trusted.** `lungo self update` fetched something it does not accept as a release of
-`lungo`: the release manifest's signature does not chain to the keys this `lungo` was built
-with, or the archive is not the file the manifest describes (its size or SHA-256 digest
+`lungo`: the registry has no charter, or its charter is not signed by MachineFabric or does not
+charter it as a release registry for this `lungo`'s environment; the release manifest's
+signature does not chain to the keys this `lungo` was built with; or the archive is not the file the manifest describes (its size or SHA-256 digest
 differs), or the command in it does not report the version it was published as. Nothing is
 installed, and the download is discarded. A persistent failure means the registry, or the
 connection to it, is serving something that was not published.

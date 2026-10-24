@@ -118,8 +118,10 @@ installato resta com'è. Vedi
 ### LNG0112
 
 **Release non attendibile.** `lungo self update` ha scaricato qualcosa che non accetta come
-release di `lungo`: la firma del manifest della release non risale alle chiavi con cui questo
-`lungo` è stato compilato, oppure l'archivio non è il file che il manifest descrive (la dimensione
+release di `lungo`: il registro non ha un charter, oppure il suo charter non è firmato da
+MachineFabric o non lo istituisce come registro delle release per l'ambiente di questo `lungo`;
+la firma del manifest della release non risale alle chiavi con cui questo `lungo` è stato
+compilato; oppure l'archivio non è il file che il manifest descrive (la dimensione
 o il digest SHA-256 differiscono), oppure il comando che contiene non dichiara la versione con cui
 è stato pubblicato. Non viene installato nulla e il download viene scartato. Un errore persistente
 significa che il registro, o la connessione verso di esso, sta servendo qualcosa che non è stato

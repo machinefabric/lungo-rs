@@ -8,17 +8,23 @@
 //! release too. Any other build is a development build, which knows no release and uses a
 //! local distribution (`--runtime-dir`).
 //!
-//! A release published in a release registry is also given its **release line**: the registry,
-//! the channel it is published on, and the root keys every release of that line chains to.
-//! `lungo self update` reads it back (`src/release.rs`). `MFR_RELEASE_CHANNEL` is what makes a
-//! build one of these, and then the other three are required with it; a build without it —
-//! `cargo install lungo-cli` among them — has no release line and does not update itself.
+//! A release published in a release registry is also given its **release line**: the anchor of
+//! the registry, the channel it is published on, the signing environment, the root keys every
+//! release of that line chains to, and MachineFabric's charter roots, which the registry's
+//! charter chains to. `lungo self update` reads it back (`src/release.rs`). `MFR_RELEASE_CHANNEL`
+//! is what makes a build one of these, and then the others are required with it; a build without
+//! it — `cargo install lungo-cli` among them — has no release line and does not update itself.
 
 use std::path::PathBuf;
 
 const CHANNEL: &str = "MFR_RELEASE_CHANNEL";
-const RELEASE_LINE: [&str; 4] =
-    ["MFR_RELEASES_BASE_URL", CHANNEL, "MFR_SIGNING_ENVIRONMENT", "MFR_CARTRIDGE_ROOT_PUBKEYS"];
+const RELEASE_LINE: [&str; 5] = [
+    "MFR_RELEASES_REGISTRY_URL",
+    CHANNEL,
+    "MFR_SIGNING_ENVIRONMENT",
+    "MFR_CARTRIDGE_ROOT_PUBKEYS",
+    "MFR_CHARTER_ROOT_PUBKEYS",
+];
 /// The roots a release-key certificate is checked against: two of them must have signed it, so
 /// fewer than three leaves no root that can be lost or withheld.
 const MIN_ROOTS: usize = 3;
@@ -53,10 +59,10 @@ fn main() {
     std::fs::write(&out, text).expect("cannot write the embedded runtime manifest");
 }
 
-/// Bakes the release line of a registry release as `LUNGO_BAKED_RELEASE_LINE`: registry, channel,
-/// signing environment and the roots (comma-separated), with a space between them — one value,
-/// so that the line is there whole or not at all. Every part is checked here: a mistyped root
-/// stops the build, not every update of what was built.
+/// Bakes the release line of a registry release as `LUNGO_BAKED_RELEASE_LINE`: the registry's
+/// anchor, channel, signing environment, the roots and the charter roots (each comma-separated),
+/// with a space between them — one value, so that the line is there whole or not at all. Every
+/// part is checked here: a mistyped root stops the build, not every update of what was built.
 fn release_line() {
     let given: Vec<(&str, String)> = RELEASE_LINE
         .iter()
@@ -77,37 +83,48 @@ fn release_line() {
             missing.join(", ")
         );
     }
-    let url = value("MFR_RELEASES_BASE_URL");
+    let url = value("MFR_RELEASES_REGISTRY_URL");
     if !url.starts_with("https://") || url.ends_with('/') || url.contains(' ') {
-        panic!("MFR_RELEASES_BASE_URL must be an https URL with no space and no trailing slash, got {url:?}");
+        panic!("MFR_RELEASES_REGISTRY_URL must be an https URL with no space and no trailing slash, got {url:?}");
     }
     let channel = value(CHANNEL);
     if !matches!(channel.as_str(), "release" | "nightly") {
         panic!("{CHANNEL} must be `release` or `nightly`, got {channel:?}");
     }
     let environment = value("MFR_SIGNING_ENVIRONMENT");
-    if !matches!(environment.as_str(), "prod" | "staging") {
-        panic!("MFR_SIGNING_ENVIRONMENT must be `prod` or `staging` for a registry release, got {environment:?}");
+    if !matches!(environment.as_str(), "prod" | "staging" | "lab") {
+        panic!("MFR_SIGNING_ENVIRONMENT must be `prod`, `staging` or `lab` for a registry release, got {environment:?}");
     }
-    let roots: Vec<String> = value("MFR_CARTRIDGE_ROOT_PUBKEYS").split(',').map(|k| k.trim().to_owned()).collect();
+    let roots = root_set("MFR_CARTRIDGE_ROOT_PUBKEYS", &value("MFR_CARTRIDGE_ROOT_PUBKEYS"));
+    let charter_roots = root_set("MFR_CHARTER_ROOT_PUBKEYS", &value("MFR_CHARTER_ROOT_PUBKEYS"));
+    println!(
+        "cargo::rustc-env=LUNGO_BAKED_RELEASE_LINE={url} {channel} {environment} {} {}",
+        roots.join(","),
+        charter_roots.join(",")
+    );
+}
+
+/// A root set as `name` gives it: distinct minisign public keys, at least [`MIN_ROOTS`] of them.
+fn root_set(name: &str, given: &str) -> Vec<String> {
+    let roots: Vec<String> = given.split(',').map(|k| k.trim().to_owned()).collect();
     if roots.iter().any(String::is_empty) {
-        panic!("MFR_CARTRIDGE_ROOT_PUBKEYS has an empty entry: {roots:?}");
+        panic!("{name} has an empty entry: {roots:?}");
     }
     let mut distinct = roots.clone();
     distinct.sort();
     distinct.dedup();
     if distinct.len() != roots.len() {
-        panic!("MFR_CARTRIDGE_ROOT_PUBKEYS names a root twice: {roots:?}");
+        panic!("{name} names a root twice: {roots:?}");
     }
     if roots.len() < MIN_ROOTS {
-        panic!("MFR_CARTRIDGE_ROOT_PUBKEYS has {} root(s); a certificate needs two of at least {MIN_ROOTS}", roots.len());
+        panic!("{name} has {} root(s); a certificate needs two of at least {MIN_ROOTS}", roots.len());
     }
     for root in &roots {
         if let Err(why) = minisign_public_key(root) {
-            panic!("MFR_CARTRIDGE_ROOT_PUBKEYS entry {root:?} is not a minisign public key: {why}");
+            panic!("{name} entry {root:?} is not a minisign public key: {why}");
         }
     }
-    println!("cargo::rustc-env=LUNGO_BAKED_RELEASE_LINE={url} {channel} {environment} {}", roots.join(","));
+    roots
 }
 
 /// A minisign public key is 42 bytes in base64: `Ed`, an 8-byte key id, a 32-byte ed25519 key.
