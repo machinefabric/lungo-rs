@@ -71,6 +71,6 @@ windows-sys = "0.59"
 
 # A release manifest and its registry's charter are signed: raw ed25519 over their exact bytes,
 # by a release key two of the build's roots certify (`lungo self update`). The chain is
-# signed-release's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
-[workspace.dependencies.signed-release]
+# mg-srel's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
+[workspace.dependencies.mg-srel]
 version = "=0.1.0"

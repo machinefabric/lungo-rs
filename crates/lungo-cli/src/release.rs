@@ -30,12 +30,12 @@
 
 use lungo_build::{Error, Result};
 use serde::Deserialize;
-use signed_release::{CharterExpectation, CharterRules, CharterTrust, Formats, KindRule, LocationRule};
+use mg_srel::{CharterExpectation, CharterRules, CharterTrust, Formats, KindRule, LocationRule};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Read;
 
-pub use signed_release::{ChainError, CharterError};
+pub use mg_srel::{ChainError, CharterError};
 
 /// The command's name in the release registry.
 pub const APP_ID: &str = "lungo-cli";
@@ -139,10 +139,10 @@ pub fn charter_rules() -> CharterRules {
 
 /// `trust` as the chain is verified against: MachineFabric's manifest formats, under the
 /// environment this `lungo` was built for.
-pub fn content_trust(trust: &Trust) -> std::result::Result<signed_release::Trust, String> {
+pub fn content_trust(trust: &Trust) -> std::result::Result<mg_srel::Trust, String> {
     let roots: Vec<&str> = trust.roots.iter().map(String::as_str).collect();
     let formats = Formats { certificate: CERTIFICATE_FORMAT.to_owned(), envelope: ENVELOPE_FORMAT.to_owned() };
-    signed_release::Trust::new(&roots, &trust.environment, formats)
+    mg_srel::Trust::new(&roots, &trust.environment, formats)
         .map_err(|e| format!("this lungo's signing roots cannot be used: {e}"))
 }
 
@@ -150,7 +150,7 @@ pub fn content_trust(trust: &Trust) -> std::result::Result<signed_release::Trust
 pub fn charter_trust(charter_roots: &[String]) -> std::result::Result<CharterTrust, String> {
     let roots: Vec<&str> = charter_roots.iter().map(String::as_str).collect();
     let formats = Formats { certificate: CERTIFICATE_FORMAT.to_owned(), envelope: CHARTER_ENVELOPE_FORMAT.to_owned() };
-    signed_release::Trust::new(&roots, CHARTER_LABEL, formats)
+    mg_srel::Trust::new(&roots, CHARTER_LABEL, formats)
         .map(|trust| CharterTrust { trust })
         .map_err(|e| format!("this lungo's charter roots cannot be used: {e}"))
 }
@@ -168,7 +168,7 @@ pub fn verify_charter(
     now: u64,
 ) -> std::result::Result<String, CharterError> {
     let expect = CharterExpectation { anchor: Some(anchor), kind: "releases", environment: Some(environment) };
-    let verified = signed_release::verify_charter(charter, envelope, trust, &charter_rules(), &expect, now)?;
+    let verified = mg_srel::verify_charter(charter, envelope, trust, &charter_rules(), &expect, now)?;
     // The rules hold a release registry's manifest location to taking `{app_id}` and nothing
     // else, so filling it in cannot fail for a charter that verified.
     Ok(verified
@@ -352,13 +352,13 @@ pub fn fetch_latest(
 ) -> Result<Option<Release>> {
     let content = content_trust(trust).map_err(Error::UpdateUntrusted)?;
     let charters = charter_trust(charter_roots).map_err(Error::UpdateUntrusted)?;
-    let charter_url = format!("{registry}/{}", signed_release::CHARTER_FILE);
+    let charter_url = format!("{registry}/{}", mg_srel::CHARTER_FILE);
     let Some(charter) = source.get(&charter_url)? else {
         return Err(Error::UpdateUntrusted(format!(
             "{registry} has no charter ({charter_url} is missing), so it is not a release registry MachineFabric chartered"
         )));
     };
-    let charter_sig_url = format!("{registry}/{}", signed_release::CHARTER_SIG_FILE);
+    let charter_sig_url = format!("{registry}/{}", mg_srel::CHARTER_SIG_FILE);
     let Some(charter_sig) = source.get(&charter_sig_url)? else {
         return Err(Error::UpdateUntrusted(format!(
             "{registry} has a charter and no signature for it ({charter_sig_url} is missing)"
@@ -375,7 +375,7 @@ pub fn fetch_latest(
             "{url} is published without a signature ({signature_url} is missing), so nothing in it is trusted"
         )));
     };
-    signed_release::verify_manifest(&signature, &manifest, &content, now)
+    mg_srel::verify_manifest(&signature, &manifest, &content, now)
         .map_err(|e| Error::UpdateUntrusted(format!("{url} is not a release manifest this lungo trusts: {e}")))?;
     latest(&manifest, channel, platform)
 }
@@ -582,7 +582,7 @@ mod tests {
 
     /// The manifest's chain verified as a published `lungo` verifies it.
     fn verify_manifest(manifest: &[u8], envelope: &[u8], trust: &Trust, now: u64) -> std::result::Result<(), ChainError> {
-        signed_release::verify_manifest(envelope, manifest, &content_trust(trust).unwrap(), now).map(|_| ())
+        mg_srel::verify_manifest(envelope, manifest, &content_trust(trust).unwrap(), now).map(|_| ())
     }
 
     fn chain(manifest: &[u8], envelope: &[u8], line: &Line) -> std::result::Result<(), ChainError> {
