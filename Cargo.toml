@@ -29,7 +29,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "1.117.0"
+version = "1.120.164"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -41,19 +41,19 @@ homepage = "https://machinefabric.com/lungo/"
 # The lungo crates are released together and depend on each other's unstable internals (the
 # generated code, the Bridge IR, the worker protocol), so they require each other's exact
 # version.
-lungo = { path = "crates/lungo", version = "=1.117.0" }
-lungo-bir = { path = "crates/lungo-bir", version = "=1.117.0" }
-lungo-build = { path = "crates/lungo-build", version = "=1.117.0" }
-lungo-codegen = { path = "crates/lungo-codegen", version = "=1.117.0" }
-lungo-driver = { path = "crates/lungo-driver", version = "=1.117.0" }
-lungo-protocol = { path = "crates/lungo-protocol", version = "=1.117.0" }
-lungo-runtime = { path = "crates/lungo-runtime", version = "=1.117.0" }
+lungo = { path = "crates/lungo", version = "=1.120.164" }
+lungo-bir = { path = "crates/lungo-bir", version = "=1.120.164" }
+lungo-build = { path = "crates/lungo-build", version = "=1.120.164" }
+lungo-codegen = { path = "crates/lungo-codegen", version = "=1.120.164" }
+lungo-driver = { path = "crates/lungo-driver", version = "=1.120.164" }
+lungo-protocol = { path = "crates/lungo-protocol", version = "=1.120.164" }
+lungo-runtime = { path = "crates/lungo-runtime", version = "=1.120.164" }
 
 cc = "1.2"
 ciborium = "0.2.2"
 clap = { version = "4.5", features = ["derive"] }
 dunce = "1.0"
-# A release manifest is signed: raw ed25519 over its exact bytes (`lungo self update`).
+# The tests of `lungo self update` sign the release lines they serve.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 flate2 = "1.1"
 ignore = "0.4"
@@ -68,3 +68,9 @@ toml = "0.8"
 ureq = "3.1"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 windows-sys = "0.59"
+
+# A release manifest and its registry's charter are signed: raw ed25519 over their exact bytes,
+# by a release key two of the build's roots certify (`lungo self update`). The chain is
+# signed-release's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
+[workspace.dependencies.signed-release]
+version = "=0.1.0"

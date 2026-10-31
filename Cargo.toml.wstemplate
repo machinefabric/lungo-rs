@@ -53,7 +53,7 @@ cc = "1.2"
 ciborium = "0.2.2"
 clap = { version = "4.5", features = ["derive"] }
 dunce = "1.0"
-# A release manifest is signed: raw ed25519 over its exact bytes (`lungo self update`).
+# The tests of `lungo self update` sign the release lines they serve.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 flate2 = "1.1"
 ignore = "0.4"
@@ -68,3 +68,16 @@ toml = "0.8"
 ureq = "3.1"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 windows-sys = "0.59"
+
+# A release manifest and its registry's charter are signed: raw ed25519 over their exact bytes,
+# by a release key two of the build's roots certify (`lungo self update`). The chain is
+# signed-release's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
+[workspace.dependencies.signed-release]
+{%- if env.MFR_LOCAL_LIBS %}
+# MFR_LOCAL_LIBS was set when this was rendered: the working copy in this workspace rather than a
+# published release. Re-render without it before committing or releasing — a path resolves on
+# this machine only.
+path = "{{ projects.signed_release.path_from_here }}"
+{%- else %}
+version = "={{ projects.signed_release.latest_remote_version }}"
+{%- endif %}

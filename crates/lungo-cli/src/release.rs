@@ -28,12 +28,14 @@
 //! A `lungo` that was not built as a registry release has no roots, and so no release it could
 //! trust: it has no release line ([`identity`] is `None`).
 
-use ed25519_dalek::Verifier;
 use lungo_build::{Error, Result};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use signed_release::{CharterExpectation, CharterRules, CharterTrust, Formats, KindRule, LocationRule};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Read;
+
+pub use signed_release::{ChainError, CharterError};
 
 /// The command's name in the release registry.
 pub const APP_ID: &str = "lungo-cli";
@@ -42,16 +44,11 @@ pub const APP_ID: &str = "lungo-cli";
 pub const ARCHIVE_ROOT: &str = "lungo";
 const CERTIFICATE_FORMAT: &str = "machinefabric-release-key-cert/1";
 const ENVELOPE_FORMAT: &str = "machinefabric-manifest-sig/1";
-/// A registry's charter and its signature, under the registry's anchor.
-const CHARTER_FILE: &str = "charter.json";
-const CHARTER_SIG_FILE: &str = "charter.json.sig";
 const CHARTER_FORMAT: &str = "machinefabric-registry-charter/1";
 const CHARTER_ENVELOPE_FORMAT: &str = "machinefabric-charter-sig/1";
 /// The label a charter's certificate carries: charters are signed by prod for every environment.
-const CHARTER_SIGNING_ENVIRONMENT: &str = "prod";
+const CHARTER_LABEL: &str = "prod";
 const MANIFEST_SCHEMA_MAJOR: &str = "5";
-/// Distinct roots that must have signed a certificate.
-const REQUIRED_ROOT_SIGNATURES: usize = 2;
 
 /// What a released `lungo` knows about its own release line, baked in by its build (`build.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,425 +105,76 @@ pub fn platform() -> Option<&'static str> {
     })
 }
 
-/// Why a manifest's signature does not chain to this build's roots.
-#[derive(Debug, PartialEq, Eq)]
-pub enum ChainError {
-    MalformedEnvelope(String),
-    UnsupportedEnvelopeFormat(String),
-    NoCertificates,
-    MalformedCertificate(String),
-    UnsupportedCertificateFormat(String),
-    MalformedKey(String),
-    KeyIdMismatch { stated: String, actual: String },
-    TooFewRootSignatures { key_id: String, have: usize },
-    WrongEnvironment { key_id: String, certificate: String, build: String },
-    Expired { key_id: String, not_after: u64, now: u64 },
-    NotYetValid { key_id: String, issued_at: u64, now: u64 },
-    NoCertificateForSigner { key_id: String },
-    ManifestSignatureInvalid(String),
-}
-
-impl fmt::Display for ChainError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ChainError::MalformedEnvelope(e) => write!(f, "the signature file is not a manifest signature: {e}"),
-            ChainError::UnsupportedEnvelopeFormat(found) => {
-                write!(f, "the signature file is of format {found:?}, not {ENVELOPE_FORMAT:?}")
-            }
-            ChainError::NoCertificates => f.write_str("the signature file carries no release-key certificate"),
-            ChainError::MalformedCertificate(e) => write!(f, "a release-key certificate cannot be read: {e}"),
-            ChainError::UnsupportedCertificateFormat(found) => {
-                write!(f, "a release-key certificate is of format {found:?}, not {CERTIFICATE_FORMAT:?}")
-            }
-            ChainError::MalformedKey(e) => write!(f, "a key or signature cannot be read: {e}"),
-            ChainError::KeyIdMismatch { stated, actual } => {
-                write!(f, "a release-key certificate says its key is {stated} and carries key {actual}")
-            }
-            ChainError::TooFewRootSignatures { key_id, have } => write!(
-                f,
-                "the certificate of release key {key_id} is signed by {have} of this lungo's roots; {REQUIRED_ROOT_SIGNATURES} must sign"
-            ),
-            ChainError::WrongEnvironment { key_id, certificate, build } => write!(
-                f,
-                "the certificate of release key {key_id} is for the {certificate} environment; this lungo was built for {build}"
-            ),
-            ChainError::Expired { key_id, not_after, now } => {
-                write!(f, "the certificate of release key {key_id} expired at {not_after} (it is {now})")
-            }
-            ChainError::NotYetValid { key_id, issued_at, now } => {
-                write!(f, "the certificate of release key {key_id} is valid from {issued_at} (it is {now})")
-            }
-            ChainError::NoCertificateForSigner { key_id } => {
-                write!(
-                    f,
-                    "the manifest is signed by key {key_id}, which no certificate in the signature file authorizes"
-                )
-            }
-            ChainError::ManifestSignatureInvalid(e) => {
-                write!(f, "the manifest's signature does not match the manifest: {e}")
-            }
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct Envelope {
-    format: String,
-    certificates: Vec<CertificateEntry>,
-    manifest_signature: DocumentSignature,
-}
-
-/// A charter's signature file: the manifests' chain, with a format word and a signature field of
-/// its own, so that no signed manifest can be passed off as a charter.
-#[derive(Deserialize)]
-struct CharterEnvelope {
-    certificates: Vec<CertificateEntry>,
-    charter_signature: DocumentSignature,
-}
-
-#[derive(Deserialize)]
-struct CertificateEntry {
-    /// The certificate as the roots signed it: these exact bytes, never re-serialized.
-    certificate: String,
-    root_signatures: Vec<RootSignature>,
-}
-
-#[derive(Deserialize)]
-struct RootSignature {
-    signature: String,
-}
-
-#[derive(Deserialize)]
-struct DocumentSignature {
-    key_id: String,
-    signature: String,
-}
-
-#[derive(Deserialize)]
-struct Certificate {
-    format: String,
-    release_pubkey: String,
-    key_id: String,
-    environment: String,
-    issued_at: u64,
-    not_after: u64,
-}
-
-/// Checks that `envelope` (the bytes of `manifest.sig`) authorizes `manifest` (the exact bytes
-/// of the manifest it was fetched beside) under `trust`, at the time `now` (seconds since 1970).
-pub fn verify_manifest(
-    manifest: &[u8],
-    envelope: &[u8],
-    trust: &Trust,
-    now: u64,
-) -> std::result::Result<(), ChainError> {
-    let envelope: Envelope =
-        serde_json::from_slice(envelope).map_err(|e| ChainError::MalformedEnvelope(e.to_string()))?;
-    if envelope.format != ENVELOPE_FORMAT {
-        return Err(ChainError::UnsupportedEnvelopeFormat(envelope.format));
-    }
-    authorize(&envelope.certificates, &envelope.manifest_signature, manifest, trust, now)
-}
-
-/// The chain under every signed document: every certificate valid under `trust`, and `signature`
-/// over the exact `bytes` by a release key one of them certifies.
-fn authorize(
-    certificates: &[CertificateEntry],
-    signature: &DocumentSignature,
-    bytes: &[u8],
-    trust: &Trust,
-    now: u64,
-) -> std::result::Result<(), ChainError> {
-    if certificates.is_empty() {
-        return Err(ChainError::NoCertificates);
-    }
-    let mut release_keys: Vec<(String, String)> = Vec::new();
-    for entry in certificates {
-        let certificate = verify_certificate(entry, trust, now)?;
-        release_keys.push((certificate.key_id, certificate.release_pubkey));
-    }
-    let signer = &signature.key_id;
-    let Some((_, release_key)) = release_keys.iter().find(|(id, _)| id == signer) else {
-        return Err(ChainError::NoCertificateForSigner { key_id: signer.clone() });
+/// What MachineFabric's charters are: the registries it charters, where each keeps its manifests,
+/// and the `fabric` a cartridges registry names. `lungo` reads only release registries; the other
+/// kinds are here so that a charter of one is refused for its kind, not for its shape.
+pub fn charter_rules() -> CharterRules {
+    let location = |name: &str, placeholders: &[&str]| LocationRule {
+        name: name.to_owned(),
+        placeholders: placeholders.iter().map(|p| (*p).to_owned()).collect(),
     };
-    verify_signature(release_key, &signature.signature, bytes).map_err(|e| match e {
-        SignatureError::Malformed(why) => ChainError::MalformedKey(why),
-        SignatureError::Mismatch(why) => ChainError::ManifestSignatureInvalid(why),
-    })
-}
-
-/// Why a registry's charter is not one this `lungo` can read its releases through.
-#[derive(Debug, PartialEq, Eq)]
-pub enum CharterError {
-    /// The signature file is not a charter's.
-    MalformedEnvelope(String),
-    UnsupportedEnvelopeFormat(String),
-    /// The certificates do not chain to MachineFabric's roots under the `prod` label, or the
-    /// charter is not signed by a key they certify.
-    Chain(ChainError),
-    /// The charter's signature does not match its bytes.
-    SignatureInvalid(String),
-    Malformed(String),
-    UnsupportedFormat(String),
-    AnchorMismatch {
-        charter: String,
-        asked: String,
-    },
-    KindMismatch(String),
-    EnvironmentMismatch {
-        charter: String,
-        build: String,
-    },
-    NotYetValid {
-        issued_at: u64,
-        now: u64,
-    },
-    Expired {
-        not_after: u64,
-        now: u64,
-    },
-    /// The charter's manifest location is not one the command's manifest address can be read
-    /// from.
-    Location(String),
-}
-
-impl fmt::Display for CharterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CharterError::MalformedEnvelope(e) => write!(f, "its signature file is not a charter signature: {e}"),
-            CharterError::UnsupportedEnvelopeFormat(found) => {
-                write!(f, "its signature file is of format {found:?}, not {CHARTER_ENVELOPE_FORMAT:?}")
-            }
-            CharterError::Chain(ChainError::WrongEnvironment { key_id, certificate, .. }) => write!(
-                f,
-                "it is signed by release key {key_id}, certified for {certificate}; a charter is signed by \
-                 MachineFabric's {CHARTER_SIGNING_ENVIRONMENT} release key"
-            ),
-            CharterError::Chain(e) => write!(f, "it does not chain to MachineFabric's roots: {e}"),
-            CharterError::SignatureInvalid(e) => write!(f, "its signature does not match it: {e}"),
-            CharterError::Malformed(e) => write!(f, "it is not a charter: {e}"),
-            CharterError::UnsupportedFormat(found) => write!(f, "it is of format {found:?}, not {CHARTER_FORMAT:?}"),
-            CharterError::AnchorMismatch { charter, asked } => {
-                write!(f, "it is the charter of {charter}, not of {asked}")
-            }
-            CharterError::KindMismatch(kind) => write!(f, "it charters a {kind} registry, not a release registry"),
-            CharterError::EnvironmentMismatch { charter, build } => {
-                write!(f, "its registry is signed under {charter}; this lungo was built for {build}")
-            }
-            CharterError::NotYetValid { issued_at, now } => write!(f, "it is valid from {issued_at} (it is {now})"),
-            CharterError::Expired { not_after, now } => write!(f, "it expired at {not_after} (it is {now})"),
-            CharterError::Location(e) => f.write_str(e),
-        }
+    CharterRules {
+        format: CHARTER_FORMAT.to_owned(),
+        fields: vec!["fabric".to_owned()],
+        kinds: vec![
+            KindRule {
+                name: "cartridges".to_owned(),
+                locations: vec![location("manifest", &["registry_version"])],
+                urls: vec!["fabric".to_owned()],
+            },
+            KindRule {
+                name: "fabric".to_owned(),
+                locations: vec![
+                    location("manifest", &["manifest_version"]),
+                    location("latest", &[]),
+                    location("definition", &["kind", "urn_hash", "version"]),
+                ],
+                urls: vec![],
+            },
+            KindRule { name: "releases".to_owned(), locations: vec![location("manifest", &["app_id"])], urls: vec![] },
+        ],
+        reserved_slugs: vec!["dev".to_owned()],
     }
 }
 
-/// A charter body, as signed: every field a charter has, and no other.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code)]
-struct Charter {
-    format: String,
-    anchor: String,
-    kind: String,
-    slug: String,
-    environment: String,
-    #[serde(default)]
-    experiment: Option<String>,
-    locations: BTreeMap<String, String>,
-    #[serde(default)]
-    fabric: Option<String>,
-    issued_at: u64,
-    not_after: Option<u64>,
+/// `trust` as the chain is verified against: MachineFabric's manifest formats, under the
+/// environment this `lungo` was built for.
+pub fn content_trust(trust: &Trust) -> std::result::Result<signed_release::Trust, String> {
+    let roots: Vec<&str> = trust.roots.iter().map(String::as_str).collect();
+    let formats = Formats { certificate: CERTIFICATE_FORMAT.to_owned(), envelope: ENVELOPE_FORMAT.to_owned() };
+    signed_release::Trust::new(&roots, &trust.environment, formats)
+        .map_err(|e| format!("this lungo's signing roots cannot be used: {e}"))
+}
+
+/// MachineFabric's charter roots, as charters are verified against them: under the `prod` label.
+pub fn charter_trust(charter_roots: &[String]) -> std::result::Result<CharterTrust, String> {
+    let roots: Vec<&str> = charter_roots.iter().map(String::as_str).collect();
+    let formats = Formats { certificate: CERTIFICATE_FORMAT.to_owned(), envelope: CHARTER_ENVELOPE_FORMAT.to_owned() };
+    signed_release::Trust::new(&roots, CHARTER_LABEL, formats)
+        .map(|trust| CharterTrust { trust })
+        .map_err(|e| format!("this lungo's charter roots cannot be used: {e}"))
 }
 
 /// Checks that `envelope` (the bytes of `charter.json.sig`) authorizes `charter` (the exact bytes
-/// of `charter.json`) under MachineFabric's `charter_roots`, and that it charters the release
-/// registry at `anchor` for the `environment` this `lungo` verifies, at the time `now`. Returns
-/// the address of the command's manifest, as the charter states it.
+/// of `charter.json`) under `trust`, by MachineFabric's [`charter_rules`], and that it charters the
+/// release registry at `anchor` for the `environment` this `lungo` verifies, at the time `now`.
+/// Returns the address of the command's manifest, as the charter states it.
 pub fn verify_charter(
     charter: &[u8],
     envelope: &[u8],
-    charter_roots: &[String],
+    trust: &CharterTrust,
     anchor: &str,
     environment: &str,
     now: u64,
 ) -> std::result::Result<String, CharterError> {
-    let probe: serde_json::Value =
-        serde_json::from_slice(envelope).map_err(|e| CharterError::MalformedEnvelope(e.to_string()))?;
-    match probe.get("format").and_then(|f| f.as_str()) {
-        Some(CHARTER_ENVELOPE_FORMAT) => {}
-        Some(other) => return Err(CharterError::UnsupportedEnvelopeFormat(other.to_owned())),
-        None => return Err(CharterError::MalformedEnvelope("it has no format".to_owned())),
-    }
-    let envelope: CharterEnvelope =
-        serde_json::from_value(probe).map_err(|e| CharterError::MalformedEnvelope(e.to_string()))?;
-    let trust = Trust { roots: charter_roots.to_vec(), environment: CHARTER_SIGNING_ENVIRONMENT.to_owned() };
-    authorize(&envelope.certificates, &envelope.charter_signature, charter, &trust, now).map_err(|e| match e {
-        ChainError::ManifestSignatureInvalid(why) => CharterError::SignatureInvalid(why),
-        other => CharterError::Chain(other),
-    })?;
-
-    // Only now is the body read: nothing about an unsigned document is believed, including what
-    // it says its format is.
-    let body: serde_json::Value =
-        serde_json::from_slice(charter).map_err(|e| CharterError::Malformed(e.to_string()))?;
-    match body.get("format").and_then(|f| f.as_str()) {
-        Some(CHARTER_FORMAT) => {}
-        Some(other) => return Err(CharterError::UnsupportedFormat(other.to_owned())),
-        None => return Err(CharterError::Malformed("it has no format".to_owned())),
-    }
-    let body: Charter = serde_json::from_value(body).map_err(|e| CharterError::Malformed(e.to_string()))?;
-    if body.anchor != anchor {
-        return Err(CharterError::AnchorMismatch { charter: body.anchor, asked: anchor.to_owned() });
-    }
-    if body.kind != "releases" {
-        return Err(CharterError::KindMismatch(body.kind));
-    }
-    if body.environment != environment {
-        return Err(CharterError::EnvironmentMismatch { charter: body.environment, build: environment.to_owned() });
-    }
-    if body.issued_at > now {
-        return Err(CharterError::NotYetValid { issued_at: body.issued_at, now });
-    }
-    if let Some(not_after) = body.not_after
-        && now > not_after
-    {
-        return Err(CharterError::Expired { not_after, now });
-    }
-    manifest_location(&body.locations)
-}
-
-/// The command's manifest address from a release registry's `manifest` location: a template that
-/// takes `{app_id}` and nothing else.
-fn manifest_location(locations: &BTreeMap<String, String>) -> std::result::Result<String, CharterError> {
-    let Some(template) = locations.get("manifest") else {
-        return Err(CharterError::Location("the charter states no manifest location".to_owned()));
-    };
-    let filled = template.replace("{app_id}", APP_ID);
-    if filled == *template || filled.contains(['{', '}']) {
-        return Err(CharterError::Location(format!(
-            "the charter's manifest location {template:?} does not take exactly {{app_id}}"
-        )));
-    }
-    Ok(filled)
-}
-
-fn verify_certificate(
-    entry: &CertificateEntry,
-    trust: &Trust,
-    now: u64,
-) -> std::result::Result<Certificate, ChainError> {
-    let certificate: Certificate =
-        serde_json::from_str(&entry.certificate).map_err(|e| ChainError::MalformedCertificate(e.to_string()))?;
-    if certificate.format != CERTIFICATE_FORMAT {
-        return Err(ChainError::UnsupportedCertificateFormat(certificate.format));
-    }
-    // The stated key id must be the key's own: a mismatch is a certificate edited by hand.
-    let key = PublicKey::parse(&certificate.release_pubkey).map_err(ChainError::MalformedKey)?;
-    if key.id != certificate.key_id {
-        return Err(ChainError::KeyIdMismatch { stated: certificate.key_id, actual: key.id });
-    }
-    // Distinct ROOTS, not distinct signatures: a signature by a key that is not a root counts for
-    // nothing, and two by one root count once.
-    let signers: BTreeSet<usize> = trust
-        .roots
-        .iter()
-        .enumerate()
-        .filter(|(_, root)| {
-            entry
-                .root_signatures
-                .iter()
-                .any(|s| verify_signature(root, &s.signature, entry.certificate.as_bytes()).is_ok())
-        })
-        .map(|(index, _)| index)
-        .collect();
-    if signers.len() < REQUIRED_ROOT_SIGNATURES {
-        return Err(ChainError::TooFewRootSignatures { key_id: certificate.key_id, have: signers.len() });
-    }
-    if certificate.environment != trust.environment {
-        return Err(ChainError::WrongEnvironment {
-            key_id: certificate.key_id,
-            certificate: certificate.environment,
-            build: trust.environment.clone(),
-        });
-    }
-    if now > certificate.not_after {
-        return Err(ChainError::Expired { key_id: certificate.key_id, not_after: certificate.not_after, now });
-    }
-    if certificate.issued_at > now {
-        return Err(ChainError::NotYetValid { key_id: certificate.key_id, issued_at: certificate.issued_at, now });
-    }
-    Ok(certificate)
-}
-
-enum SignatureError {
-    Malformed(String),
-    Mismatch(String),
-}
-
-/// A raw ed25519 signature (base64) by a minisign public key (base64), over exact bytes.
-fn verify_signature(public_key: &str, signature: &str, bytes: &[u8]) -> std::result::Result<(), SignatureError> {
-    let key = PublicKey::parse(public_key).map_err(SignatureError::Malformed)?;
-    let key =
-        ed25519_dalek::VerifyingKey::from_bytes(&key.ed25519).map_err(|e| SignatureError::Malformed(e.to_string()))?;
-    let signature = base64_decode(signature.trim())
-        .ok_or_else(|| SignatureError::Malformed("a signature is not base64".to_owned()))?;
-    let signature: [u8; 64] = signature
-        .try_into()
-        .map_err(|s: Vec<u8>| SignatureError::Malformed(format!("a signature is {} bytes, not 64", s.len())))?;
-    key.verify(bytes, &ed25519_dalek::Signature::from_bytes(&signature))
-        .map_err(|e| SignatureError::Mismatch(e.to_string()))
-}
-
-/// A minisign public key: `Ed`, an 8-byte key id, a 32-byte ed25519 key, in base64.
-struct PublicKey {
-    /// The key id, lower-case hexadecimal.
-    id: String,
-    ed25519: [u8; 32],
-}
-
-impl PublicKey {
-    fn parse(text: &str) -> std::result::Result<PublicKey, String> {
-        let bytes = base64_decode(text.trim()).ok_or("a public key is not base64")?;
-        if bytes.len() != 42 {
-            return Err(format!("a public key is {} bytes, not 42", bytes.len()));
-        }
-        if &bytes[..2] != b"Ed" {
-            return Err("a public key does not start with the ed25519 tag `Ed`".to_owned());
-        }
-        let mut ed25519 = [0u8; 32];
-        ed25519.copy_from_slice(&bytes[10..]);
-        Ok(PublicKey { id: bytes[2..10].iter().map(|b| format!("{b:02x}")).collect(), ed25519 })
-    }
-}
-
-/// Standard base64 with padding, as minisign and the signature files write it. Anything else
-/// (a character outside the alphabet, a length that is not a multiple of four, data after the
-/// padding, bits left over) is `None`.
-fn base64_decode(text: &str) -> Option<Vec<u8>> {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = text.as_bytes();
-    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
-        return None;
-    }
-    let padding = bytes.iter().rev().take_while(|b| **b == b'=').count();
-    if padding > 2 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
-    let (mut acc, mut bits) = (0u32, 0u32);
-    for byte in &bytes[..bytes.len() - padding] {
-        let value = ALPHABET.iter().position(|a| a == byte)? as u32;
-        acc = (acc << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
-            acc &= (1 << bits) - 1;
-        }
-    }
-    // What is left are the bits the padding stands for, and they are zero in a canonical encoding.
-    (acc == 0).then_some(out)
+    let expect = CharterExpectation { anchor: Some(anchor), kind: "releases", environment: Some(environment) };
+    let verified = signed_release::verify_charter(charter, envelope, trust, &charter_rules(), &expect, now)?;
+    // The rules hold a release registry's manifest location to taking `{app_id}` and nothing
+    // else, so filling it in cannot fail for a charter that verified.
+    Ok(verified
+        .charter
+        .location("manifest", &[("app_id", APP_ID)])
+        .expect("a verified release charter's manifest location takes {app_id}"))
 }
 
 /// The form a platform's archive is published in: a `.zip` for Windows, a `.tar.gz` for every
@@ -702,19 +350,21 @@ pub fn fetch_latest(
     platform: &str,
     now: u64,
 ) -> Result<Option<Release>> {
-    let charter_url = format!("{registry}/{CHARTER_FILE}");
+    let content = content_trust(trust).map_err(Error::UpdateUntrusted)?;
+    let charters = charter_trust(charter_roots).map_err(Error::UpdateUntrusted)?;
+    let charter_url = format!("{registry}/{}", signed_release::CHARTER_FILE);
     let Some(charter) = source.get(&charter_url)? else {
         return Err(Error::UpdateUntrusted(format!(
             "{registry} has no charter ({charter_url} is missing), so it is not a release registry MachineFabric chartered"
         )));
     };
-    let charter_sig_url = format!("{registry}/{CHARTER_SIG_FILE}");
+    let charter_sig_url = format!("{registry}/{}", signed_release::CHARTER_SIG_FILE);
     let Some(charter_sig) = source.get(&charter_sig_url)? else {
         return Err(Error::UpdateUntrusted(format!(
             "{registry} has a charter and no signature for it ({charter_sig_url} is missing)"
         )));
     };
-    let url = verify_charter(&charter, &charter_sig, charter_roots, registry, &trust.environment, now)
+    let url = verify_charter(&charter, &charter_sig, &charters, registry, &trust.environment, now)
         .map_err(|e| Error::UpdateUntrusted(format!("the charter of {registry} was refused: {e}")))?;
     let Some(manifest) = source.get(&url)? else {
         return Err(Error::UpdateUnavailable(format!("no lungo release is published at {registry} yet")));
@@ -725,7 +375,7 @@ pub fn fetch_latest(
             "{url} is published without a signature ({signature_url} is missing), so nothing in it is trusted"
         )));
     };
-    verify_manifest(&manifest, &signature, trust, now)
+    signed_release::verify_manifest(&signature, &manifest, &content, now)
         .map_err(|e| Error::UpdateUntrusted(format!("{url} is not a release manifest this lungo trusts: {e}")))?;
     latest(&manifest, channel, platform)
 }
@@ -930,8 +580,17 @@ mod tests {
         manifest("release", "1.200.0", "linux-x86_64", URL, SHA, 4096)
     }
 
+    /// The manifest's chain verified as a published `lungo` verifies it.
+    fn verify_manifest(manifest: &[u8], envelope: &[u8], trust: &Trust, now: u64) -> std::result::Result<(), ChainError> {
+        signed_release::verify_manifest(envelope, manifest, &content_trust(trust).unwrap(), now).map(|_| ())
+    }
+
     fn chain(manifest: &[u8], envelope: &[u8], line: &Line) -> std::result::Result<(), ChainError> {
         verify_manifest(manifest, envelope, &line.trust("prod"), NOW)
+    }
+
+    fn charters(roots: &[String]) -> CharterTrust {
+        charter_trust(roots).unwrap()
     }
 
     /// TEST0349: the baked release line is read back as it was given
@@ -969,7 +628,7 @@ mod tests {
             body.to_string().into_bytes()
         };
         let verify = |charter: &[u8], environment: &str, now: u64| {
-            verify_charter(charter, &line.sign_charter(charter), &roots, anchor, environment, now)
+            verify_charter(charter, &line.sign_charter(charter), &charters(&roots), anchor, environment, now)
         };
         let charter = charter_at(&|_| {});
         assert_eq!(verify(&charter, "prod", NOW), Ok(format!("{anchor}/catalogue/lungo-cli.json")));
@@ -982,11 +641,18 @@ mod tests {
                 asked: anchor.into()
             })
         );
-        let cartridges = charter_at(&|b| b["kind"] = serde_json::json!("cartridges"));
-        assert_eq!(verify(&cartridges, "prod", NOW), Err(CharterError::KindMismatch("cartridges".into())));
+        let cartridges = charter_at(&|b| {
+            b["kind"] = serde_json::json!("cartridges");
+            b["locations"]["manifest"] = serde_json::json!(format!("{anchor}/v{{registry_version}}/manifest"));
+            b["fabric"] = serde_json::json!("https://fabric.example");
+        });
+        assert_eq!(
+            verify(&cartridges, "prod", NOW),
+            Err(CharterError::KindMismatch { charter: "cartridges".into(), expected: "releases".into() })
+        );
         assert_eq!(
             verify(&charter, "staging", NOW),
-            Err(CharterError::EnvironmentMismatch { charter: "prod".into(), build: "staging".into() })
+            Err(CharterError::EnvironmentMismatch { charter: "prod".into(), client: "staging".into() })
         );
         let lab = charter_at(&|b| {
             b["environment"] = serde_json::json!("lab");
@@ -1002,7 +668,7 @@ mod tests {
         let later = charter_at(&|b| b["issued_at"] = serde_json::json!(NOW + 100));
         assert_eq!(verify(&later, "prod", NOW), Err(CharterError::NotYetValid { issued_at: NOW + 100, now: NOW }));
         let no_app = charter_at(&|b| b["locations"]["manifest"] = serde_json::json!(format!("{anchor}/manifest")));
-        assert!(matches!(verify(&no_app, "prod", NOW), Err(CharterError::Location(_))));
+        assert!(matches!(verify(&no_app, "prod", NOW), Err(CharterError::Malformed(_))));
         let unknown = charter_at(&|b| b["mirror"] = serde_json::json!("https://elsewhere.example"));
         assert!(
             matches!(verify(&unknown, "prod", NOW), Err(CharterError::Malformed(_))),
@@ -1018,7 +684,7 @@ mod tests {
         let roots = line.root_keys();
         let charter = Line::charter(anchor, "releases", "staging");
         let verify = |envelope: &[u8], body: &[u8], roots: &[String]| {
-            verify_charter(body, envelope, roots, anchor, "staging", NOW)
+            verify_charter(body, envelope, &charters(roots), anchor, "staging", NOW)
         };
         assert!(verify(&line.sign_charter(&charter), &charter, &roots).is_ok());
 
@@ -1034,18 +700,21 @@ mod tests {
         let envelope = Line::charter_envelope(&charter, &staging, &[&line.roots[0], &line.roots[1]], &line.release);
         assert!(matches!(
             verify(&envelope, &charter, &roots),
-            Err(CharterError::Chain(ChainError::WrongEnvironment { .. }))
+            Err(CharterError::Chain(ChainError::LabelMismatch { .. }))
         ));
         // Roots other than the charter roots.
         let strangers = Line { roots: [Key::new(21), Key::new(22), Key::new(23)], release: Key::new(29) };
         assert!(matches!(
             verify(&line.sign_charter(&charter), &charter, &strangers.root_keys()),
-            Err(CharterError::Chain(ChainError::TooFewRootSignatures { .. }))
+            Err(CharterError::Chain(ChainError::InsufficientRootSignatures { .. }))
         ));
         // A prod-signed manifest signature over the same bytes is not a charter's.
         assert_eq!(
             verify(&line.sign(&charter), &charter, &roots),
-            Err(CharterError::UnsupportedEnvelopeFormat(ENVELOPE_FORMAT.into()))
+            Err(CharterError::Chain(ChainError::UnsupportedEnvelopeFormat {
+                found: ENVELOPE_FORMAT.into(),
+                expected: CHARTER_ENVELOPE_FORMAT.into()
+            }))
         );
     }
 
@@ -1066,7 +735,7 @@ mod tests {
         let mut other = manifest.clone();
         let at = other.iter().position(|b| *b == b'0').unwrap();
         other[at] = b'1';
-        assert!(matches!(chain(&other, &envelope, &line), Err(ChainError::ManifestSignatureInvalid(_))));
+        assert!(matches!(chain(&other, &envelope, &line), Err(ChainError::SignatureInvalid(_))));
     }
 
     /// TEST0352: a certificate needs two distinct roots of this build
@@ -1079,18 +748,18 @@ mod tests {
         // One root.
         assert_eq!(
             chain(&manifest, &signed_by(&[&line.roots[0]]), &line),
-            Err(ChainError::TooFewRootSignatures { key_id: line.release.id(), have: 1 })
+            Err(ChainError::InsufficientRootSignatures { key_id: line.release.id(), have: 1, need: 2 })
         );
         // The same root twice counts once.
         assert_eq!(
             chain(&manifest, &signed_by(&[&line.roots[0], &line.roots[0]]), &line),
-            Err(ChainError::TooFewRootSignatures { key_id: line.release.id(), have: 1 })
+            Err(ChainError::InsufficientRootSignatures { key_id: line.release.id(), have: 1, need: 2 })
         );
         // A key that is not a root of this build counts for nothing.
         let stranger = Key::new(7);
         assert_eq!(
             chain(&manifest, &signed_by(&[&line.roots[0], &stranger]), &line),
-            Err(ChainError::TooFewRootSignatures { key_id: line.release.id(), have: 1 })
+            Err(ChainError::InsufficientRootSignatures { key_id: line.release.id(), have: 1, need: 2 })
         );
         // Any two of the three do.
         assert_eq!(chain(&manifest, &signed_by(&[&line.roots[1], &line.roots[2]]), &line), Ok(()));
@@ -1103,21 +772,21 @@ mod tests {
         let manifest = a_manifest();
         assert_eq!(
             verify_manifest(&manifest, &line.sign_for(&manifest, "staging"), &line.trust("prod"), NOW),
-            Err(ChainError::WrongEnvironment {
+            Err(ChainError::LabelMismatch {
                 key_id: line.release.id(),
                 certificate: "staging".into(),
-                build: "prod".into()
+                trusted: "prod".into()
             })
         );
         let envelope = line.sign(&manifest);
         assert_eq!(
             verify_manifest(&manifest, &envelope, &line.trust("prod"), NOT_AFTER + 1),
-            Err(ChainError::Expired { key_id: line.release.id(), not_after: NOT_AFTER, now: NOT_AFTER + 1 })
+            Err(ChainError::ExpiredCertificate { key_id: line.release.id(), not_after: NOT_AFTER, now: NOT_AFTER + 1 })
         );
         assert_eq!(verify_manifest(&manifest, &envelope, &line.trust("prod"), NOT_AFTER), Ok(()));
         assert_eq!(
             verify_manifest(&manifest, &envelope, &line.trust("prod"), ISSUED_AT - 1),
-            Err(ChainError::NotYetValid { key_id: line.release.id(), issued_at: ISSUED_AT, now: ISSUED_AT - 1 })
+            Err(ChainError::NotYetValidCertificate { key_id: line.release.id(), issued_at: ISSUED_AT, now: ISSUED_AT - 1 })
         );
     }
 
@@ -1129,7 +798,7 @@ mod tests {
         let certificate = Line::certificate(&line.release, "prod", ISSUED_AT, NOT_AFTER);
         let other = Key::new(8);
         let envelope = Line::envelope(&manifest, &certificate, &[&line.roots[0], &line.roots[1]], &other);
-        assert_eq!(chain(&manifest, &envelope, &line), Err(ChainError::NoCertificateForSigner { key_id: other.id() }));
+        assert_eq!(chain(&manifest, &envelope, &line), Err(ChainError::NoAuthorizingCertificate { key_id: other.id() }));
     }
 
     /// TEST0355: a certificate whose stated key id is not its keys is refused
@@ -1184,16 +853,5 @@ mod tests {
         assert!(latest(&plain, "release", "linux-x86_64").unwrap_err().to_string().contains("not HTTPS"));
         let short = manifest("release", "1.200.0", "linux-x86_64", URL, "abc", 1);
         assert!(latest(&short, "release", "linux-x86_64").unwrap_err().to_string().contains("as its SHA-256"));
-    }
-
-    /// TEST0359: base64 is read strictly
-    #[test]
-    fn test0359_base64_is_read_strictly() {
-        assert_eq!(base64_decode("TWFu").as_deref(), Some(&b"Man"[..]));
-        assert_eq!(base64_decode("TWE=").as_deref(), Some(&b"Ma"[..]));
-        assert_eq!(base64_decode("TQ==").as_deref(), Some(&b"M"[..]));
-        for refused in ["", "TWF", "TW=u", "T===", "TWFu!AAA", "TR=="] {
-            assert_eq!(base64_decode(refused), None, "{refused:?}");
-        }
     }
 }
