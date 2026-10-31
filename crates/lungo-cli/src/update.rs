@@ -475,7 +475,7 @@ mod tests {
         served.files.insert(format!("{REGISTRY}/lungo-cli/manifest.sig"), other.sign(&manifest));
         let e = run(&served, &line, &lungo, "1.100.0").unwrap_err();
         assert_eq!(e.code(), lungo_build::ErrorCode::UpdateUntrusted);
-        assert!(e.to_string().contains("signed by 0 of this lungo's roots"), "{e}");
+        assert!(e.to_string().contains("is signed by 0 trusted root(s); 2 are required"), "{e}");
         assert_eq!(says(&lungo), "lungo 1.100.0");
         assert_eq!(served.asked.borrow().len(), 4, "no archive is fetched on the word of an untrusted manifest");
 
@@ -616,7 +616,7 @@ mod tests {
         served.files.insert(format!("{REGISTRY}/charter.json"), elsewhere);
         served.asked.borrow_mut().clear();
         let e = run(&served, &line, &lungo, "1.100.0").unwrap_err();
-        assert!(e.to_string().contains("it is the charter of https://release.example/elsewhere"), "{e}");
+        assert!(e.to_string().contains("the charter is for 'https://release.example/elsewhere'"), "{e}");
         assert_eq!(served.asked.borrow().len(), 2, "the manifest is not read");
         assert_eq!(says(&lungo), "lungo 1.100.0");
     }
