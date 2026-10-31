@@ -55,7 +55,7 @@ fn test0277_header_declares_every_function_of_the_c_abi() {
     let header = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("include/lungo.h")).unwrap();
     let declared = |name: &str| header.contains(&format!(" {name}(")) || header.contains(&format!("*{name}("));
     let exports = capi_exports();
-    for f in ["lungo_async_resume", "lungo_async_cancel", "lungo_async_outstanding", "lungo_resume", "lungo_abi_v2"] {
+    for f in ["lungo_async_resume", "lungo_async_cancel", "lungo_async_outstanding", "lungo_resume", "lungo_abi_v3"] {
         assert!(exports.iter().any(|e| e == f), "{f} is not found among the exports: the scan is broken");
     }
     let missing: Vec<&String> = exports.iter().filter(|e| e.starts_with("lungo_") && !declared(e)).collect();

@@ -10,6 +10,10 @@
 //! also implements is an error, as is an application implementation of an extern that is not an
 //! operation.
 //!
+//! Runtime primitives are those serving the Lean release the program was compiled from, and the
+//! externs reporting that release (`Lean.versionString`, `Lean.githash`) resolve to its values,
+//! compiled into the program.
+//!
 //! Runtime primitives are checked against the representation Lean's compiler expects. Their
 //! ownership conventions are reconciled explicitly: when Lean passes an owned argument to a
 //! primitive that borrows it, the caller releases it after the call, and when Lean passes a
@@ -18,9 +22,34 @@
 use crate::CodegenError;
 use crate::core::codes::ErrorCode;
 use lungo_bir::{Body, Declaration, ExternEntry, IrType, Param};
-use lungo_protocol::ExternRequirement;
+use lungo_protocol::{ExternRequirement, WorkerToolchain};
 use lungo_runtime::registry::{self, Intrinsic, Ty};
+use lungo_runtime::releases::{self, LeanRelease, LeanVersion, ToolchainConstant};
 use std::collections::{BTreeMap, HashMap};
+
+/// The supported Lean release the program was compiled from, as the worker reports it.
+pub fn program_release(toolchain: &WorkerToolchain) -> Result<&'static LeanRelease, CodegenError> {
+    let release = LeanVersion::parse(&toolchain.lean_version).and_then(releases::release).ok_or_else(|| {
+        CodegenError::external(
+            ErrorCode::UnsupportedToolchain,
+            format!(
+                "the program was compiled by Lean {}, which this lungo does not support (supported: {})",
+                toolchain.lean_version,
+                releases::LEAN_RELEASES.iter().map(|r| r.version.to_string()).collect::<Vec<_>>().join(", ")
+            ),
+        )
+    })?;
+    if release.githash != toolchain.lean_githash {
+        return Err(CodegenError::external(
+            ErrorCode::UnsupportedToolchain,
+            format!(
+                "the program was compiled by a Lean {} built from commit {}, not by the release (commit {})",
+                release.version, toolchain.lean_githash, release.githash
+            ),
+        ));
+    }
+    Ok(release)
+}
 
 /// How an extern declaration is implemented.
 #[derive(Debug, Clone)]
@@ -30,6 +59,8 @@ pub enum Resolution {
         implementation: String,
     },
     Intrinsic(&'static Intrinsic),
+    /// A value of the program's Lean release, compiled into the program.
+    Toolchain(ToolchainConstant),
     /// An implementation the application provides, reached through a generated adapter.
     Application {
         key: String,
@@ -87,6 +118,8 @@ pub enum Implementation {
     /// The compiled Lean definition with this name.
     Lean(String),
     Intrinsic(&'static Intrinsic),
+    /// A value of the program's Lean release; the call passes no arguments.
+    Toolchain(ToolchainConstant),
     /// The application's implementation, through the backend's adapter for the extern
     /// declaration.
     Application,
@@ -105,7 +138,7 @@ pub struct ExternCall {
     pub release: Vec<u32>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ExternPlan {
     pub resolutions: BTreeMap<String, Resolution>,
 }
@@ -151,11 +184,12 @@ fn describe(
 }
 
 impl ExternPlan {
-    /// Resolves every extern declaration of the program.
+    /// Resolves every extern declaration of the program, compiled from the Lean release `release`.
     pub fn resolve(
         decls: &[Declaration],
         requirements: &[ExternRequirement],
         application: &ApplicationExterns,
+        release: &'static LeanRelease,
         source: &dyn Fn(&ExternRequirement) -> Option<String>,
     ) -> Result<ExternPlan, Vec<CodegenError>> {
         let user = application.implementations;
@@ -174,14 +208,27 @@ impl ExternPlan {
                 }
             };
             let req = reqs.get(decl.name.as_str()).copied();
-            let intrinsic = registry::lookup(&key);
+            let intrinsic = registry::lookup(&key, release.version);
+            let constant = releases::toolchain_constant(&key, release);
+            // What lungo itself provides for the symbol: a runtime primitive, or a value of the
+            // program's release. At most one is (the runtime's registry tests keep them apart).
+            let builtin = match (intrinsic, constant) {
+                (Some(_), Some(_)) => {
+                    return Err(vec![CodegenError::internal(format!(
+                        "`{key}` is both a runtime primitive and a value of the Lean release"
+                    ))]);
+                }
+                (Some(i), None) => Some(Builtin::Intrinsic(i)),
+                (None, Some(c)) => Some(Builtin::Toolchain(c)),
+                (None, None) => None,
+            };
             if let Some(facility) = req.and_then(|r| r.operation.as_ref()).map(|o| &o.facility) {
                 // An operation of a facility: the host's, and only the host's.
-                let provider = match (&decl.body, intrinsic) {
+                let provider = match (&decl.body, builtin) {
                     (Body::Extern { exported_by: Some(implementation), .. }, _) => {
                         Some(format!("the Lean definition {implementation} (via @[export])"))
                     }
-                    (_, Some(_)) => Some("the lungo runtime".to_owned()),
+                    (_, Some(b)) => Some(b.provider().to_owned()),
                     _ => None,
                 };
                 if let Some(provider) = provider {
@@ -213,10 +260,13 @@ impl ExternPlan {
                 continue;
             }
             if let Body::Extern { exported_by: Some(implementation), .. } = &decl.body {
-                if intrinsic.is_some() || user.contains_key(&key) {
+                if builtin.is_some() || user.contains_key(&key) {
                     errors.push(CodegenError::external(ErrorCode::ConflictingExtern, format!(
                         "the symbol `{key}` is provided both by the Lean definition {implementation} (via @[export]) and by {}\n\n{}",
-                        if intrinsic.is_some() { "the lungo runtime".to_owned() } else { format!("a {} mapping", application.setting) },
+                        match builtin {
+                            Some(b) => b.provider().to_owned(),
+                            None => format!("a {} mapping", application.setting),
+                        },
                         describe(req, decl, &key, source)
                     )));
                 } else {
@@ -225,20 +275,24 @@ impl ExternPlan {
                 }
                 continue;
             }
-            match (intrinsic, user.get(&key)) {
+            match (builtin, user.get(&key)) {
                 (Some(_), Some(path)) => errors.push(CodegenError::external(ErrorCode::RuntimeExternRemapped, format!(
                     "the Lean runtime symbol `{key}` is implemented by lungo and cannot be remapped to `{path}`\n\n{}",
                     describe(req, decl, &key, source)
                 ))),
-                (Some(intrinsic), None) => match check_signature(decl, intrinsic) {
-                    Ok(()) => {
-                        plan.resolutions.insert(decl.name.clone(), Resolution::Intrinsic(intrinsic));
+                (Some(builtin), None) => {
+                    let (params, result) = builtin.representation();
+                    match check_signature(decl, params, result) {
+                        Ok(()) => {
+                            plan.resolutions.insert(decl.name.clone(), builtin.resolution());
+                        }
+                        Err(msg) => errors.push(CodegenError::external(ErrorCode::ExternRepresentation, format!(
+                            "{} for `{key}` does not match the representation Lean's compiler expects: {msg}\n\n{}",
+                            builtin.provider(),
+                            describe(req, decl, &key, source)
+                        ))),
                     }
-                    Err(msg) => errors.push(CodegenError::external(ErrorCode::ExternRepresentation, format!(
-                        "lungo runtime primitive `{key}` does not match the representation Lean's compiler expects: {msg}\n\n{}",
-                        describe(req, decl, &key, source)
-                    ))),
-                },
+                }
                 (None, Some(path)) => {
                     misplaced.insert(key.clone());
                     errors.push(CodegenError::external(ErrorCode::FacilityMismatch, format!(
@@ -250,12 +304,17 @@ impl ExternPlan {
                     )));
                 }
                 (None, None) => {
-                    let reason = match registry::unsupported(&key) {
-                        Some(u) => format!(
+                    let reason = match (registry::unsupported(&key), registry::intrinsics().find(|i| i.symbol == key)) {
+                        (Some(u), _) => format!(
                             "\nThe lungo PureRust runtime does not provide this Lean runtime primitive: {}\n",
                             u.reason
                         ),
-                        None => String::new(),
+                        // The runtime implements the symbol, for other releases only.
+                        (None, Some(_)) => format!(
+                            "\nThe lungo runtime implements `{key}` for other Lean releases, not for Lean {}, which the program was compiled by.\n",
+                            release.version
+                        ),
+                        (None, None) => String::new(),
                     };
                     errors.push(CodegenError::external(ErrorCode::UnresolvedExtern, format!(
                         "unresolved Lean external symbol\n\n{}{reason}\nNothing implements it. If the host is to \
@@ -344,35 +403,75 @@ impl ExternPlan {
                 }
                 Implementation::Intrinsic(intrinsic)
             }
+            Resolution::Toolchain(constant) => {
+                // The value takes no arguments: owned ones are released.
+                release.extend(params.iter().filter(|p| p.ty.is_object() && !p.borrow).map(|p| p.var));
+                return Ok(ExternCall {
+                    implementation: Implementation::Toolchain(*constant),
+                    args: Vec::new(),
+                    retain,
+                    release,
+                });
+            }
             Resolution::Application { .. } => Implementation::Application,
         };
         Ok(ExternCall { implementation, args, retain, release })
     }
 }
 
-fn check_signature(decl: &Declaration, intrinsic: &Intrinsic) -> Result<(), String> {
+/// What lungo itself provides for an extern symbol.
+#[derive(Clone, Copy)]
+enum Builtin {
+    Intrinsic(&'static Intrinsic),
+    Toolchain(ToolchainConstant),
+}
+
+impl Builtin {
+    fn provider(self) -> &'static str {
+        match self {
+            Builtin::Intrinsic(_) => "the lungo runtime",
+            Builtin::Toolchain(_) => "the program's Lean release",
+        }
+    }
+
+    fn representation(self) -> (&'static [Ty], Ty) {
+        match self {
+            Builtin::Intrinsic(i) => (i.params, i.result),
+            Builtin::Toolchain(c) => c.representation(),
+        }
+    }
+
+    fn resolution(self) -> Resolution {
+        match self {
+            Builtin::Intrinsic(i) => Resolution::Intrinsic(i),
+            Builtin::Toolchain(c) => Resolution::Toolchain(c),
+        }
+    }
+}
+
+fn check_signature(decl: &Declaration, expected_params: &[Ty], expected_result: Ty) -> Result<(), String> {
     let params = implementation_params(decl);
-    let expected: Vec<String> = intrinsic.params.iter().map(|t| t.name().to_owned()).collect();
+    let expected: Vec<String> = expected_params.iter().map(|t| t.name().to_owned()).collect();
     let actual: Vec<String> =
         params.iter().map(|p| format!("{}{}", if p.borrow { "@& " } else { "" }, p.ty.name())).collect();
     let mismatch = || {
         format!(
-            "the runtime implements ({}) -> {}, Lean passes ({}) -> {}",
+            "lungo implements ({}) -> {}, Lean passes ({}) -> {}",
             expected.join(", "),
-            intrinsic.result.name(),
+            expected_result.name(),
             actual.join(", "),
             decl.result.name()
         )
     };
-    if params.len() != intrinsic.params.len() {
+    if params.len() != expected_params.len() {
         return Err(mismatch());
     }
-    for (p, ty) in params.iter().zip(intrinsic.params) {
+    for (p, ty) in params.iter().zip(expected_params) {
         if !ty_matches(p.ty, *ty) {
             return Err(mismatch());
         }
     }
-    let result_ok = match intrinsic.result {
+    let result_ok = match expected_result {
         Ty::b_obj => false,
         t => ty_matches(decl.result, t),
     };
@@ -380,4 +479,102 @@ fn check_signature(decl: &Declaration, intrinsic: &Intrinsic) -> Result<(), Stri
         return Err(mismatch());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lungo_runtime::releases::{LEAN_RELEASES, LeanVersion};
+
+    fn release(version: &str) -> &'static LeanRelease {
+        releases::release(LeanVersion::parse(version).unwrap()).unwrap()
+    }
+
+    fn param(var: u32, borrow: bool) -> Param {
+        Param { var, ty: IrType::Object, borrow }
+    }
+
+    /// An `@[extern "symbol"]` declaration named after its symbol.
+    fn extern_decl(symbol: &str, params: Vec<Param>) -> Declaration {
+        let entry = ExternEntry::Standard { backend: "all".into(), symbol: symbol.into() };
+        Declaration {
+            name: symbol.into(),
+            module: "M".into(),
+            origin: None,
+            params,
+            result: IrType::Object,
+            body: Body::Extern { entries: vec![entry.clone()], selected: entry, exported_by: None },
+        }
+    }
+
+    fn resolve(decls: &[Declaration], version: &str) -> Result<ExternPlan, Vec<CodegenError>> {
+        let none = BTreeMap::new();
+        let hint = |_: &str| String::new();
+        let application = ApplicationExterns { implementations: &none, setting: "test", hint: &hint };
+        ExternPlan::resolve(decls, &[], &application, release(version), &|_| None)
+    }
+
+    fn toolchain(version: &str, githash: &str) -> WorkerToolchain {
+        WorkerToolchain {
+            lean_version: version.into(),
+            lean_githash: githash.into(),
+            adapter_version: 3,
+            bir_version: 3,
+        }
+    }
+
+    /// TEST0388: an extern binds the runtime primitive serving the program's Lean release
+    #[test]
+    fn test0388_an_extern_binds_the_primitive_serving_the_programs_release() {
+        let decls = [extern_decl("lean_st_ref_get", vec![param(1, true)])];
+        let function = |version: &str| match &resolve(&decls, version).unwrap().resolutions["lean_st_ref_get"] {
+            Resolution::Intrinsic(i) => i.function,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(function("4.34.1"), "lean_st_ref_get_v4_34_1");
+        assert_eq!(function("4.35.0"), "lean_st_ref_get");
+    }
+
+    /// TEST0389: a symbol the runtime implements for other releases only is unresolved, and the
+    /// error says so
+    #[test]
+    fn test0389_a_symbol_of_another_release_is_unresolved_and_the_error_says_so() {
+        let put = [extern_decl("lean_st_ref_put", vec![param(1, true), param(2, false)])];
+        assert!(resolve(&put, "4.35.0").is_ok());
+        let errors = resolve(&put, "4.34.1").unwrap_err();
+        let text = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(errors.iter().all(|e| e.code() == ErrorCode::UnresolvedExtern), "{text}");
+        assert!(text.contains("for other Lean releases, not for Lean 4.34.1"), "{text}");
+    }
+
+    /// TEST0390: the Lean version and commit a program reports are its own release's, compiled in
+    #[test]
+    fn test0390_the_version_a_program_reports_is_its_own_releases() {
+        let decls = [extern_decl("lean_version_get_minor", vec![param(1, false)])];
+        for (version, minor) in [("4.34.1", 34), ("4.35.0", 35)] {
+            let plan = resolve(&decls, version).unwrap();
+            assert!(matches!(
+                plan.resolutions["lean_version_get_minor"],
+                Resolution::Toolchain(ToolchainConstant::Nat(m)) if m == minor
+            ));
+            // The value takes no argument; the owned unit argument is released.
+            let call = plan.call(&decls[0], &|_| None).unwrap();
+            assert!(call.args.is_empty());
+            assert_eq!(call.release, vec![1]);
+        }
+    }
+
+    /// TEST0391: a program is generated only for a supported release, as the release was built
+    #[test]
+    fn test0391_a_program_is_generated_only_for_a_supported_release_as_it_was_built() {
+        for r in LEAN_RELEASES {
+            assert_eq!(program_release(&toolchain(&r.version.to_string(), r.githash)).unwrap(), r);
+        }
+        let newest = releases::newest();
+        let unknown = program_release(&toolchain("4.34.0", newest.githash)).unwrap_err();
+        assert_eq!(unknown.code(), ErrorCode::UnsupportedToolchain);
+        let rebuilt = program_release(&toolchain(&newest.version.to_string(), &"0".repeat(40))).unwrap_err();
+        assert_eq!(rebuilt.code(), ErrorCode::UnsupportedToolchain);
+        assert!(rebuilt.to_string().contains("not by the release"), "{rebuilt}");
+    }
 }

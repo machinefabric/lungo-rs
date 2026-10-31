@@ -21,6 +21,7 @@ use crate::core::names::mangle;
 use crate::core::writer::Writer;
 use crate::{CodegenError, SourceIndex};
 use lungo_bir::{Alt, Arg, Block, Body, CtorInfo, Declaration, Expr, IrType, Literal, Param, Stmt, Terminator};
+use lungo_runtime::releases::ToolchainConstant;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Parameters that appear in the C signature: `void` (the `IO` world token) is omitted, as in
@@ -150,10 +151,23 @@ impl<'a> Emitter<'a> {
     fn extern_wrapper(&self, w: &mut Writer, decl: &Declaration) -> Result<(), CodegenError> {
         let call = self.externs.call(decl, &|n| self.decls.get(n).copied())?;
         let args: Vec<String> = call.args.iter().map(|v| format!("x_{v}")).collect();
-        let callee = match &call.implementation {
-            Implementation::Lean(implementation) => self.symbol(implementation),
-            Implementation::Intrinsic(intrinsic) => format!("lungo_{}", intrinsic.symbol),
-            Implementation::Application => super::boundary::host_adapter_symbol(self.prefix, &decl.name),
+        let args = args.join(", ");
+        let value = match &call.implementation {
+            Implementation::Lean(implementation) => format!("{}({args})", self.symbol(implementation)),
+            Implementation::Intrinsic(intrinsic) => format!("lungo_{}({args})", intrinsic.function),
+            Implementation::Toolchain(constant) => match constant {
+                ToolchainConstant::Nat(n) => format!("lungo_box({n}u)"),
+                ToolchainConstant::Bool(b) => format!("{}u", u8::from(*b)),
+                ToolchainConstant::String(s) => format!(
+                    "lungo_mk_string_unchecked((const uint8_t *){}, {}, {})",
+                    string(s.as_bytes()),
+                    s.len(),
+                    s.chars().count()
+                ),
+            },
+            Implementation::Application => {
+                format!("{}({args})", super::boundary::host_adapter_symbol(self.prefix, &decl.name))
+            }
         };
         w.open(format!("{} {{", self.prototype(decl)));
         // Erased parameters (proofs, types) are not passed to the implementation.
@@ -165,7 +179,7 @@ impl<'a> Emitter<'a> {
         for v in &call.retain {
             w.line(format!("lungo_inc(x_{v});"));
         }
-        w.line(format!("{} r = {callee}({});", c_type(decl.result), args.join(", ")));
+        w.line(format!("{} r = {value};", c_type(decl.result)));
         for v in &call.release {
             w.line(format!("lungo_dec(x_{v});"));
         }

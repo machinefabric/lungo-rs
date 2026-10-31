@@ -157,7 +157,10 @@ impl fmt::Display for ChainError {
                 write!(f, "the certificate of release key {key_id} is valid from {issued_at} (it is {now})")
             }
             ChainError::NoCertificateForSigner { key_id } => {
-                write!(f, "the manifest is signed by key {key_id}, which no certificate in the signature file authorizes")
+                write!(
+                    f,
+                    "the manifest is signed by key {key_id}, which no certificate in the signature file authorizes"
+                )
             }
             ChainError::ManifestSignatureInvalid(e) => {
                 write!(f, "the manifest's signature does not match the manifest: {e}")
@@ -265,11 +268,23 @@ pub enum CharterError {
     SignatureInvalid(String),
     Malformed(String),
     UnsupportedFormat(String),
-    AnchorMismatch { charter: String, asked: String },
+    AnchorMismatch {
+        charter: String,
+        asked: String,
+    },
     KindMismatch(String),
-    EnvironmentMismatch { charter: String, build: String },
-    NotYetValid { issued_at: u64, now: u64 },
-    Expired { not_after: u64, now: u64 },
+    EnvironmentMismatch {
+        charter: String,
+        build: String,
+    },
+    NotYetValid {
+        issued_at: u64,
+        now: u64,
+    },
+    Expired {
+        not_after: u64,
+        now: u64,
+    },
     /// The charter's manifest location is not one the command's manifest address can be read
     /// from.
     Location(String),
@@ -291,7 +306,9 @@ impl fmt::Display for CharterError {
             CharterError::SignatureInvalid(e) => write!(f, "its signature does not match it: {e}"),
             CharterError::Malformed(e) => write!(f, "it is not a charter: {e}"),
             CharterError::UnsupportedFormat(found) => write!(f, "it is of format {found:?}, not {CHARTER_FORMAT:?}"),
-            CharterError::AnchorMismatch { charter, asked } => write!(f, "it is the charter of {charter}, not of {asked}"),
+            CharterError::AnchorMismatch { charter, asked } => {
+                write!(f, "it is the charter of {charter}, not of {asked}")
+            }
             CharterError::KindMismatch(kind) => write!(f, "it charters a {kind} registry, not a release registry"),
             CharterError::EnvironmentMismatch { charter, build } => {
                 write!(f, "its registry is signed under {charter}; this lungo was built for {build}")
@@ -351,7 +368,8 @@ pub fn verify_charter(
 
     // Only now is the body read: nothing about an unsigned document is believed, including what
     // it says its format is.
-    let body: serde_json::Value = serde_json::from_slice(charter).map_err(|e| CharterError::Malformed(e.to_string()))?;
+    let body: serde_json::Value =
+        serde_json::from_slice(charter).map_err(|e| CharterError::Malformed(e.to_string()))?;
     match body.get("format").and_then(|f| f.as_str()) {
         Some(CHARTER_FORMAT) => {}
         Some(other) => return Err(CharterError::UnsupportedFormat(other.to_owned())),
@@ -370,10 +388,10 @@ pub fn verify_charter(
     if body.issued_at > now {
         return Err(CharterError::NotYetValid { issued_at: body.issued_at, now });
     }
-    if let Some(not_after) = body.not_after {
-        if now > not_after {
-            return Err(CharterError::Expired { not_after, now });
-        }
+    if let Some(not_after) = body.not_after
+        && now > not_after
+    {
+        return Err(CharterError::Expired { not_after, now });
     }
     manifest_location(&body.locations)
 }
@@ -449,8 +467,8 @@ enum SignatureError {
 /// A raw ed25519 signature (base64) by a minisign public key (base64), over exact bytes.
 fn verify_signature(public_key: &str, signature: &str, bytes: &[u8]) -> std::result::Result<(), SignatureError> {
     let key = PublicKey::parse(public_key).map_err(SignatureError::Malformed)?;
-    let key = ed25519_dalek::VerifyingKey::from_bytes(&key.ed25519)
-        .map_err(|e| SignatureError::Malformed(e.to_string()))?;
+    let key =
+        ed25519_dalek::VerifyingKey::from_bytes(&key.ed25519).map_err(|e| SignatureError::Malformed(e.to_string()))?;
     let signature = base64_decode(signature.trim())
         .ok_or_else(|| SignatureError::Malformed("a signature is not base64".to_owned()))?;
     let signature: [u8; 64] = signature
@@ -632,7 +650,10 @@ pub fn latest(manifest: &[u8], channel: &str, platform: &str) -> Result<Option<R
         return Err(wrong(format!("lungo {version} for {platform} carries {:?} as its SHA-256", archive.sha256)));
     }
     if !archive.path.starts_with("https://") {
-        return Err(wrong(format!("lungo {version} for {platform} is listed at {:?}, which is not HTTPS", archive.path)));
+        return Err(wrong(format!(
+            "lungo {version} for {platform} is listed at {:?}, which is not HTTPS",
+            archive.path
+        )));
     }
     Ok(Some(Release {
         version: version.to_owned(),
@@ -941,7 +962,8 @@ mod tests {
         let anchor = "https://release.example/exp/t1/releases";
         let roots = line.root_keys();
         let charter_at = |edit: &dyn Fn(&mut serde_json::Value)| {
-            let mut body: serde_json::Value = serde_json::from_slice(&Line::charter(anchor, "releases", "prod")).unwrap();
+            let mut body: serde_json::Value =
+                serde_json::from_slice(&Line::charter(anchor, "releases", "prod")).unwrap();
             body["locations"]["manifest"] = serde_json::json!(format!("{anchor}/catalogue/{{app_id}}.json"));
             edit(&mut body);
             body.to_string().into_bytes()
@@ -955,7 +977,10 @@ mod tests {
         let other = charter_at(&|b| b["anchor"] = serde_json::json!("https://release.example/elsewhere"));
         assert_eq!(
             verify(&other, "prod", NOW),
-            Err(CharterError::AnchorMismatch { charter: "https://release.example/elsewhere".into(), asked: anchor.into() })
+            Err(CharterError::AnchorMismatch {
+                charter: "https://release.example/elsewhere".into(),
+                asked: anchor.into()
+            })
         );
         let cartridges = charter_at(&|b| b["kind"] = serde_json::json!("cartridges"));
         assert_eq!(verify(&cartridges, "prod", NOW), Err(CharterError::KindMismatch("cartridges".into())));
@@ -979,7 +1004,10 @@ mod tests {
         let no_app = charter_at(&|b| b["locations"]["manifest"] = serde_json::json!(format!("{anchor}/manifest")));
         assert!(matches!(verify(&no_app, "prod", NOW), Err(CharterError::Location(_))));
         let unknown = charter_at(&|b| b["mirror"] = serde_json::json!("https://elsewhere.example"));
-        assert!(matches!(verify(&unknown, "prod", NOW), Err(CharterError::Malformed(_))), "a field a charter does not have");
+        assert!(
+            matches!(verify(&unknown, "prod", NOW), Err(CharterError::Malformed(_))),
+            "a field a charter does not have"
+        );
     }
 
     /// TEST0374: a charter is prods and is signed as itself
@@ -997,7 +1025,10 @@ mod tests {
         let mut changed = charter.clone();
         let at = changed.iter().position(|b| *b == b'r').unwrap();
         changed[at] = b's';
-        assert!(matches!(verify(&line.sign_charter(&charter), &changed, &roots), Err(CharterError::SignatureInvalid(_))));
+        assert!(matches!(
+            verify(&line.sign_charter(&charter), &changed, &roots),
+            Err(CharterError::SignatureInvalid(_))
+        ));
         // A certificate for staging, by the same roots: charters are signed by prod alone.
         let staging = Line::certificate(&line.release, "staging", ISSUED_AT, NOT_AFTER);
         let envelope = Line::charter_envelope(&charter, &staging, &[&line.roots[0], &line.roots[1]], &line.release);
@@ -1098,10 +1129,7 @@ mod tests {
         let certificate = Line::certificate(&line.release, "prod", ISSUED_AT, NOT_AFTER);
         let other = Key::new(8);
         let envelope = Line::envelope(&manifest, &certificate, &[&line.roots[0], &line.roots[1]], &other);
-        assert_eq!(
-            chain(&manifest, &envelope, &line),
-            Err(ChainError::NoCertificateForSigner { key_id: other.id() })
-        );
+        assert_eq!(chain(&manifest, &envelope, &line), Err(ChainError::NoCertificateForSigner { key_id: other.id() }));
     }
 
     /// TEST0355: a certificate whose stated key id is not its keys is refused
@@ -1124,7 +1152,13 @@ mod tests {
         let release = latest(&a_manifest(), "release", "linux-x86_64").unwrap().unwrap();
         assert_eq!(
             release,
-            Release { version: "1.200.0".into(), archive: Archive::TarGz, url: URL.into(), sha256: SHA.into(), size: 4096 }
+            Release {
+                version: "1.200.0".into(),
+                archive: Archive::TarGz,
+                url: URL.into(),
+                sha256: SHA.into(),
+                size: 4096
+            }
         );
         // The other channel has published nothing: that is an answer, not an error.
         assert_eq!(latest(&a_manifest(), "nightly", "linux-x86_64").unwrap(), None);

@@ -1,12 +1,28 @@
 //! Resolution of the exact Lean toolchain a project pins.
+//!
+//! A project pins one Lean release (`leanprover/lean4:v<version>`) in `lean-toolchain`; lungo
+//! builds it when the release is one it supports ([`LEAN_RELEASES`]) and refuses anything else —
+//! another release, a release candidate, a nightly, or a channel such as `stable` — before Lake
+//! runs.
 
 use crate::error::{Error, Result};
 use crate::fingerprint::Hasher;
+use lungo_runtime::releases::{LEAN_RELEASES, LeanRelease, LeanVersion};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Toolchains with a validated worker adapter.
-pub const SUPPORTED_TOOLCHAINS: &[&str] = &["leanprover/lean4:v4.34.1"];
+/// The `lean-toolchain` prefix of a Lean release's pin.
+const PIN_PREFIX: &str = "leanprover/lean4:v";
+
+/// The supported release `pin` names, or the error refusing it.
+pub fn supported_release(pin: &str) -> Result<&'static LeanRelease> {
+    let version = pin.strip_prefix(PIN_PREFIX).and_then(LeanVersion::parse);
+    version.and_then(lungo_runtime::releases::release).ok_or_else(|| Error::UnsupportedToolchain {
+        found: pin.to_owned(),
+        supported: LEAN_RELEASES.iter().map(LeanRelease::pin).collect(),
+        newer: version.is_some_and(|v| v > lungo_runtime::releases::newest().version),
+    })
+}
 
 /// What to do when the pinned toolchain is not installed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -22,11 +38,13 @@ pub enum ToolchainPolicy {
 pub struct Toolchain {
     /// The pin, as written in `lean-toolchain`.
     pub pin: String,
+    /// The supported release the pin names, which the installation is.
+    pub release: &'static LeanRelease,
     /// The installation directory.
     pub root: PathBuf,
     pub lean: PathBuf,
     pub lake: PathBuf,
-    /// `4.34.1`.
+    /// `4.35.0`.
     pub version: String,
     pub githash: String,
     /// Identifies this installation: its location and the size and modification time of its
@@ -46,12 +64,7 @@ pub fn read_pin(project: &Path) -> Result<String> {
     if pin.is_empty() || pin.contains(char::is_whitespace) {
         return Err(Error::Project(format!("{} does not contain a single toolchain name", path.display())));
     }
-    if !SUPPORTED_TOOLCHAINS.contains(&pin.as_str()) {
-        return Err(Error::UnsupportedToolchain {
-            found: pin,
-            supported: SUPPORTED_TOOLCHAINS.iter().map(|s| s.to_string()).collect(),
-        });
-    }
+    supported_release(&pin)?;
     Ok(pin)
 }
 
@@ -73,8 +86,10 @@ fn elan_toolchain_dir(pin: &str) -> Result<PathBuf> {
     Ok(elan_home()?.join("toolchains").join(dir))
 }
 
-/// Resolves the installation of `pin`, either from an explicit directory or from elan.
+/// Resolves the installation of `pin`, a supported release, either from an explicit directory or
+/// from elan. The installation must be that release: its version and the commit it was built from.
 pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) -> Result<Toolchain> {
+    let release = supported_release(pin)?;
     let root = match explicit_dir {
         Some(d) => d.to_path_buf(),
         None => elan_toolchain_dir(pin)?,
@@ -116,11 +131,17 @@ pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) 
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let (version, githash) = parse_version(&text)
         .ok_or_else(|| Error::Environment(format!("unexpected `lean --version` output: {text:?}")))?;
-    let expected = pin.rsplit(":v").next().unwrap_or(pin);
-    if version != expected {
+    if version != release.version.to_string() {
         return Err(Error::Environment(format!(
             "the toolchain at {} is Lean {version}, but the project pins {pin}",
             root.display()
+        )));
+    }
+    if githash != release.githash {
+        return Err(Error::Environment(format!(
+            "the toolchain at {} is Lean {version} built from commit {githash}, not the Lean {version} release (commit {})",
+            root.display(),
+            release.githash
         )));
     }
     let mut h = Hasher::new("sysroot");
@@ -146,18 +167,12 @@ pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) 
             }
         }
     }
-    Ok(Toolchain { pin: pin.to_owned(), root, lean, lake, version, githash, sysroot_identity: h.finish() })
+    Ok(Toolchain { pin: pin.to_owned(), release, root, lean, lake, version, githash, sysroot_identity: h.finish() })
 }
 
 impl Toolchain {
     /// Resolves the installation of the toolchain `pin` (see [`read_pin`]).
     pub fn resolve_pin(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) -> Result<Toolchain> {
-        if !SUPPORTED_TOOLCHAINS.contains(&pin) {
-            return Err(Error::UnsupportedToolchain {
-                found: pin.to_owned(),
-                supported: SUPPORTED_TOOLCHAINS.iter().map(|s| s.to_string()).collect(),
-            });
-        }
         resolve(pin, explicit_dir, policy)
     }
 }
@@ -186,17 +201,39 @@ mod tests {
         assert!(parse_version("lean 4").is_none());
     }
 
-    /// TEST0141: floating and unknown pins are rejected
+    /// TEST0141: every supported release is accepted; floating, prerelease and unknown pins are
+    /// rejected, and a release newer than lungo knows is told apart
     #[test]
-    fn test0141_floating_and_unknown_pins_are_rejected() {
+    fn test0141_supported_releases_are_accepted_and_other_pins_rejected() {
         let dir = std::env::temp_dir().join(format!("lng-pin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        for pin in ["stable", "leanprover/lean4:stable", "leanprover/lean4:v4.35.0-rc3"] {
+        for pin in ["leanprover/lean4:v4.34.1", "leanprover/lean4:v4.35.0"] {
             std::fs::write(dir.join("lean-toolchain"), format!("{pin}\n")).unwrap();
-            assert!(matches!(read_pin(&dir), Err(Error::UnsupportedToolchain { .. })), "{pin}");
+            assert_eq!(read_pin(&dir).unwrap(), pin);
         }
-        std::fs::write(dir.join("lean-toolchain"), "leanprover/lean4:v4.34.1\n").unwrap();
-        assert_eq!(read_pin(&dir).unwrap(), "leanprover/lean4:v4.34.1");
+        let rejected = [
+            ("stable", false),
+            ("leanprover/lean4:stable", false),
+            ("leanprover/lean4:v4.35.0-rc3", false),
+            ("leanprover/lean4:nightly-2026-10-01", false),
+            ("leanprover/lean4:v4.34.0", false),
+            ("leanprover/lean4:v4.33.0", false),
+            ("leanprover/lean4:4.35.0", false),
+            ("leanprover/lean4:v4.99.0", true),
+            ("leanprover/lean4:v5.0.0", true),
+        ];
+        for (pin, newer_release) in rejected {
+            std::fs::write(dir.join("lean-toolchain"), format!("{pin}\n")).unwrap();
+            match read_pin(&dir) {
+                Err(e @ Error::UnsupportedToolchain { newer, .. }) => {
+                    assert_eq!(newer, newer_release, "{pin}");
+                    let text = e.to_string();
+                    assert!(text.contains("leanprover/lean4:v4.34.1, leanprover/lean4:v4.35.0"), "{text}");
+                    assert_eq!(text.contains("newer lungo may support it"), newer_release, "{text}");
+                }
+                other => panic!("{pin}: {other:?}"),
+            }
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

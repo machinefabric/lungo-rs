@@ -15,7 +15,7 @@ mod syntax;
 pub use syntax::identifier;
 
 use crate::core::exports::runtime_exports;
-use crate::core::externs::{ApplicationExterns, ExternPlan};
+use crate::core::externs::{ApplicationExterns, ExternPlan, program_release};
 use crate::core::names::{mangle, module_file_stem};
 use crate::core::writer::Writer;
 use crate::{CodegenError, GENERATOR_VERSION, SourceIndex, describe_source};
@@ -78,9 +78,11 @@ pub fn generate_program(input: &ProgramInput) -> Result<Program, Vec<CodegenErro
         .map_err(|e| vec![e])?;
     let hint = |_: &str| String::new();
     let application = ApplicationExterns { implementations: &host, setting: "the host's facilities", hint: &hint };
-    let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
-        describe_source(&r.source, input.local_prefix)
-    })?;
+    let release = program_release(input.toolchain).map_err(|e| vec![e])?;
+    let externs =
+        ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, release, &|r| {
+            describe_source(&r.source, input.local_prefix)
+        })?;
     check_target(&externs, input)?;
     let mut init_values = HashMap::new();
     for m in &program.modules {
@@ -274,8 +276,8 @@ fn emit_initialize(w: &mut Writer, input: &ProgramInput, emitter: &Emitter) {
     let prefix = emitter.prefix;
     let program = &input.success.bir;
     w.open(format!("static uint64_t {prefix}initialize_once(void) {{"));
-    w.line(comment("A runtime of another C ABI version does not define lungo_abi_v2: linking fails."));
-    w.line("if (lungo_abi_v2() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
+    w.line(comment("A runtime of another C ABI version does not define lungo_abi_v3: linking fails."));
+    w.line("if (lungo_abi_v3() != LUNGO_ABI_VERSION) lungo_panic_unreachable();");
     w.line(comment("Initializers may call the host's operations: every facility must be provided."));
     w.line(format!("{prefix}check_facilities();"));
     if let Ok(exports) = runtime_exports(input.success) {

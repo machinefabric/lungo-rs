@@ -18,7 +18,7 @@ mod worker;
 pub use assurance::{AssuranceIssue, AssurancePolicy};
 pub use error::{Error, Result};
 pub use lungo_codegen::{CodegenError, ErrorCode};
-pub use toolchain::{SUPPORTED_TOOLCHAINS, Toolchain, ToolchainPolicy, read_pin};
+pub use toolchain::{Toolchain, ToolchainPolicy, read_pin, supported_release};
 pub use worker::{ADAPTER_VERSION, Limits, Worker, WorkerCache};
 
 // The crates whose types appear in this crate's API, for tools built on the pipeline: through
@@ -29,6 +29,8 @@ pub use lungo_bir as bir;
 pub use lungo_codegen as codegen;
 /// The protocol between this crate and its Lean worker, including the worker's analysis.
 pub use lungo_protocol as protocol;
+/// The Lean releases lungo supports.
+pub use lungo_runtime::releases;
 
 use fingerprint::Hasher;
 use lungo_protocol::{
@@ -227,7 +229,7 @@ impl LeanOptions {
         } else {
             WorkerCache::Shared(worker::default_shared_cache()?)
         };
-        let worker_identity = worker::identity(&toolchain, &env.host);
+        let worker_identity = worker::identity(&toolchain, &env.host)?;
         let package = canonical_path(&env.manifest_dir)
             .map_err(|e| Error::io(format!("cannot resolve the package {}", env.manifest_dir.display()), e))?;
         let local_prefix = relative_path(&package, &project);

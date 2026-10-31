@@ -389,8 +389,13 @@ pub(crate) unsafe fn next(obj: Obj) -> Obj {
             match register(&guard, signal) {
                 Ok(()) => lean_io_result_mk_ok(promise),
                 Err(code) => {
+                    // A failed start leaves the signal as it was: a promise nothing will resolve
+                    // must not be handed out by the next call.
+                    inner.promise = Obj::null();
+                    inner.state = State::Initial;
+                    lean_dec(promise); // The signal's.
+                    lean_dec(promise); // The one that would have been returned.
                     lean_dec(obj);
-                    lean_dec(promise);
                     uv_io_error(code)
                 }
             }

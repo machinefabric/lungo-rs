@@ -1,6 +1,7 @@
 """The polyglot assertions, in Python, on the generated Python package."""
 
 import asyncio
+import os
 import random
 import subprocess
 import sys
@@ -198,7 +199,9 @@ class PolyglotTest(unittest.TestCase):
     # and the facilities each export needs
     def test_0298_assurance_is_the_programs_assurance(self):
         a = P.ASSURANCE
-        self.assertEqual((a.program, a.schema_version, a.provenance.lean_version), ("polyglot", 1, "4.34.1"))
+        # The Lean release the program was compiled from, which the test runner names.
+        lean = os.environ["POLYGLOT_LEAN_VERSION"]
+        self.assertEqual((a.program, a.schema_version, a.provenance.lean_version), ("polyglot", 1, lean))
         c = a.claim("Polyglot.factorial_pos")
         self.assertEqual((c.status, c.relation, c.assumptions), ("proved", "lungo.law", ()))
         self.assertEqual(a.claim("Polyglot.Tree.mirror_mirror").relation, "lungo.roundtrip")

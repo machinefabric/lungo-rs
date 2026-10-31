@@ -774,6 +774,10 @@ pub struct SArrayObject {
 
 #[inline]
 pub unsafe fn lean_alloc_sarray(elem_size: u32, size: usize, capacity: usize) -> Obj {
+    // The header's `other` field holds the element size and, in its top bit, the linearity mark.
+    if elem_size >= LEAN_LINEAR_MARK_MASK as u32 {
+        lean_internal_panic("scalar array element size is larger than 2^7");
+    }
     let bytes = capacity
         .checked_mul(elem_size as usize)
         .and_then(|b| b.checked_add(size_of::<SArrayObject>()))
@@ -790,7 +794,43 @@ pub unsafe fn lean_alloc_sarray(elem_size: u32, size: usize, capacity: usize) ->
 
 #[inline(always)]
 pub unsafe fn lean_sarray_elem_size(o: Obj) -> u32 {
-    unsafe { lean_ptr_other(o) }
+    unsafe { lean_ptr_other(o) & !(LEAN_LINEAR_MARK_MASK as u32) }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Linearity marks (`Array.markLinear`, `ByteArray.markLinear`, `String.markLinear`, ...)
+// ---------------------------------------------------------------------------------------------
+
+/// The linearity mark: the top bit of the `other` header field of arrays, scalar arrays and
+/// strings. A marked object is expected never to be copied for want of uniqueness; with
+/// `LEAN_ABORT_ON_NONLINEAR` set, such a copy panics. Copies keep the mark.
+pub const LEAN_LINEAR_MARK_MASK: u8 = 0x80;
+
+#[inline(always)]
+pub unsafe fn lean_is_marked_linear_core(o: Obj) -> bool {
+    unsafe { (*o.0).other & LEAN_LINEAR_MARK_MASK != 0 }
+}
+
+/// Marks `o`, which must be exclusive.
+#[inline(always)]
+pub unsafe fn lean_mark_linear_core(o: Obj) {
+    unsafe {
+        debug_assert!(lean_is_exclusive(o));
+        (*o.0).other |= LEAN_LINEAR_MARK_MASK;
+    }
+}
+
+/// Whether a copy of a marked object made for want of uniqueness stops the program
+/// (`LEAN_ABORT_ON_NONLINEAR`). Never on WebAssembly, as Lean's runtime under Emscripten.
+pub fn should_abort_on_nonlinearity() -> bool {
+    #[cfg(target_family = "wasm")]
+    {
+        false
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        std::env::var_os("LEAN_ABORT_ON_NONLINEAR").is_some()
+    }
 }
 
 #[inline(always)]

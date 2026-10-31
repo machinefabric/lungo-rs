@@ -170,7 +170,12 @@ pub mod externs {
         fn lean_uv_tcp_accept(s: b_obj) -> obj { tcp::accept(s) }
         fn lean_uv_tcp_try_accept(s: b_obj) -> obj { tcp::try_accept(s) }
         fn lean_uv_tcp_cancel_accept(s: b_obj) -> obj { tcp::cancel_accept(s) }
-        fn lean_uv_tcp_shutdown(s: b_obj) -> obj { tcp::shutdown(s) }
+        fn lean_uv_tcp_shutdown(s: b_obj) -> obj since(4, 35, 0) {
+            tcp::shutdown(s, tcp::RepeatedShutdown::RefusedOnceRequested)
+        }
+        fn lean_uv_tcp_shutdown_v4_34_1(s: b_obj) -> obj as lean_uv_tcp_shutdown until(4, 34, 1) {
+            tcp::shutdown(s, tcp::RepeatedShutdown::RefusedWhileInProgress)
+        }
         fn lean_uv_tcp_getpeername(s: b_obj) -> obj { tcp::getpeername(s) }
         fn lean_uv_tcp_getsockname(s: b_obj) -> obj { tcp::getsockname(s) }
         fn lean_uv_tcp_nodelay(s: b_obj) -> obj { tcp::nodelay(s) }
@@ -254,7 +259,11 @@ pub mod externs {
         fn lean_uv_os_homedir() -> obj { system::os_homedir() }
         fn lean_uv_os_tmpdir() -> obj { system::os_tmpdir() }
         fn lean_uv_os_get_passwd() -> obj { system::os_get_passwd() }
-        fn lean_uv_os_get_group(gid: u64) -> obj { system::os_get_group(gid) }
+        fn lean_uv_os_get_group(gid: u64) -> obj since(4, 35, 0) { system::os_get_group(gid, None) }
+        /// Up to Lean 4.34.1, a failure names the file `group`.
+        fn lean_uv_os_get_group_v4_34_1(gid: u64) -> obj as lean_uv_os_get_group until(4, 34, 1) {
+            system::os_get_group(gid, Some("group"))
+        }
         fn lean_uv_os_environ() -> obj { system::os_environ() }
         fn lean_uv_os_getenv(name: b_obj) -> obj { system::os_getenv(name) }
         fn lean_uv_os_setenv(name: b_obj, value: b_obj) -> obj { system::os_setenv(name, value) }
@@ -440,9 +449,9 @@ mod tests {
             assert_eq!(contents(lean_ctor_get(got, 0)), b"hello world");
             lean_dec(got);
 
-            let sh = ok(lean_uv_tcp_shutdown(client));
+            let sh = ok(lean_uv_tcp_shutdown_v4_34_1(client));
             lean_dec(expect_ok(await_promise(sh)));
-            assert_eq!(io_err(lean_uv_tcp_shutdown(client)), (INVALID_ARGUMENT, errno(errno::UV_ENOTCONN)));
+            assert_eq!(io_err(lean_uv_tcp_shutdown_v4_34_1(client)), (INVALID_ARGUMENT, errno(errno::UV_ENOTCONN)));
             let eof = ok(lean_uv_tcp_recv(peer, 64));
             let got = expect_ok(await_promise(eof));
             assert!(got.is_scalar(), "end of stream is reported as none");
@@ -463,6 +472,63 @@ mod tests {
             for o in [server, addr, client, peer, dead_addr, c2] {
                 lean_dec(o);
             }
+        }
+    }
+
+    /// A connected client socket and the accepted peer, over loopback; the listener is released.
+    unsafe fn connected_pair() -> (Obj, Obj) {
+        unsafe {
+            let server = ok(lean_uv_tcp_new());
+            let any = loopback(0);
+            ok(lean_uv_tcp_bind(server, any));
+            lean_dec(any);
+            let addr = ok(lean_uv_tcp_getsockname(server));
+            ok(lean_uv_tcp_listen(server, 16));
+            let acc = ok(lean_uv_tcp_accept(server));
+            let client = ok(lean_uv_tcp_new());
+            lean_dec(expect_ok(await_promise(ok(lean_uv_tcp_connect(client, addr)))));
+            let peer = expect_ok(await_promise(acc));
+            lean_dec(addr);
+            lean_dec(server);
+            (client, peer)
+        }
+    }
+
+    /// The constructor, code and details of the `IO.Error` of a failed IO result (consumed).
+    #[track_caller]
+    unsafe fn io_err_details(r: Obj) -> (&'static str, u32, String) {
+        unsafe {
+            assert!(lean_io_result_is_error(r), "expected an IO error");
+            let e = crate::exports::recording::read(lean_io_result_get_error(r));
+            lean_dec(r);
+            (e.constructor, e.code, e.details)
+        }
+    }
+
+    /// TEST0384: a second shutdown of a socket is refused as the program's Lean release refuses
+    /// it: up to 4.34.1, with `EALREADY` while the first is in progress and as not connected
+    /// once it completed; since 4.35.0, as already requested in both cases
+    #[test]
+    fn test0384_a_second_shutdown_is_refused_as_the_release_refuses_it() {
+        // Observed with `lean --run` on Lean 4.34.1 and 4.35.0, over loopback.
+        setup();
+        unsafe {
+            let (client, peer) = connected_pair();
+            let first = ok(lean_uv_tcp_shutdown_v4_34_1(client));
+            assert_eq!(io_err(lean_uv_tcp_shutdown_v4_34_1(client)), (OTHER_ERROR, errno(errno::UV_EALREADY)));
+            lean_dec(expect_ok(await_promise(first)));
+            assert_eq!(io_err(lean_uv_tcp_shutdown_v4_34_1(client)), (INVALID_ARGUMENT, errno(errno::UV_ENOTCONN)));
+            lean_dec(client);
+            lean_dec(peer);
+
+            let already = (OTHER_ERROR, errno(errno::UV_EALREADY), "shutdown already requested".to_owned());
+            let (client, peer) = connected_pair();
+            let first = ok(lean_uv_tcp_shutdown(client));
+            assert_eq!(io_err_details(lean_uv_tcp_shutdown(client)), already);
+            lean_dec(expect_ok(await_promise(first)));
+            assert_eq!(io_err_details(lean_uv_tcp_shutdown(client)), already);
+            lean_dec(client);
+            lean_dec(peer);
         }
     }
 
@@ -615,6 +681,22 @@ mod tests {
             assert_eq!(lean_obj_tag(r), 1);
             assert_eq!(lean_unbox(lean_ctor_get(r, 0)), libc::SIGUSR1 as usize);
             lean_dec(r);
+            lean_dec(sig);
+        }
+    }
+
+    /// TEST0385: a signal that fails to start fails again on the next request, rather than
+    /// handing out a promise nothing will resolve
+    #[test]
+    fn test0385_a_signal_that_fails_to_start_fails_again_on_the_next_request() {
+        // Observed with `lean --run` on Lean 4.35.0 (4.34.1 returned an unresolved promise the
+        // second time).
+        setup();
+        unsafe {
+            let sig = ok(lean_uv_signal_mk(0, 0));
+            let einval = (INVALID_ARGUMENT, errno(errno::UV_EINVAL));
+            assert_eq!(io_err(lean_uv_signal_next(sig)), einval);
+            assert_eq!(io_err(lean_uv_signal_next(sig)), einval);
             lean_dec(sig);
         }
     }

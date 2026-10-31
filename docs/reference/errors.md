@@ -36,8 +36,11 @@ error[LNG0101]: invalid Lean project: /work/app/lean/lake-manifest.json is missi
 ### LNG0102
 
 **Unsupported Lean toolchain.** `lean-toolchain` names a toolchain lungo does not
-support, including floating names such as `stable`. The message lists the supported
-toolchains; see [platforms](https://machinefabric.com/lungo/docs/reference/platforms).
+support: another Lean release, a release candidate, or a floating name such as `stable`. The
+message lists the supported toolchains, and says so when the release is newer than this lungo;
+see [platforms](https://machinefabric.com/lungo/docs/reference/platforms). Generating code for
+a program compiled by an unsupported Lean, or by a Lean built from another commit than its
+release, fails with this error too.
 
 ### LNG0103
 

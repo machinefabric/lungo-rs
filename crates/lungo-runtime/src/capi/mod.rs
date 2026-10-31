@@ -22,12 +22,12 @@ mod wasm;
 
 pub use cells::{InitBits, InitObj, LazyBits, LazyObj};
 
-/// Defined only by a runtime with C ABI version 2 (`LUNGO_ABI_VERSION` in `lungo.h`); generated
+/// Defined only by a runtime with C ABI version 3 (`LUNGO_ABI_VERSION` in `lungo.h`); generated
 /// programs call it, so linking one against a runtime of another ABI version fails. A function,
 /// not data: a Windows DLL exports data only to code compiled with `__declspec(dllimport)`.
 #[unsafe(no_mangle)]
-pub extern "C" fn lungo_abi_v2() -> u32 {
+pub extern "C" fn lungo_abi_v3() -> u32 {
     crate::ABI_VERSION
 }
 
-const _: () = assert!(crate::ABI_VERSION == 2, "rename `lungo_abi_v2` and LUNGO_ABI_VERSION in lungo.h");
+const _: () = assert!(crate::ABI_VERSION == 3, "rename `lungo_abi_v3` and LUNGO_ABI_VERSION in lungo.h");

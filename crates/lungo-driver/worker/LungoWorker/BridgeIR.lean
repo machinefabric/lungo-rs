@@ -5,7 +5,7 @@ import LungoWorker.Diagnostics
 /-!
 Serialization of Lean's final compiler representation as lungo Bridge IR (BIR).
 
-For Lean 4.34.1 the final representation of every compiled declaration — local or imported — is
+For every Lean release lungo supports, the final representation of every compiled declaration — local or imported — is
 the lowering of its final impure LCNF (`Lean.IR.ToIR`), which Lean persists per module and which
 its interpreter executes. BIR mirrors that representation instruction for instruction, but
 flattens straight-line code into blocks so that consumers do not recurse once per statement.
@@ -37,7 +37,7 @@ def irType (ty : IRType) : Except String Value :=
   | .tagged => return unitVariant "tagged"
   | .void => return unitVariant "void"
   | .struct .. | .union .. =>
-    throw "IR struct/union types are not produced by the Lean 4.34.1 compiler and are rejected by this adapter"
+    throw "IR struct/union types are not produced by the Lean compiler releases lungo supports and are rejected by this adapter"
 
 def arg : IR.Arg → Value
   | .var x => .map #[("var", nat x.idx)]

@@ -38,9 +38,10 @@ const ALL: &[&str] = &[
     "expr:is_shared",
 ];
 
-/// Instructions Lean 4.34.1 never leaves in final IR: its reset/reuse expansion rewrites every
-/// `reset`/`reuse` pair into `isShared`, `set`, `setTag` and `del` before code generation. BIR
-/// still represents them (they are part of Lean's IR), and the backend implements them.
+/// Instructions the supported Lean releases never leave in final IR (the test runs with each):
+/// their reset/reuse expansion rewrites every `reset`/`reuse` pair into `isShared`, `set`,
+/// `setTag` and `del` before code generation. BIR still represents them (they are part of Lean's
+/// IR), and the backend implements them.
 const NOT_EMITTED_BY_TOOLCHAIN: &[&str] = &["expr:reset", "expr:reuse"];
 
 fn expr_kind(e: &Expr) -> &'static str {

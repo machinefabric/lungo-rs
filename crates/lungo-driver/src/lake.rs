@@ -46,6 +46,9 @@ struct ManifestPackage {
     kind: String,
     #[serde(default)]
     dir: Option<String>,
+    /// A path dependency Lake copies into the packages directory (`copy = true`).
+    #[serde(default)]
+    copy: bool,
 }
 
 /// What the build needs to know about a Lake project before Lake runs.
@@ -99,7 +102,9 @@ fn package_dirs(project: &Path, manifest: &Manifest) -> Result<Vec<(String, Path
         .iter()
         .map(|p| {
             let dir = match p.kind.as_str() {
+                // Loaded from Lake's copy, as a Git dependency is.
                 "git" => packages_dir.join(&p.name),
+                "path" if p.copy => packages_dir.join(&p.name),
                 "path" => project.join(p.dir.as_deref().ok_or_else(|| {
                     Error::Project(format!("path dependency {} has no directory in the manifest", p.name))
                 })?),

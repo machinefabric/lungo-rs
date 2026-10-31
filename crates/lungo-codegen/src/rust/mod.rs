@@ -17,7 +17,7 @@ pub use oracle::C_SHIM as ORACLE_C_SHIM;
 pub use shaping::{Attribute, Shaping, selects};
 
 use crate::core::exports::runtime_exports;
-use crate::core::externs::{ApplicationExterns, ExternPlan, Resolution, resolution_key};
+use crate::core::externs::{ApplicationExterns, ExternPlan, Resolution, program_release, resolution_key};
 use crate::core::names::{mangle, module_file_stem};
 use crate::core::writer::Writer;
 use crate::{
@@ -27,6 +27,7 @@ use compiler::Emitter;
 use facade::{Facade, FnSpec, ModuleTree, Naming};
 use lungo_bir::{Body, Declaration, Initializer, IrType};
 use lungo_protocol::{EntryPoint, ExternRequirement, Success, WorkerToolchain};
+use lungo_runtime::releases::ToolchainConstant;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 
@@ -73,9 +74,11 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
         |key: &str| format!("Provide a Rust mapping with Builder::rust_extern({key:?}, \"crate::path::to::function\")");
     let application =
         ApplicationExterns { implementations: input.rust_externs, setting: "Builder::rust_extern", hint: &hint };
-    let externs = ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, &|r| {
-        describe_source(&r.source, input.local_prefix)
-    })?;
+    let release = program_release(input.toolchain).map_err(|e| vec![e])?;
+    let externs =
+        ExternPlan::resolve(&program.declarations, &input.success.extern_requirements, &application, release, &|r| {
+            describe_source(&r.source, input.local_prefix)
+        })?;
     let mut init_values = HashMap::new();
     for m in &program.modules {
         for init in &m.initializers {
@@ -278,8 +281,8 @@ pub fn generate(input: &GenInput) -> Result<Generated, Vec<CodegenError>> {
     w.line("#[doc(hidden)]");
     facade.emit_markers(&mut w);
     w.line("");
-    let document = crate::core::assurance::document(input.success, input.toolchain, input.aggregate)
-        .map_err(|e| vec![e])?;
+    let document =
+        crate::core::assurance::document(input.success, input.toolchain, input.aggregate).map_err(|e| vec![e])?;
     emit_meta(&mut w, input, &naming, &document);
     if let Some(entry) = &input.success.entry_point {
         emit_entry_point(&mut w, entry, program, input.layer);
@@ -629,7 +632,15 @@ fn extern_report(plan: &ExternPlan, input: &GenInput) -> Vec<ExternReportEntry> 
             let key = resolution_key(d).expect("resolved extern has a key");
             let (resolution, implementation) = match res {
                 Resolution::Lean { implementation } => ("lean_export", implementation.clone()),
-                Resolution::Intrinsic(i) => ("runtime", format!("lungo::__runtime::intrinsics::{}", i.symbol)),
+                Resolution::Intrinsic(i) => ("runtime", format!("lungo::__runtime::intrinsics::{}", i.function)),
+                Resolution::Toolchain(c) => (
+                    "lean_release",
+                    match c {
+                        ToolchainConstant::Nat(n) => n.to_string(),
+                        ToolchainConstant::Bool(b) => b.to_string(),
+                        ToolchainConstant::String(s) => (*s).to_owned(),
+                    },
+                ),
                 Resolution::Application { implementation, .. } => ("application", implementation.clone()),
             };
             let req = reqs.get(decl.as_str());

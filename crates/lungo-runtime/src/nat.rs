@@ -227,9 +227,30 @@ pub mod externs {
             nat_from_bigint(a >> s)
         }
 
-        fn lean_nat_pow(a1: b_obj, a2: b_obj) -> obj {
+        fn lean_nat_pow(a1: b_obj, a2: b_obj) -> obj since(4, 35, 0) {
+            // An exponent beyond a machine word would overflow memory for any base ≥ 2; for 0
+            // and 1 the result is cheap and total (the exponent is positive here).
+            if (!a2.is_scalar() || lean_unbox(a2) > u32::MAX as usize) && a1.is_scalar() && lean_unbox(a1) <= 1 {
+                return lean_box(lean_unbox(a1));
+            }
             let k = small_exponent(a2, "Nat.pow");
             nat_from_bigint(num_traits::pow::Pow::pow(big(a1), k))
+        }
+
+        /// Up to Lean 4.34.1, an exponent beyond a machine word panics whatever the base.
+        fn lean_nat_pow_v4_34_1(a1: b_obj, a2: b_obj) -> obj as lean_nat_pow until(4, 34, 1) {
+            let k = small_exponent(a2, "Nat.pow");
+            nat_from_bigint(num_traits::pow::Pow::pow(big(a1), k))
+        }
+
+        /// `Nat.powMod b e m`: `b ^ e % m`, computed by modular exponentiation; with `m = 0`,
+        /// `b ^ e` (Lean's `_ % 0 = _`), which panics on an exponent beyond a machine word as
+        /// `Nat.pow` does.
+        fn lean_nat_powmod(b: b_obj, e: b_obj, m: b_obj) -> obj since(4, 35, 0) {
+            if m.is_scalar() && lean_unbox(m) == 0 {
+                return lean_nat_pow(b, e);
+            }
+            nat_from_bigint(big(b).modpow(&big(e), &big(m)))
         }
 
         fn lean_nat_gcd(a1: b_obj, a2: b_obj) -> obj {
@@ -309,6 +330,67 @@ mod tests {
             assert_eq!(show(lean_nat_lxor(nat("18446744073709551615"), lean_box(1))), "18446744073709551614");
             assert_eq!(show(lean_nat_land(nat("18446744073709551617"), lean_box(3))), "1");
             assert_eq!(show(lean_nat_pred(lean_box(0))), "0");
+        }
+    }
+
+    const TEST0382: &str = "nat::tests::test0382_pow_of_zero_and_one_to_a_huge_exponent_follows_the_release";
+    const CHILD_CASE: &str = "LUNGO_RUNTIME_TEST_CASE";
+
+    /// Runs `case` of the test `test` in a child process (this test binary, running that test
+    /// alone): an internal panic ends the process.
+    fn in_child(test: &str, case: &str) -> std::process::Output {
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture", "--test-threads=1"])
+            .env(CHILD_CASE, case)
+            .env_remove("LEAN_ABORT_ON_PANIC")
+            .output()
+            .unwrap()
+    }
+
+    /// TEST0382: since Lean 4.35.0, zero and one raised to an exponent beyond a machine word are
+    /// zero and one; up to 4.34.1 that exponent panics whatever the base
+    #[test]
+    fn test0382_pow_of_zero_and_one_to_a_huge_exponent_follows_the_release() {
+        // Expected outcomes from `lean --run` with Lean 4.35.0 and 4.34.1.
+        let huge = || nat("100000000000000000000");
+        if let Ok(case) = std::env::var(CHILD_CASE) {
+            unsafe {
+                match case.as_str() {
+                    "4.34.1 base 0" => lean_nat_pow_v4_34_1(lean_box(0), huge()),
+                    "4.34.1 base 1" => lean_nat_pow_v4_34_1(lean_box(1), huge()),
+                    "4.35.0 base 2" => lean_nat_pow(lean_box(2), huge()),
+                    other => panic!("unknown case {other}"),
+                };
+            }
+            std::process::exit(0);
+        }
+        unsafe {
+            assert_eq!(show(lean_nat_pow(lean_box(0), huge())), "0");
+            assert_eq!(show(lean_nat_pow(lean_box(1), huge())), "1");
+            assert_eq!(show(lean_nat_pow(lean_box(1), lean_box(u32::MAX as usize + 1))), "1");
+            assert_eq!(show(lean_nat_pow_v4_34_1(lean_box(3), lean_box(4))), "81");
+        }
+        for case in ["4.34.1 base 0", "4.34.1 base 1", "4.35.0 base 2"] {
+            let out = in_child(TEST0382, case);
+            assert!(!out.status.success(), "{case}: the program continued");
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(stderr.contains("INTERNAL PANIC: Nat.pow exponent is too big"), "{case}: {stderr}");
+        }
+    }
+
+    /// TEST0383: `Nat.powMod` reduces by modular exponentiation; modulo zero it is `Nat.pow`
+    #[test]
+    fn test0383_powmod_reduces_by_modular_exponentiation_and_modulo_zero_is_pow() {
+        // Expected values from `lean --run` with Lean 4.35.0.
+        unsafe {
+            assert_eq!(show(lean_nat_powmod(lean_box(3), lean_box(4), lean_box(5))), "1");
+            assert_eq!(show(lean_nat_powmod(lean_box(2), lean_box(10), lean_box(1000))), "24");
+            assert_eq!(show(lean_nat_powmod(lean_box(3), lean_box(4), lean_box(0))), "81");
+            assert_eq!(show(lean_nat_powmod(lean_box(7), nat("100000000000000000000"), lean_box(1))), "0");
+            assert_eq!(
+                show(lean_nat_powmod(lean_box(2), nat("100000000000000000000"), nat("1000000007"))),
+                "855473248"
+            );
         }
     }
 }

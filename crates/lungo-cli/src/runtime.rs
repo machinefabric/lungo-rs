@@ -149,10 +149,7 @@ const VERIFIED: &str = ".lungo-verified";
 pub fn fetch(artifacts: &BTreeMap<String, Artifact>, target: &str) -> Result<PathBuf> {
     let a = artifact(artifacts, target)?;
     let dir = cache_dir()?.join(target);
-    if fs::read_to_string(dir.join(VERIFIED)).is_ok_and(|d| d.trim() == a.sha256) {
-        return Ok(dir);
-    }
-    download_verified(&a.url, &a.sha256, &dir)?;
+    ensure_verified(&a.url, &a.sha256, &dir)?;
     Ok(dir)
 }
 
@@ -180,7 +177,42 @@ pub fn verify(artifacts: &BTreeMap<String, Artifact>, target: &str) -> Result<Pa
 /// (without its single top-level directory), replacing `dir`. A mismatching download is
 /// discarded: nothing of it is used.
 pub fn download_verified(url: &str, sha256: &str, dir: &Path) -> Result<()> {
+    let _lock = install_lock(dir)?;
     install_verified(&download(url)?, url, sha256, dir)
+}
+
+/// [`download_verified`], unless `dir` already holds the archive with digest `sha256`. Processes
+/// installing one directory take turns, and one that finds the archive installed meanwhile keeps
+/// it: replacing it would remove files another process is running.
+pub fn ensure_verified(url: &str, sha256: &str, dir: &Path) -> Result<()> {
+    ensure_verified_with(url, sha256, dir, || download(url))
+}
+
+fn ensure_verified_with(source: &str, sha256: &str, dir: &Path, bytes: impl FnOnce() -> Result<Vec<u8>>) -> Result<()> {
+    if is_verified(dir, sha256) {
+        return Ok(());
+    }
+    let _lock = install_lock(dir)?;
+    if is_verified(dir, sha256) {
+        return Ok(());
+    }
+    install_verified(&bytes()?, source, sha256, dir)
+}
+
+/// Whether `dir` holds the unpacked archive with digest `sha256` (the digest is recorded last).
+fn is_verified(dir: &Path, sha256: &str) -> bool {
+    fs::read_to_string(dir.join(VERIFIED)).is_ok_and(|d| d.trim() == sha256)
+}
+
+/// An exclusive lock on installing `dir`, held until the returned file is dropped.
+fn install_lock(dir: &Path) -> Result<fs::File> {
+    let parent = dir.parent().expect("cache directories have a parent");
+    fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
+    let name = dir.file_name().expect("cache directories have a name").to_string_lossy();
+    let path = parent.join(format!(".{name}.lock"));
+    let file = fs::File::create(&path).map_err(|e| Error::io(format!("cannot create {}", path.display()), e))?;
+    file.lock().map_err(|e| Error::io(format!("cannot lock {}", path.display()), e))?;
+    Ok(file)
 }
 
 /// Checks the `.tar.gz` `bytes` (downloaded from `source`) against `sha256` and unpacks it into
@@ -378,12 +410,8 @@ mod tests {
         assert!(Manifest::parse(&manifest_text(v, &sha, "http://example.com/r.tar.gz")).is_err());
     }
 
-    /// TEST0090: a tampered archive is rejected and never unpacked
-    #[test]
-    fn test0090_a_tampered_archive_is_rejected_and_never_unpacked() {
-        let dir = std::env::temp_dir().join(format!("lungo-runtime-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        // A valid archive: one directory with a file.
+    /// A valid archive: one directory with a file.
+    fn tarball() -> Vec<u8> {
         let mut tarball = Vec::new();
         {
             let gz = flate2::write::GzEncoder::new(&mut tarball, flate2::Compression::default());
@@ -396,6 +424,15 @@ mod tests {
             b.append_data(&mut header, "pkg/include/lungo.h", &data[..]).unwrap();
             b.into_inner().unwrap().finish().unwrap();
         }
+        tarball
+    }
+
+    /// TEST0090: a tampered archive is rejected and never unpacked
+    #[test]
+    fn test0090_a_tampered_archive_is_rejected_and_never_unpacked() {
+        let dir = std::env::temp_dir().join(format!("lungo-runtime-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let tarball = tarball();
         let good = hex(&Sha256::digest(&tarball));
         let target = dir.join("cache").join("x86_64-unknown-linux-gnu");
         let e = install_verified(&tarball, "test.tar.gz", &"0".repeat(64), &target).unwrap_err();
@@ -406,6 +443,44 @@ mod tests {
         assert_eq!(fs::read_to_string(target.join(VERIFIED)).unwrap().trim(), good);
         // A second install replaces the first.
         install_verified(&tarball, "test.tar.gz", &good, &target).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// TEST0376: installers racing for one cache directory install it once and never replace it
+    /// under one another
+    #[test]
+    fn test0376_racing_installers_install_once_and_never_replace_the_install() {
+        let dir = std::env::temp_dir().join(format!("lungo-runtime-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let tarball = tarball();
+        let good = hex(&Sha256::digest(&tarball));
+        let target = dir.join("cache").join("wasi-sdk");
+        let downloads = std::sync::atomic::AtomicUsize::new(0);
+        let start = std::sync::Barrier::new(8);
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    start.wait();
+                    ensure_verified_with("test.tar.gz", &good, &target, || {
+                        downloads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        // A download takes a while: long enough for the others to check the cache.
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        Ok(tarball.clone())
+                    })
+                    .unwrap();
+                    // What the installer returned is usable when it returns.
+                    assert_eq!(fs::read(target.join("include/lungo.h")).unwrap(), b"lungo");
+                });
+            }
+        });
+        assert_eq!(
+            downloads.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the archive is downloaded and installed once"
+        );
+        // A later installer finds it and downloads nothing.
+        ensure_verified_with("test.tar.gz", &good, &target, || panic!("an installed archive is not fetched again"))
+            .unwrap();
         fs::remove_dir_all(&dir).unwrap();
     }
 }

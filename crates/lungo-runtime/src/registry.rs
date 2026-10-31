@@ -9,10 +9,16 @@
 //! Symbols that exist in the Lean toolchain but that the PureRust runtime deliberately does not
 //! implement are listed with the reason (see [`unsupported_symbols`]); reaching one is a build
 //! error.
+//!
+//! A primitive serves the Lean releases its declaration names (`since(…)`, `until(…)`; every
+//! release when it names none). A symbol whose behaviour a release changed has one primitive per
+//! behaviour, each a function of its own declared `as` the symbol, and [`lookup`] finds the one
+//! serving a program's release.
 
 #![allow(non_camel_case_types)]
 
 use crate::object::Obj;
+pub use crate::releases::{LeanVersion, Releases};
 
 /// An owned object argument or result.
 pub type obj = Obj;
@@ -62,6 +68,10 @@ impl Ty {
 pub struct Intrinsic {
     /// The C symbol Lean's `@[extern]` attribute names.
     pub symbol: &'static str,
+    /// The function implementing it: `intrinsics::<function>` in Rust, `lungo_<function>` in C.
+    pub function: &'static str,
+    /// The Lean releases whose programs it serves.
+    pub releases: Releases,
     pub params: &'static [Ty],
     pub result: Ty,
 }
@@ -77,12 +87,19 @@ pub struct Unsupported {
 /// ```ignore
 /// lean_externs! {
 ///     fn lean_nat_add(a: b_obj, b: b_obj) -> obj { ... }
+///     // The behaviour of releases up to 4.34.1, for the symbol `lean_nat_pow`.
+///     fn lean_nat_pow_v4_34_1(a: b_obj, b: b_obj) -> obj as lean_nat_pow until(4, 34, 1) { ... }
+///     fn lean_nat_powmod(b: b_obj, e: b_obj, m: b_obj) -> obj since(4, 35, 0) { ... }
 /// }
 /// ```
 macro_rules! lean_externs {
     ($(
         $(#[$meta:meta])*
-        fn $name:ident($($arg:ident : $ty:ident),* $(,)?) -> $ret:ident $body:block
+        fn $name:ident($($arg:ident : $ty:ident),* $(,)?) -> $ret:ident
+            $(as $symbol:ident)?
+            $(since($sa:literal, $sb:literal, $sc:literal))?
+            $(until($ua:literal, $ub:literal, $uc:literal))?
+            $body:block
     )*) => {
         $(
             $(#[$meta])*
@@ -108,7 +125,12 @@ macro_rules! lean_externs {
         pub(crate) const INTRINSICS: &[$crate::registry::Intrinsic] = &[
             $(
                 $crate::registry::Intrinsic {
-                    symbol: stringify!($name),
+                    symbol: $crate::registry::intrinsic_symbol!($name $($symbol)?),
+                    function: stringify!($name),
+                    releases: $crate::registry::Releases {
+                        since: $crate::registry::release_bound!($($sa, $sb, $sc)?),
+                        until: $crate::registry::release_bound!($($ua, $ub, $uc)?),
+                    },
                     params: &[$($crate::registry::Ty::$ty),*],
                     result: $crate::registry::Ty::$ret,
                 },
@@ -117,16 +139,36 @@ macro_rules! lean_externs {
     };
 }
 
-pub(crate) use lean_externs;
+/// The symbol a primitive implements: the one named with `as`, else its function's name.
+macro_rules! intrinsic_symbol {
+    ($name:ident) => {
+        stringify!($name)
+    };
+    ($name:ident $symbol:ident) => {
+        stringify!($symbol)
+    };
+}
+
+macro_rules! release_bound {
+    () => {
+        None
+    };
+    ($major:literal, $minor:literal, $patch:literal) => {
+        Some($crate::releases::LeanVersion::new($major, $minor, $patch))
+    };
+}
+
+pub(crate) use {intrinsic_symbol, lean_externs, release_bound};
 
 /// Every primitive the runtime implements.
 pub fn intrinsics() -> impl Iterator<Item = &'static Intrinsic> {
     crate::intrinsics::TABLES.iter().flat_map(|t| t.iter())
 }
 
-/// Looks up the primitive implementing `symbol`.
-pub fn lookup(symbol: &str) -> Option<&'static Intrinsic> {
-    intrinsics().find(|i| i.symbol == symbol)
+/// Looks up the primitive implementing `symbol` for programs compiled from the Lean release
+/// `version`.
+pub fn lookup(symbol: &str, version: LeanVersion) -> Option<&'static Intrinsic> {
+    intrinsics().find(|i| i.symbol == symbol && i.releases.contains(version))
 }
 
 /// Toolchain symbols deliberately not provided by the PureRust runtime, with the reason.

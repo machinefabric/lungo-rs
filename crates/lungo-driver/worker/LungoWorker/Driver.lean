@@ -19,11 +19,8 @@ namespace LungoWorker.Driver
 
 open Lean LungoWorker.Cbor System
 
-/-- Version of this adapter for its Lean release; part of the worker identity. -/
-def adapterVersion : Nat := 2
-
-/-- The Lean release this adapter is validated against. -/
-def supportedLeanVersion : String := "4.34.1"
+/-- Version of this adapter; part of the worker identity. -/
+def adapterVersion : Nat := 3
 
 def toolchainCbor : Value :=
   obj [

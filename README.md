@@ -117,7 +117,7 @@ them against the code, and the documentation site publishes them at each release
 ## Testing
 
 ```sh
-elan toolchain install leanprover/lean4:v4.34.1
+elan toolchain install leanprover/lean4:v4.35.0   # the release the examples and fixtures pin
 rustup target add wasm32-wasip1
 cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml
@@ -130,6 +130,24 @@ on macOS, Swift; on Windows also MinGW-w64 GCC and the `x86_64-pc-windows-gnu` R
 Lake projects of the examples and fixtures require the Lean library in `lean/` by path; Lake
 builds it on first use (`lake build Lungo LungoTest` in `lean/` builds it, and checks the
 attributes, on its own).
+
+The examples and fixtures pin the newest supported Lean release. The tests hold with every
+supported release: to run them with another, install it and name it in every `lean-toolchain`
+of a copy of this repository.
+
+## Supporting a Lean release
+
+lungo supports the Lean releases listed in `crates/lungo-runtime/src/releases.rs`, and nothing
+else. Supporting a new one takes:
+
+- its inventories, `crates/lungo-runtime/tests/data/<version>/` (see
+  `runtime-tests/ExternInventory.lean`), and a runtime primitive for each extern that is new in
+  it;
+- where it changed what a primitive does, the new behaviour as a primitive of its own, bounded
+  with `since(…)`, and the previous one bounded with `until(…)`;
+- the worker's `crates/lungo-driver/worker/compat/<version>/LungoWorker/Compat.lean`, holding
+  what differs in its compiler's and Lake's interface;
+- its entry in `LEAN_RELEASES`, and the tests run with it.
 
 ## Contributing
 

@@ -1,7 +1,7 @@
 //! The TypeScript binding's WebAssembly module: the program's C and the runtime for
 //! `wasm32-wasip1`, linked by the pinned wasi-sdk.
 
-use crate::runtime::download_verified;
+use crate::runtime::ensure_verified;
 use lungo_build::codegen::c::boundary::Boundary;
 use lungo_build::{Error, Result};
 use std::collections::BTreeMap;
@@ -40,15 +40,11 @@ pub fn wasi_sdk(explicit: Option<&Path>) -> Result<PathBuf> {
     }
     let (host, sha256) = wasi_sdk_archive()?;
     let dir = lungo_build::cache_root()?.join("wasi-sdk").join(WASI_SDK_VERSION).join(host);
-    let verified = dir.join(".lungo-verified");
-    if std::fs::read_to_string(&verified).is_ok_and(|d| d.trim() == sha256) {
-        return Ok(dir);
-    }
     let major = WASI_SDK_VERSION.split('.').next().expect("a version has a major part");
     let url = format!(
         "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-{major}/wasi-sdk-{WASI_SDK_VERSION}-{host}.tar.gz"
     );
-    download_verified(&url, sha256, &dir)?;
+    ensure_verified(&url, sha256, &dir)?;
     Ok(dir)
 }
 

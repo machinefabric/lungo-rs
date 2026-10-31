@@ -18,10 +18,13 @@ pub enum Error {
     },
     /// The Lake project is incomplete or inconsistent.
     Project(String),
-    /// The project's `lean-toolchain` names a toolchain this bridge does not support.
+    /// The project's `lean-toolchain` names a toolchain this lungo does not support.
     UnsupportedToolchain {
         found: String,
+        /// The supported releases' pins, oldest first.
         supported: Vec<String>,
+        /// Whether `found` is a Lean release newer than every supported one.
+        newer: bool,
     },
     /// The pinned toolchain is not installed and installation was not permitted.
     ToolchainNotInstalled {
@@ -177,11 +180,17 @@ impl fmt::Display for Error {
         match self {
             Error::Io { context, source } => write!(f, "{context}: {source}"),
             Error::Project(msg) => write!(f, "invalid Lean project: {msg}"),
-            Error::UnsupportedToolchain { found, supported } => write!(
-                f,
-                "the Lean project pins toolchain {found:?}, which this bridge does not support.\nSupported toolchains: {}\nPin one of them in lean-toolchain.",
-                supported.join(", ")
-            ),
+            Error::UnsupportedToolchain { found, supported, newer } => {
+                write!(f, "the Lean project pins toolchain {found:?}, which this lungo does not support.")?;
+                write!(f, "\nSupported toolchains: {}", supported.join(", "))?;
+                if *newer {
+                    write!(f, "\nThat Lean release is newer than this lungo; a newer lungo may support it.")?;
+                }
+                write!(
+                    f,
+                    "\nPin a supported toolchain in lean-toolchain, run `lake update`, and commit lean-toolchain and lake-manifest.json."
+                )
+            }
             Error::ToolchainNotInstalled { toolchain, expected_at } => write!(
                 f,
                 "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `lungo setup`; builds never install toolchains implicitly.",

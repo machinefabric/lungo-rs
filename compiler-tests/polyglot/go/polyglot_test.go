@@ -299,7 +299,12 @@ func TestHelperWithoutFacilities(t *testing.T) {
 // the facilities each export needs.
 func Test0298_AssuranceIsTheProgramsAssurance(t *testing.T) {
 	a := polyglot.Assurance()
-	if a.Program != "polyglot" || a.SchemaVersion != 1 || a.Provenance.LeanVersion != "4.34.1" {
+	// The Lean release the program was compiled from, which the test runner names.
+	lean := os.Getenv("POLYGLOT_LEAN_VERSION")
+	if lean == "" {
+		t.Fatal("POLYGLOT_LEAN_VERSION is not set")
+	}
+	if a.Program != "polyglot" || a.SchemaVersion != 1 || a.Provenance.LeanVersion != lean {
 		t.Fatalf("assurance of %s, schema %d, Lean %s", a.Program, a.SchemaVersion, a.Provenance.LeanVersion)
 	}
 	claim := func(name string) *lungo.AssuranceClaim {

@@ -35,6 +35,16 @@ fn fixture(language: &str) -> PathBuf {
     repo().join("compiler-tests/polyglot").join(language)
 }
 
+/// The variable through which each language's test learns the Lean release the program was
+/// compiled from, which the package's assurance reports.
+const LEAN_VERSION_VAR: &str = "POLYGLOT_LEAN_VERSION";
+
+/// The Lean release the fixture pins.
+fn lean_version() -> String {
+    let pin = lungo_driver::read_pin(&fixture("lean")).unwrap();
+    lungo_driver::supported_release(&pin).unwrap().version.to_string()
+}
+
 /// TEST0111: c binding
 #[test]
 fn test0111_c_binding() {
@@ -100,7 +110,10 @@ fn test0112_go_binding() {
     let unformatted = run(Command::new("gofmt").arg("-l").arg(&package));
     assert!(unformatted.is_empty(), "the generated Go is not gofmt-formatted: {unformatted}");
     run(Command::new("go").arg("vet").arg("./...").current_dir(&module));
-    let out = run(Command::new("go").args(["test", "-count=1", "-race", "./..."]).current_dir(&module));
+    let out = run(Command::new("go")
+        .args(["test", "-count=1", "-race", "./..."])
+        .env(LEAN_VERSION_VAR, lean_version())
+        .current_dir(&module));
     assert!(out.contains("ok  \texample.com/polyglottest"), "{out}");
 }
 
@@ -127,8 +140,12 @@ fn test0113_python_binding() {
     std::fs::create_dir_all(&tests).unwrap();
     std::fs::copy(fixture("python").join("test_polyglot.py"), tests.join("test_polyglot.py")).unwrap();
     let unittest = |label: &str| {
-        let out =
-            Command::new(&py).args(["-m", "unittest", "-v", "test_polyglot"]).current_dir(&tests).output().unwrap();
+        let out = Command::new(&py)
+            .args(["-m", "unittest", "-v", "test_polyglot"])
+            .env(LEAN_VERSION_VAR, lean_version())
+            .current_dir(&tests)
+            .output()
+            .unwrap();
         let text = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{label}: {text}");
         assert!(text.contains("Ran 18 tests") && text.trim_end().ends_with("OK"), "{label}: {text}");
@@ -189,6 +206,7 @@ let package = Package(
             .arg("test")
             .args(args)
             .envs(env.iter().copied())
+            .env(LEAN_VERSION_VAR, lean_version())
             .current_dir(&tests)
             .output()
             .unwrap();
@@ -277,7 +295,10 @@ fn test0115_ts_binding() {
     run(Command::new(npm).args(["install", "--no-audit", "--no-fund", "--install-links"]).current_dir(&project));
     run(Command::new("node").args(["node_modules/typescript/bin/tsc", "-p", "."]).current_dir(&project));
     // TAP is asked for by name: the assertions below read its "# pass"/"# fail" lines.
-    let out = run(Command::new("node").args(["--test", "--test-reporter=tap", "polyglot.test.js"]).current_dir(&project));
+    let out = run(Command::new("node")
+        .args(["--test", "--test-reporter=tap", "polyglot.test.js"])
+        .env(LEAN_VERSION_VAR, lean_version())
+        .current_dir(&project));
     assert!(out.contains("# pass 18") && out.contains("# fail 0"), "{out}");
 }
 

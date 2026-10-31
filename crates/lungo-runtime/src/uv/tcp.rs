@@ -812,17 +812,36 @@ pub(crate) unsafe fn cancel_accept(socket: Obj) -> Obj {
     }
 }
 
-pub(crate) unsafe fn shutdown(socket: Obj) -> Obj {
+/// How a socket refuses a second shutdown request.
+#[derive(Clone, Copy)]
+pub(crate) enum RepeatedShutdown {
+    /// While the first is in progress, with the libuv error `EALREADY`; once it completed, the
+    /// socket is no longer connected (Lean up to 4.34.1).
+    RefusedWhileInProgress,
+    /// Whenever one was requested, with an `IO.Error.otherError` (Lean 4.35.0 on).
+    RefusedOnceRequested,
+}
+
+pub(crate) unsafe fn shutdown(socket: Obj, repeated: RepeatedShutdown) -> Obj {
     unsafe {
         let tcp = get(socket);
         let guard = reactor().lock();
         let inner = tcp.inner();
-        if !inner.promise_shutdown.is_null() {
-            drop(guard);
-            let msg = lean_mk_string("shutdown already in progress");
-            let e = uv_error(UV_EALREADY, Some(msg));
-            lean_dec(msg);
-            return lean_io_result_mk_error(e);
+        match repeated {
+            RepeatedShutdown::RefusedWhileInProgress if !inner.promise_shutdown.is_null() => {
+                drop(guard);
+                let msg = lean_mk_string("shutdown already in progress");
+                let e = uv_error(UV_EALREADY, Some(msg));
+                lean_dec(msg);
+                return lean_io_result_mk_error(e);
+            }
+            // `shutting` is set by a successful request only, and never cleared.
+            RepeatedShutdown::RefusedOnceRequested if inner.shutting => {
+                drop(guard);
+                let msg = lean_mk_string("shutdown already requested");
+                return lean_io_result_mk_error(crate::io::mk::other_error(UV_EALREADY.unsigned_abs(), msg));
+            }
+            _ => {}
         }
         if !inner.writable || inner.shut || inner.shutting {
             drop(guard);

@@ -157,16 +157,25 @@ fn test0031_proofs_are_checked_during_the_build() {
     assert!(text.contains("decide"), "{text}");
 }
 
-/// TEST0032: toolchain mismatch is detected before compilation
+/// TEST0032: an unsupported toolchain is refused before compilation
 #[test]
-fn test0032_toolchain_mismatch_is_detected_before_compilation() {
+fn test0032_an_unsupported_toolchain_is_refused_before_compilation() {
     let s = Scratch::new("imports", "toolchain-mismatch");
-    for pin in ["leanprover/lean4:v4.35.0", "leanprover/lean4:stable", "leanprover/lean4:nightly-2026-01-01"] {
+    for pin in [
+        "leanprover/lean4:v4.34.0",
+        "leanprover/lean4:v4.35.0-rc1",
+        "leanprover/lean4:v4.99.0",
+        "leanprover/lean4:stable",
+        "leanprover/lean4:nightly-2026-01-01",
+    ] {
         s.write("lean-toolchain", &format!("{pin}\n"));
         let err = s.build(&imports_config(), "out").unwrap_err();
         assert!(matches!(&err, Error::UnsupportedToolchain { found, .. } if found == pin), "{err:?}");
-        assert!(err.to_string().contains("v4.34.1"), "the error names the supported toolchains: {err}");
-        assert!(err.to_string().starts_with("error[LNG0102]: "), "{err}");
+        let text = err.to_string();
+        for release in lungo_build::releases::LEAN_RELEASES {
+            assert!(text.contains(&release.pin()), "the error names every supported toolchain: {text}");
+        }
+        assert!(text.starts_with("error[LNG0102]: "), "{text}");
     }
     assert!(!s.project().join(".lake").exists(), "nothing was compiled");
 }

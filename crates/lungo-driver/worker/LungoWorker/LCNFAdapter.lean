@@ -3,7 +3,7 @@ import LungoWorker.BridgeIR
 import LungoWorker.Diagnostics
 
 /-!
-Version-specific adapter from Lean 4.34.1's compiler output to Bridge IR.
+Adapter from the compiler output of the Lean releases lungo supports to Bridge IR.
 
 Lean's LCNF pipeline ends in impure LCNF, which `Lean.IR.ToIR` lowers one-to-one into `Lean.IR`
 declarations. Lean persists that final form for every module (`.ir` for `module` files, the

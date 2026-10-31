@@ -8,7 +8,7 @@
  * counting over that layout; everything else is implemented by the runtime library.
  *
  * The header and the library must be of the same lungo version: generated programs call
- * `lungo_abi_v2`, which only a runtime with this ABI defines.
+ * `lungo_abi_v3`, which only a runtime with this ABI defines.
  *
  * Copyright the lungo authors. Licensed under the Apache License, Version 2.0.
  */
@@ -29,10 +29,10 @@ extern "C" {
 /* Version and portability                                                                     */
 /* ------------------------------------------------------------------------------------------ */
 
-#define LUNGO_ABI_VERSION 2
+#define LUNGO_ABI_VERSION 3
 
-/* Defined only by a runtime library with ABI version 2; returns LUNGO_ABI_VERSION. */
-uint32_t lungo_abi_v2(void);
+/* Defined only by a runtime library with ABI version 3; returns LUNGO_ABI_VERSION. */
+uint32_t lungo_abi_v3(void);
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
@@ -621,6 +621,8 @@ double lungo_fabs(double a0);
 float lungo_fabsf(float a0);
 double lungo_floor(double a0);
 float lungo_floorf(float a0);
+double lungo_fma(double a0, double a1, double a2);
+float lungo_fmaf(float a0, float a1, float a2);
 lungo_obj lungo_lean_array_fget(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_array_fget_borrowed(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_array_fset(lungo_obj a0, lungo_obj a1 /* borrowed */, lungo_obj a2);
@@ -628,8 +630,10 @@ lungo_obj lungo_lean_array_fswap(lungo_obj a0, lungo_obj a1 /* borrowed */, lung
 lungo_obj lungo_lean_array_get(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */, lungo_obj a2 /* borrowed */);
 lungo_obj lungo_lean_array_get_borrowed(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */, lungo_obj a2 /* borrowed */);
 lungo_obj lungo_lean_array_get_size(lungo_obj a0 /* borrowed */);
+lungo_obj lungo_lean_array_mark_linear(lungo_obj a0);
 lungo_obj lungo_lean_array_mk(lungo_obj a0);
 lungo_obj lungo_lean_array_pop(lungo_obj a0);
+lungo_obj lungo_lean_array_propagate_mark(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_array_push(lungo_obj a0, lungo_obj a1);
 lungo_obj lungo_lean_array_set(lungo_obj a0, lungo_obj a1 /* borrowed */, lungo_obj a2);
 size_t lungo_lean_array_size(lungo_obj a0 /* borrowed */);
@@ -731,7 +735,6 @@ uint64_t lungo_lean_float_to_uint64(double a0);
 uint8_t lungo_lean_float_to_uint8(double a0);
 size_t lungo_lean_float_to_usize(double a0);
 lungo_obj lungo_lean_get_current_time(void);
-lungo_obj lungo_lean_get_githash(lungo_obj a0);
 lungo_obj lungo_lean_get_set_stderr(lungo_obj a0);
 lungo_obj lungo_lean_get_set_stdin(lungo_obj a0);
 lungo_obj lungo_lean_get_set_stdout(lungo_obj a0);
@@ -980,6 +983,8 @@ lungo_obj lungo_lean_nat_lxor(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borro
 lungo_obj lungo_lean_nat_mod(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_nat_mul(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_nat_pow(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
+lungo_obj lungo_lean_nat_pow_v4_34_1(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
+lungo_obj lungo_lean_nat_powmod(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */, lungo_obj a2 /* borrowed */);
 lungo_obj lungo_lean_nat_pred(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_nat_shiftl(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_nat_shiftr(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
@@ -993,6 +998,8 @@ lungo_obj lungo_lean_runtime_hold(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_runtime_mark_multi_threaded(lungo_obj a0);
 lungo_obj lungo_lean_runtime_mark_persistent(lungo_obj a0);
 uint8_t lungo_lean_sarray_dec_eq(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
+lungo_obj lungo_lean_sarray_mark_linear(lungo_obj a0);
+lungo_obj lungo_lean_sarray_propagate_mark(lungo_obj a0 /* borrowed */, lungo_obj a1);
 size_t lungo_lean_sarray_size(lungo_obj a0 /* borrowed */);
 uint8_t lungo_lean_sharecommon_eq(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 uint64_t lungo_lean_sharecommon_hash(lungo_obj a0 /* borrowed */);
@@ -1002,7 +1009,9 @@ uint64_t lungo_lean_slice_hash(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_sorry(uint8_t a0);
 lungo_obj lungo_lean_st_mk_ref(lungo_obj a0);
 lungo_obj lungo_lean_st_ref_get(lungo_obj a0 /* borrowed */);
+lungo_obj lungo_lean_st_ref_get_v4_34_1(lungo_obj a0 /* borrowed */);
 uint8_t lungo_lean_st_ref_ptr_eq(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
+lungo_obj lungo_lean_st_ref_put(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_st_ref_set(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_st_ref_swap(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_st_ref_take(lungo_obj a0 /* borrowed */);
@@ -1019,9 +1028,11 @@ uint8_t lungo_lean_string_get_byte_fast(lungo_obj a0 /* borrowed */, lungo_obj a
 uint64_t lungo_lean_string_hash(lungo_obj a0 /* borrowed */);
 uint8_t lungo_lean_string_is_valid_pos(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */);
 lungo_obj lungo_lean_string_length(lungo_obj a0 /* borrowed */);
+lungo_obj lungo_lean_string_mark_linear(lungo_obj a0);
 uint8_t lungo_lean_string_memcmp(lungo_obj a0 /* borrowed */, lungo_obj a1 /* borrowed */, lungo_obj a2 /* borrowed */, lungo_obj a3 /* borrowed */, lungo_obj a4 /* borrowed */);
 lungo_obj lungo_lean_string_mk(lungo_obj a0);
 lungo_obj lungo_lean_string_of_usize(size_t a0);
+lungo_obj lungo_lean_string_propagate_mark(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_string_push(lungo_obj a0, uint32_t a1);
 lungo_obj lungo_lean_string_to_utf8(lungo_obj a0 /* borrowed */);
 uint8_t lungo_lean_string_uget_byte_fast(lungo_obj a0 /* borrowed */, size_t a1);
@@ -1197,6 +1208,7 @@ lungo_obj lungo_lean_uv_ntop_v4(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_ntop_v6(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_os_environ(void);
 lungo_obj lungo_lean_uv_os_get_group(uint64_t a0);
+lungo_obj lungo_lean_uv_os_get_group_v4_34_1(uint64_t a0);
 lungo_obj lungo_lean_uv_os_get_passwd(void);
 lungo_obj lungo_lean_uv_os_getenv(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_os_gethostname(void);
@@ -1231,6 +1243,7 @@ lungo_obj lungo_lean_uv_tcp_nodelay(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_tcp_recv(lungo_obj a0 /* borrowed */, uint64_t a1);
 lungo_obj lungo_lean_uv_tcp_send(lungo_obj a0 /* borrowed */, lungo_obj a1);
 lungo_obj lungo_lean_uv_tcp_shutdown(lungo_obj a0 /* borrowed */);
+lungo_obj lungo_lean_uv_tcp_shutdown_v4_34_1(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_tcp_try_accept(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_tcp_wait_readable(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_timer_cancel(lungo_obj a0 /* borrowed */);
@@ -1254,11 +1267,6 @@ lungo_obj lungo_lean_uv_udp_set_multicast_ttl(lungo_obj a0 /* borrowed */, uint3
 lungo_obj lungo_lean_uv_udp_set_ttl(lungo_obj a0 /* borrowed */, uint32_t a1);
 lungo_obj lungo_lean_uv_udp_wait_readable(lungo_obj a0 /* borrowed */);
 lungo_obj lungo_lean_uv_uptime(void);
-uint8_t lungo_lean_version_get_is_release(lungo_obj a0);
-lungo_obj lungo_lean_version_get_major(lungo_obj a0);
-lungo_obj lungo_lean_version_get_minor(lungo_obj a0);
-lungo_obj lungo_lean_version_get_patch(lungo_obj a0);
-lungo_obj lungo_lean_version_get_special_desc(lungo_obj a0);
 lungo_obj lungo_lean_void_mk(lungo_obj a0);
 lungo_obj lungo_lean_windows_get_next_transition(lungo_obj a0 /* borrowed */, uint64_t a1, uint8_t a2);
 double lungo_log(double a0);

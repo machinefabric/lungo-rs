@@ -206,6 +206,9 @@ unsafe fn string_ensure_capacity(o: Obj, extra: usize) -> Obj {
         if needed > cap {
             let new_cap = cap.checked_add(needed).unwrap_or_else(|| lean_internal_panic_overflow());
             let r = lean_alloc_string(sz, new_cap, lean_string_len(o));
+            if lean_is_marked_linear_core(o) {
+                lean_mark_linear_core(r);
+            }
             std::ptr::copy_nonoverlapping(lean_string_cstr(o), lean_string_cstr(r), sz);
             lean_free_object(o);
             r
@@ -213,6 +216,44 @@ unsafe fn string_ensure_capacity(o: Obj, extra: usize) -> Obj {
             o
         }
     }
+}
+
+/// `lean_copy_string`: copies `s` (consumed) into a string of capacity `cap`, keeping its
+/// linearity mark.
+unsafe fn copy_string(s: Obj, cap: usize) -> Obj {
+    unsafe {
+        let sz = lean_string_size(s);
+        debug_assert!(cap >= sz);
+        let r = lean_alloc_string(sz, cap, lean_string_len(s));
+        if lean_is_marked_linear_core(s) {
+            lean_mark_linear_core(r);
+        }
+        std::ptr::copy_nonoverlapping(lean_string_cstr(s), lean_string_cstr(r), sz);
+        lean_dec_ref(s);
+        r
+    }
+}
+
+/// Stops the program when `s` is marked linear and `LEAN_ABORT_ON_NONLINEAR` is set.
+unsafe fn check_string_linearity(s: Obj) {
+    unsafe {
+        if lean_is_marked_linear_core(s) && should_abort_on_nonlinearity() {
+            lean_internal_panic("string marked by `String.markLinear` was used non-linearly");
+        }
+    }
+}
+
+/// `lean_copy_string_nonlinear`: the copy made because `s` is shared.
+unsafe fn copy_string_nonlinear(s: Obj, cap: usize) -> Obj {
+    unsafe {
+        check_string_linearity(s);
+        copy_string(s, cap)
+    }
+}
+
+/// `lean_string_ensure_exclusive`.
+unsafe fn string_ensure_exclusive(s: Obj) -> Obj {
+    unsafe { if lean_is_exclusive(s) { s } else { copy_string_nonlinear(s, lean_string_capacity(s)) } }
 }
 
 unsafe fn empty_string() -> Obj {
@@ -259,10 +300,7 @@ pub mod externs {
             let sz = lean_string_size(s);
             let len = lean_string_len(s);
             let r = if !lean_is_exclusive(s) {
-                let r = lean_alloc_string(sz, mk_capacity(sz + 5), len);
-                std::ptr::copy_nonoverlapping(lean_string_cstr(s), lean_string_cstr(r), sz - 1);
-                lean_dec_ref(s);
-                r
+                copy_string_nonlinear(s, mk_capacity(sz + 5))
             } else {
                 string_ensure_capacity(s, 5)
             };
@@ -281,10 +319,7 @@ pub mod externs {
             let new_len = lean_string_len(s1) + lean_string_len(s2);
             let new_sz = sz1 + sz2 - 1;
             let r = if !lean_is_exclusive(s1) {
-                let r = lean_alloc_string(new_sz, mk_capacity(new_sz), new_len);
-                std::ptr::copy_nonoverlapping(lean_string_cstr(s1), lean_string_cstr(r), sz1 - 1);
-                lean_dec_ref(s1);
-                r
+                copy_string_nonlinear(s1, mk_capacity(new_sz))
             } else {
                 if s1 == s2 {
                     lean_internal_panic("lean_string_append: an exclusive string appended to itself");
@@ -546,15 +581,20 @@ pub mod externs {
                 return s;
             }
             let data = lean_string_cstr(s);
-            if lean_is_exclusive(s) && *data.add(i) < 128 && c < 128 {
-                *data.add(i) = c as u8;
-                return s;
+            if *data.add(i) < 128 && c < 128 {
+                let r = string_ensure_exclusive(s);
+                *lean_string_cstr(r).add(i) = c as u8;
+                return r;
             }
             if !is_utf8_first_byte(*data.add(i)) {
                 return s;
             }
+            if !lean_is_exclusive(s) {
+                check_string_linearity(s);
+            }
             let mut new_s = lean_string_bytes(s).to_vec();
             let len = lean_string_len(s);
+            let marked = lean_is_marked_linear_core(s);
             lean_dec(s);
             let old = match get_utf8_size(new_s[i]) {
                 n @ 1..=4 => n,
@@ -564,7 +604,23 @@ pub mod externs {
             push_unicode_scalar(&mut enc, c);
             let end = (i + old).min(new_s.len());
             new_s.splice(i..end, enc);
-            lean_mk_string_unchecked(&new_s, len)
+            let r = lean_mk_string_unchecked(&new_s, len);
+            if marked {
+                lean_mark_linear_core(r);
+            }
+            r
+        }
+
+        /// `String.markLinear`: `s`, made exclusive, with its linearity mark set.
+        fn lean_string_mark_linear(s: obj) -> obj since(4, 35, 0) {
+            let r = string_ensure_exclusive(s);
+            lean_mark_linear_core(r);
+            r
+        }
+
+        /// `String.propagateMark`: `dst`, marked linear when `src` is.
+        fn lean_string_propagate_mark(src: b_obj, dst: obj) -> obj since(4, 35, 0) {
+            if lean_is_marked_linear_core(src) { lean_string_mark_linear(dst) } else { dst }
         }
 
         fn lean_string_get_byte_fast(s: b_obj, i0: b_obj) -> u8 {

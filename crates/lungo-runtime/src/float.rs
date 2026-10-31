@@ -42,6 +42,8 @@ mod c {
         #[cfg(not(all(windows, target_env = "msvc")))]
         pub fn fabsf(x: f32) -> f32;
         pub fn floor(x: f64) -> f64;
+        pub fn fma(x: f64, y: f64, z: f64) -> f64;
+        pub fn fmaf(x: f32, y: f32, z: f32) -> f32;
         pub fn floorf(x: f32) -> f32;
         pub fn log(x: f64) -> f64;
         pub fn logf(x: f32) -> f32;
@@ -135,6 +137,8 @@ pub mod externs {
         fn fabs(x: f64) -> f64 { c::fabs(x) }
         fn fabsf(x: f32) -> f32 { c::fabsf(x) }
         fn floor(x: f64) -> f64 { c::floor(x) }
+        fn fma(x: f64, y: f64, z: f64) -> f64 since(4, 35, 0) { c::fma(x, y, z) }
+        fn fmaf(x: f32, y: f32, z: f32) -> f32 since(4, 35, 0) { c::fmaf(x, y, z) }
         fn floorf(x: f32) -> f32 { c::floorf(x) }
         fn log(x: f64) -> f64 { c::log(x) }
         fn logf(x: f32) -> f32 { c::logf(x) }

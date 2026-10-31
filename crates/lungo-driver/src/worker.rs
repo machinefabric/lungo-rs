@@ -5,7 +5,9 @@ use crate::error::{Error, Result};
 use crate::fingerprint::{Hasher, hash_bytes};
 use crate::toolchain::Toolchain;
 use lungo_protocol::{PROTOCOL_VERSION, Request, Response};
+use lungo_runtime::releases::LeanRelease;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -13,12 +15,11 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Version of the worker adapter this crate is built for; the worker reports its own.
-pub const ADAPTER_VERSION: u32 = 2;
+pub const ADAPTER_VERSION: u32 = 3;
 
-/// The worker's Lean sources, distributed with this crate and compiled against each project's
-/// toolchain.
+/// The worker's Lean sources shared by every supported Lean release, distributed with this crate
+/// and compiled against each project's toolchain.
 pub const WORKER_SOURCES: &[(&str, &str)] = &[
-    ("lean-toolchain", include_str!("../worker/lean-toolchain")),
     ("lakefile.toml", include_str!("../worker/lakefile.toml")),
     ("lake-manifest.json", include_str!("../worker/lake-manifest.json")),
     ("Main.lean", include_str!("../worker/Main.lean")),
@@ -32,6 +33,29 @@ pub const WORKER_SOURCES: &[(&str, &str)] = &[
     ("LungoWorker/LCNFAdapter.lean", include_str!("../worker/LungoWorker/LCNFAdapter.lean")),
     ("LungoWorker/Protocol.lean", include_str!("../worker/LungoWorker/Protocol.lean")),
 ];
+
+/// The path of the module holding what differs between Lean releases.
+const COMPAT_MODULE: &str = "LungoWorker/Compat.lean";
+
+/// Each supported Lean release's `LungoWorker.Compat` module (`worker/compat/<version>/`).
+pub const WORKER_COMPAT: &[(&str, &str)] = &[
+    ("4.34.1", include_str!("../worker/compat/4.34.1/LungoWorker/Compat.lean")),
+    ("4.35.0", include_str!("../worker/compat/4.35.0/LungoWorker/Compat.lean")),
+];
+
+/// The files of the worker project for `release`: the shared sources, the release's `Compat`
+/// module, and its `lean-toolchain`.
+pub fn worker_files(release: &LeanRelease) -> Result<Vec<(&'static str, Cow<'static, str>)>> {
+    let version = release.version.to_string();
+    let compat = WORKER_COMPAT.iter().find(|(v, _)| *v == version).ok_or_else(|| {
+        Error::Environment(format!("this lungo has no worker adapter for Lean {version}, which it lists as supported"))
+    })?;
+    let mut files: Vec<(&'static str, Cow<'static, str>)> =
+        WORKER_SOURCES.iter().map(|(path, text)| (*path, Cow::Borrowed(*text))).collect();
+    files.push((COMPAT_MODULE, Cow::Borrowed(compat.1)));
+    files.push(("lean-toolchain", Cow::Owned(format!("{}\n", release.pin()))));
+    Ok(files)
+}
 
 /// Where compiled workers are kept.
 #[derive(Debug, Clone)]
@@ -76,7 +100,7 @@ struct Metadata {
 }
 
 /// The content identity of the worker for `toolchain` on `host`.
-pub fn identity(toolchain: &Toolchain, host: &str) -> String {
+pub fn identity(toolchain: &Toolchain, host: &str) -> Result<String> {
     let mut h = Hasher::new("worker");
     h.str(&toolchain.version)
         .str(&toolchain.githash)
@@ -85,10 +109,10 @@ pub fn identity(toolchain: &Toolchain, host: &str) -> String {
         .field(&ADAPTER_VERSION.to_le_bytes())
         .field(&PROTOCOL_VERSION.to_le_bytes())
         .field(&lungo_bir::BIR_VERSION.to_le_bytes());
-    for (path, text) in WORKER_SOURCES {
-        h.str(path).str(text);
+    for (path, text) in worker_files(toolchain.release)? {
+        h.str(path).str(&text);
     }
-    h.finish()
+    Ok(h.finish())
 }
 
 fn binary_name() -> String {
@@ -117,7 +141,8 @@ fn scrub_lean_env(cmd: &mut Command) {
 pub fn prepare(toolchain: &Toolchain, cache: &WorkerCache, host: &str) -> Result<Worker> {
     let root = cache.root();
     fs::create_dir_all(root).map_err(|e| Error::io(format!("cannot create {}", root.display()), e))?;
-    let id = identity(toolchain, host);
+    let files = worker_files(toolchain.release)?;
+    let id = identity(toolchain, host)?;
     let dir = root.join(&id);
     let lock_path = root.join(format!("{id}.lock"));
     let lock = File::create(&lock_path).map_err(|e| Error::io(format!("cannot create {}", lock_path.display()), e))?;
@@ -152,11 +177,11 @@ pub fn prepare(toolchain: &Toolchain, cache: &WorkerCache, host: &str) -> Result
     if tmp.exists() {
         fs::remove_dir_all(&tmp).map_err(|e| Error::io(format!("cannot remove {}", tmp.display()), e))?;
     }
-    for (path, text) in WORKER_SOURCES {
+    for (path, text) in &files {
         let dest = tmp.join(path);
         fs::create_dir_all(dest.parent().expect("worker files have parents"))
             .map_err(|e| Error::io(format!("cannot create {}", tmp.display()), e))?;
-        fs::write(&dest, text).map_err(|e| Error::io(format!("cannot write {}", dest.display()), e))?;
+        fs::write(&dest, text.as_bytes()).map_err(|e| Error::io(format!("cannot write {}", dest.display()), e))?;
     }
     let mut cmd = Command::new(&toolchain.lake);
     cmd.arg("build").current_dir(&tmp);
@@ -557,7 +582,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         let project = dir.join("project");
         fs::create_dir_all(&project).unwrap();
-        fs::write(project.join("lean-toolchain"), "leanprover/lean4:v4.34.1\n").unwrap();
+        let pin = lungo_runtime::releases::newest().pin();
+        fs::write(project.join("lean-toolchain"), format!("{pin}\n")).unwrap();
         fs::write(project.join("lakefile.toml"), "name = \"p\"\n\n[[lean_lib]]\nname = \"P\"\n").unwrap();
         fs::write(project.join("P.lean"), "def x := 1\n").unwrap();
         fs::write(
@@ -565,7 +591,7 @@ mod tests {
             r#"{"version": "1.2.0", "packagesDir": ".lake/packages", "packages": [], "name": "p", "lakeDir": ".lake", "fixedToolchain": false}"#,
         )
         .unwrap();
-        let toolchain = Toolchain::resolve_pin("leanprover/lean4:v4.34.1", None, ToolchainPolicy::Strict).unwrap();
+        let toolchain = Toolchain::resolve_pin(&pin, None, ToolchainPolicy::Strict).unwrap();
         let env = Environment::native(dir.clone(), dir.join("out"), dir.join("work"));
         let cfg = LeanOptions::default().root_module("P");
         let ctx = cfg.context(&project, &env).unwrap();
@@ -697,7 +723,8 @@ mod tests {
 
 #[cfg(test)]
 mod sources {
-    use super::WORKER_SOURCES;
+    use super::{COMPAT_MODULE, WORKER_COMPAT, WORKER_SOURCES, worker_files};
+    use lungo_runtime::releases::LEAN_RELEASES;
     use std::collections::BTreeSet;
     use std::path::Path;
 
@@ -717,13 +744,33 @@ mod sources {
         }
     }
 
-    /// TEST0149: the embedded worker is the whole worker project
+    /// TEST0149: the embedded worker is the whole worker project, with one compatibility module
+    /// per supported Lean release
     #[test]
     fn test0149_the_embedded_worker_is_the_whole_worker_project() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("worker");
         let mut on_disk = BTreeSet::new();
         files(&root, &root, &mut on_disk);
-        let embedded: BTreeSet<String> = WORKER_SOURCES.iter().map(|(path, _)| path.to_string()).collect();
-        assert_eq!(embedded, on_disk, "WORKER_SOURCES must list every file of worker/");
+        let mut embedded: BTreeSet<String> = WORKER_SOURCES.iter().map(|(path, _)| path.to_string()).collect();
+        embedded.extend(WORKER_COMPAT.iter().map(|(version, _)| format!("compat/{version}/{COMPAT_MODULE}")));
+        assert_eq!(embedded, on_disk, "WORKER_SOURCES and WORKER_COMPAT must list every file of worker/");
+        let compat: BTreeSet<String> = WORKER_COMPAT.iter().map(|(v, _)| v.to_string()).collect();
+        let supported: BTreeSet<String> = LEAN_RELEASES.iter().map(|r| r.version.to_string()).collect();
+        assert_eq!(compat, supported, "one compatibility module per supported Lean release");
+    }
+
+    /// TEST0387: the worker built for a release pins that release and holds its compatibility
+    /// module
+    #[test]
+    fn test0387_the_worker_built_for_a_release_pins_it_and_holds_its_compatibility_module() {
+        for release in LEAN_RELEASES {
+            let files = worker_files(release).unwrap();
+            let get = |p: &str| files.iter().find(|(path, _)| *path == p).map(|(_, t)| t.to_string());
+            assert_eq!(get("lean-toolchain").unwrap(), format!("leanprover/lean4:v{}\n", release.version));
+            let compat = get(COMPAT_MODULE).unwrap();
+            assert!(compat.contains(&format!("Lean {} has them", release.version)), "{}", release.version);
+            let paths: BTreeSet<&str> = files.iter().map(|(p, _)| *p).collect();
+            assert_eq!(paths.len(), files.len(), "{}: a file is written twice", release.version);
+        }
     }
 }

@@ -10,11 +10,14 @@ fn conformance_project() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../conformance")
 }
 
+/// The Lake of the Lean release the conformance project pins, as elan installs it.
 fn lake() -> PathBuf {
     let home = std::env::var_os("ELAN_HOME").map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap()).join(".elan")
     });
-    home.join("toolchains/leanprover--lean4---v4.34.1/bin").join(format!("lake{}", std::env::consts::EXE_SUFFIX))
+    let pin = std::fs::read_to_string(conformance_project().join("lean-toolchain")).unwrap();
+    let toolchain = pin.trim().replace('/', "--").replace(':', "---");
+    home.join("toolchains").join(toolchain).join("bin").join(format!("lake{}", std::env::consts::EXE_SUFFIX))
 }
 
 fn programs() -> Vec<String> {

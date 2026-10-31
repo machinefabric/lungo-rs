@@ -18,6 +18,7 @@ use crate::core::names::mangle;
 use crate::core::writer::Writer;
 use crate::{CodegenError, SourceIndex};
 use lungo_bir::{Alt, Arg, Block, Body, CtorInfo, Declaration, Expr, IrType, Literal, Param, Stmt, Terminator};
+use lungo_runtime::releases::ToolchainConstant;
 use std::collections::HashMap;
 
 pub const RT: &str = "rt";
@@ -117,17 +118,24 @@ impl<'a> Emitter<'a> {
         let params = rust_params(&decl.params);
         let sig: Vec<String> = params.iter().map(|p| format!("x_{}: {}", p.var, rust_type(p.ty))).collect();
         let args: Vec<String> = call.args.iter().map(|v| format!("x_{v}")).collect();
-        let callee = match &call.implementation {
-            Implementation::Lean(implementation) => mangle(implementation),
-            Implementation::Intrinsic(intrinsic) => format!("{RT}::intrinsics::{}", intrinsic.symbol),
-            Implementation::Application => format!("a_{m}"),
+        let value = match &call.implementation {
+            Implementation::Lean(implementation) => format!("{}({})", mangle(implementation), args.join(", ")),
+            Implementation::Intrinsic(intrinsic) => {
+                format!("{RT}::intrinsics::{}({})", intrinsic.function, args.join(", "))
+            }
+            Implementation::Toolchain(constant) => match constant {
+                ToolchainConstant::Nat(n) => format!("{RT}::lean_box({n})"),
+                ToolchainConstant::Bool(b) => format!("{}u8", u8::from(*b)),
+                ToolchainConstant::String(s) => format!("{RT}::lean_mk_string({})", string(s)),
+            },
+            Implementation::Application => format!("a_{m}({})", args.join(", ")),
         };
         w.line("#[inline(always)]");
         w.open(format!("pub(crate) unsafe extern \"C\" fn {m}({}) -> {} {{", sig.join(", "), rust_type(decl.result)));
         for v in &call.retain {
             w.line(format!("{RT}::lean_inc(x_{v});"));
         }
-        w.line(format!("let r: {} = {callee}({});", rust_type(decl.result), args.join(", ")));
+        w.line(format!("let r: {} = {value};", rust_type(decl.result)));
         for v in &call.release {
             w.line(format!("{RT}::lean_dec(x_{v});"));
         }

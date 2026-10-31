@@ -1,20 +1,14 @@
-//! Platform and version queries, ported from Lean's `runtime/platform.cpp` and `lean.h`.
+//! Platform queries, ported from Lean's `runtime/platform.cpp` and `lean.h`.
 //!
-//! Version values are those of the Lean release whose compiler output the bridge translates
-//! (Lean 4.34.1, commit 5045d0056413266e57c625dcd7c365b10e377c52, a release build without the
-//! LLVM backend). Platform values describe the Rust target the program is compiled for.
+//! Platform values describe the Rust target the program is compiled for; the compiler they
+//! describe is a release build without the LLVM backend. The Lean version and commit are those
+//! of the release each program was compiled from, and are compiled into the program
+//! ([`crate::releases::toolchain_constant`]).
 
 use crate::object::*;
 use crate::registry::Unsupported;
 
 pub(crate) const UNSUPPORTED: &[Unsupported] = &[];
-
-pub const LEAN_VERSION_MAJOR: usize = 4;
-pub const LEAN_VERSION_MINOR: usize = 34;
-pub const LEAN_VERSION_PATCH: usize = 1;
-pub const LEAN_VERSION_IS_RELEASE: bool = true;
-pub const LEAN_SPECIAL_VERSION_DESC: &str = "";
-pub const LEAN_GITHASH: &str = "5045d0056413266e57c625dcd7c365b10e377c52";
 
 /// The target triple in the spelling Lean's `LEAN_PLATFORM_TARGET` uses (the Clang target
 /// triple): Apple's 64-bit ARM architecture is `arm64` and macOS is `darwin`. The OS version
@@ -74,30 +68,6 @@ pub mod externs {
             lean_mk_string(&platform_target())
         }
 
-        fn lean_version_get_major(_unit: obj) -> obj {
-            lean_box(LEAN_VERSION_MAJOR)
-        }
-
-        fn lean_version_get_minor(_unit: obj) -> obj {
-            lean_box(LEAN_VERSION_MINOR)
-        }
-
-        fn lean_version_get_patch(_unit: obj) -> obj {
-            lean_box(LEAN_VERSION_PATCH)
-        }
-
-        fn lean_version_get_is_release(_unit: obj) -> u8 {
-            LEAN_VERSION_IS_RELEASE as u8
-        }
-
-        fn lean_version_get_special_desc(_unit: obj) -> obj {
-            lean_mk_string(LEAN_SPECIAL_VERSION_DESC)
-        }
-
-        fn lean_get_githash(_unit: obj) -> obj {
-            lean_mk_string(LEAN_GITHASH)
-        }
-
         fn lean_internal_is_stage0(_unit: obj) -> u8 {
             0
         }
@@ -113,17 +83,11 @@ mod tests {
     use super::externs::*;
     use crate::object::*;
 
-    /// TEST0194: values match the lean release
+    /// TEST0194: values describe the target and a release build without the LLVM backend
     #[test]
-    fn test0194_values_match_the_lean_release() {
+    fn test0194_values_describe_the_target_and_a_release_build() {
         unsafe {
             assert_eq!(lean_unbox(lean_system_platform_nbits(lean_box(0))), usize::BITS as usize);
-            assert_eq!(lean_unbox(lean_version_get_major(lean_box(0))), 4);
-            assert_eq!(lean_unbox(lean_version_get_minor(lean_box(0))), 34);
-            assert_eq!(lean_unbox(lean_version_get_patch(lean_box(0))), 1);
-            let h = lean_get_githash(lean_box(0));
-            assert_eq!(lean_string_str(h), "5045d0056413266e57c625dcd7c365b10e377c52");
-            lean_dec(h);
             assert_eq!(lean_internal_has_llvm_backend(lean_box(0)), 0);
             assert_eq!(lean_internal_is_stage0(lean_box(0)), 0);
             let exactly_one = lean_system_platform_linux(lean_box(0))
@@ -137,7 +101,7 @@ mod tests {
     #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
     #[test]
     fn test0195_apple_silicon_target_uses_clang_spelling() {
-        // Lean 4.34.1 on this platform reports "arm64-apple-darwin24.6.0".
+        // Lean 4.35.0 on this platform reports "arm64-apple-darwin24.6.0".
         assert_eq!(super::platform_target(), "arm64-apple-darwin");
     }
 }

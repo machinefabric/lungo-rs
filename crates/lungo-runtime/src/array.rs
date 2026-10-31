@@ -30,7 +30,8 @@ unsafe fn nat_to_size(n: Obj) -> usize {
 // Arrays of objects
 // ---------------------------------------------------------------------------------------------
 
-/// `lean_copy_expand_array`: copies `a` (consumed), doubling its capacity when `expand`.
+/// `lean_copy_expand_array`: copies `a` (consumed), doubling its capacity when `expand`. The
+/// copy keeps `a`'s linearity mark.
 pub unsafe fn lean_copy_expand_array(a: Obj, expand: bool) -> Obj {
     unsafe {
         let sz = lean_array_size(a);
@@ -39,6 +40,9 @@ pub unsafe fn lean_copy_expand_array(a: Obj, expand: bool) -> Obj {
             cap = cap.checked_add(1).and_then(|c| c.checked_mul(2)).unwrap_or_else(|| lean_internal_panic_overflow());
         }
         let r = lean_alloc_array(sz, cap);
+        if lean_is_marked_linear_core(a) {
+            lean_mark_linear_core(r);
+        }
         let src = lean_array_cptr(a);
         let dst = lean_array_cptr(r);
         if lean_is_exclusive(a) {
@@ -57,9 +61,20 @@ pub unsafe fn lean_copy_expand_array(a: Obj, expand: bool) -> Obj {
     }
 }
 
+/// `lean_copy_expand_array_nonlinear`: the copy made because `a` is shared, which a linearity
+/// mark says must not happen (see `should_abort_on_nonlinearity`).
+pub unsafe fn lean_copy_expand_array_nonlinear(a: Obj, expand: bool) -> Obj {
+    unsafe {
+        if lean_is_marked_linear_core(a) && should_abort_on_nonlinearity() {
+            lean_internal_panic("array marked by `Array.markLinear` was used non-linearly");
+        }
+        lean_copy_expand_array(a, expand)
+    }
+}
+
 #[inline]
 unsafe fn ensure_exclusive_array(a: Obj) -> Obj {
-    unsafe { if lean_is_exclusive(a) { a } else { lean_copy_expand_array(a, false) } }
+    unsafe { if lean_is_exclusive(a) { a } else { lean_copy_expand_array_nonlinear(a, false) } }
 }
 
 #[inline]
@@ -123,21 +138,35 @@ pub unsafe fn array_elements<'a>(a: Obj) -> &'a [Obj] {
 // Scalar arrays
 // ---------------------------------------------------------------------------------------------
 
-/// `lean_copy_sarray`: copies `a` (consumed) into a scalar array of capacity `cap`.
+/// `lean_copy_sarray`: copies `a` (consumed) into a scalar array of capacity `cap`, keeping its
+/// linearity mark.
 unsafe fn copy_sarray(a: Obj, cap: usize) -> Obj {
     unsafe {
         let esz = lean_sarray_elem_size(a);
         let sz = lean_sarray_size(a);
         debug_assert!(cap >= sz);
         let r = lean_alloc_sarray(esz, sz, cap);
+        if lean_is_marked_linear_core(a) {
+            lean_mark_linear_core(r);
+        }
         std::ptr::copy_nonoverlapping(lean_sarray_cptr(a), lean_sarray_cptr(r), esz as usize * sz);
         lean_dec(a);
         r
     }
 }
 
+/// `lean_copy_sarray_nonlinear`: the copy made because `a` is shared.
+unsafe fn copy_sarray_nonlinear(a: Obj, cap: usize) -> Obj {
+    unsafe {
+        if lean_is_marked_linear_core(a) && should_abort_on_nonlinearity() {
+            lean_internal_panic("scalar array marked by `markLinear` was used non-linearly");
+        }
+        copy_sarray(a, cap)
+    }
+}
+
 unsafe fn sarray_ensure_exclusive(a: Obj) -> Obj {
-    unsafe { if lean_is_exclusive(a) { a } else { copy_sarray(a, lean_sarray_capacity(a)) } }
+    unsafe { if lean_is_exclusive(a) { a } else { copy_sarray_nonlinear(a, lean_sarray_capacity(a)) } }
 }
 
 /// `lean_sarray_ensure_capacity`: copies `a` unless it can hold `min_cap` elements; the copy has
@@ -149,7 +178,7 @@ unsafe fn sarray_ensure_capacity(a: Obj, min_cap: usize, exact: bool) -> Obj {
         } else {
             let cap =
                 if exact { min_cap } else { min_cap.checked_mul(2).unwrap_or_else(|| lean_internal_panic_overflow()) };
-            copy_sarray(a, cap)
+            if lean_is_exclusive(a) { copy_sarray(a, cap) } else { copy_sarray_nonlinear(a, cap) }
         }
     }
 }
@@ -296,6 +325,30 @@ pub mod externs {
             array_uswap(a, ui, uj)
         }
 
+        /// `Array.markLinear`: `a`, made exclusive, with its linearity mark set.
+        fn lean_array_mark_linear(a: obj) -> obj since(4, 35, 0) {
+            let r = ensure_exclusive_array(a);
+            lean_mark_linear_core(r);
+            r
+        }
+
+        /// `Array.propagateMark`: `dst`, marked linear when `src` is.
+        fn lean_array_propagate_mark(src: b_obj, dst: obj) -> obj since(4, 35, 0) {
+            if lean_is_marked_linear_core(src) { lean_array_mark_linear(dst) } else { dst }
+        }
+
+        /// `ByteArray.markLinear` and `FloatArray.markLinear`.
+        fn lean_sarray_mark_linear(a: obj) -> obj since(4, 35, 0) {
+            let r = sarray_ensure_exclusive(a);
+            lean_mark_linear_core(r);
+            r
+        }
+
+        /// `ByteArray.propagateMark` and `FloatArray.propagateMark`.
+        fn lean_sarray_propagate_mark(src: b_obj, dst: obj) -> obj since(4, 35, 0) {
+            if lean_is_marked_linear_core(src) { lean_sarray_mark_linear(dst) } else { dst }
+        }
+
         fn lean_array_push(a: obj, v: obj) -> obj {
             let r = if lean_is_exclusive(a) {
                 if lean_array_capacity(a) > crate::object::lean_array_size(a) {
@@ -305,7 +358,7 @@ pub mod externs {
                 }
             } else {
                 let expand = lean_array_capacity(a) < 2 * crate::object::lean_array_size(a) + 1;
-                lean_copy_expand_array(a, expand)
+                lean_copy_expand_array_nonlinear(a, expand)
             };
             let sz = crate::object::lean_array_size(r);
             *lean_array_cptr(r).add(sz) = v;

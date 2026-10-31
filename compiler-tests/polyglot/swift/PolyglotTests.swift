@@ -208,7 +208,9 @@ final class PolyglotTests: XCTestCase {
         let a = assurance
         XCTAssertEqual(a.program, "polyglot")
         XCTAssertEqual(a.schemaVersion, 1)
-        XCTAssertEqual(a.provenance.leanVersion, "4.34.1")
+        // The Lean release the program was compiled from, which the test runner names.
+        let lean = try XCTUnwrap(ProcessInfo.processInfo.environment["POLYGLOT_LEAN_VERSION"])
+        XCTAssertEqual(a.provenance.leanVersion, lean)
         XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.status, "proved")
         XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.relation, "lungo.law")
         XCTAssertEqual(a.claim("Polyglot.factorial_pos")?.assumptions, [])

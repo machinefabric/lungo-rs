@@ -679,7 +679,8 @@ fn group(_gid: u64) -> Res<Option<(String, u64, Vec<String>)>> {
     Err(UV_ENOTSUP)
 }
 
-pub(crate) unsafe fn os_get_group(gid: u64) -> Obj {
+/// The group `gid`; a failure's error names the file `error_file`, if given.
+pub(crate) unsafe fn os_get_group(gid: u64, error_file: Option<&str>) -> Obj {
     unsafe {
         match group(gid) {
             Ok(None) => lean_io_result_mk_ok(none()),
@@ -694,12 +695,15 @@ pub(crate) unsafe fn os_get_group(gid: u64) -> Obj {
                 lean_ctor_set_uint64(info, 2 * size_of::<Obj>(), gid);
                 lean_io_result_mk_ok(some(info))
             }
-            Err(code) => {
-                let fname = lean_mk_string("group");
-                let e = uv_error(code, Some(fname));
-                lean_dec(fname);
-                lean_io_result_mk_error(e)
-            }
+            Err(code) => match error_file {
+                Some(file) => {
+                    let fname = lean_mk_string(file);
+                    let e = uv_error(code, Some(fname));
+                    lean_dec(fname);
+                    lean_io_result_mk_error(e)
+                }
+                None => lean_io_result_mk_error(uv_error(code, None)),
+            },
         }
     }
 }

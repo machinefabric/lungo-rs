@@ -6,10 +6,12 @@ Inventories the native interface of the Lean toolchain's `Init` and `Std` librar
 C-level signatures Lean's code generator uses: erased and `void` parameters are dropped, object
 parameters are marked borrowed (`b_obj`) or owned (`obj`).
 
-Run with the toolchain the bridge supports:
+Run with each Lean release lungo supports, `<root>` being that release's installation and
+`<version>` its number (`LEAN_SYSROOT` makes the script read that release's libraries rather than
+those of whichever `lean` is first on the `PATH`):
 
-    lean --run runtime-tests/ExternInventory.lean externs > crates/lungo-runtime/tests/data/toolchain-externs.txt
-    lean --run runtime-tests/ExternInventory.lean exports > crates/lungo-runtime/tests/data/toolchain-exports.txt
+    LEAN_SYSROOT=<root> <root>/bin/lean --run runtime-tests/ExternInventory.lean externs > crates/lungo-runtime/tests/data/<version>/toolchain-externs.txt
+    LEAN_SYSROOT=<root> <root>/bin/lean --run runtime-tests/ExternInventory.lean exports > crates/lungo-runtime/tests/data/<version>/toolchain-exports.txt
 
 `externs` lists every `@[extern]` compiler declaration, one per line:
 `symbol<TAB>declaration<TAB>param,param,...<TAB>result<TAB>implementation`, where the

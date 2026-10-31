@@ -36,8 +36,11 @@ error[LNG0101]: invalid Lean project: /work/app/lean/lake-manifest.json is missi
 ### LNG0102
 
 **Toolchain Lean non supportata.** `lean-toolchain` indica una toolchain che lungo non
-supporta, compresi nomi mobili come `stable`. Il messaggio elenca le toolchain supportate;
-vedi [piattaforme](https://machinefabric.com/lungo/docs/reference/platforms).
+supporta: un'altra release di Lean, una release candidate o un nome mobile come `stable`. Il
+messaggio elenca le toolchain supportate, e lo dice quando la release è più recente di questo
+lungo; vedi [piattaforme](https://machinefabric.com/lungo/docs/reference/platforms). Fallisce con
+questo errore anche la generazione del codice di un programma compilato da un Lean non
+supportato, o da un Lean compilato da un commit diverso da quello della sua release.
 
 ### LNG0103
 

@@ -54,16 +54,16 @@ pub fn c_type(ty: Ty) -> &'static str {
     }
 }
 
-/// The C symbol of the runtime primitive implementing the Lean extern `symbol`.
-pub fn primitive_symbol(symbol: &str) -> String {
-    format!("lungo_{symbol}")
+/// The C symbol of the runtime primitive whose function is `function` ([`registry::Intrinsic::function`]).
+pub fn primitive_symbol(function: &str) -> String {
+    format!("lungo_{function}")
 }
 
-/// One declaration per runtime primitive, sorted by symbol: the generated section of
+/// One declaration per runtime primitive, sorted by function: the generated section of
 /// `lungo.h`. Borrowed object parameters (`@&` in Lean) are marked.
 pub fn primitive_declarations() -> String {
     let mut prims: Vec<_> = registry::intrinsics().collect();
-    prims.sort_by_key(|p| p.symbol);
+    prims.sort_by_key(|p| p.function);
     let mut out = String::new();
     for p in prims {
         let params: Vec<String> = p
@@ -76,7 +76,7 @@ pub fn primitive_declarations() -> String {
             })
             .collect();
         let params = if params.is_empty() { "void".to_owned() } else { params.join(", ") };
-        out.push_str(&format!("{} {}({params});\n", c_type(p.result), primitive_symbol(p.symbol)));
+        out.push_str(&format!("{} {}({params});\n", c_type(p.result), primitive_symbol(p.function)));
     }
     out
 }

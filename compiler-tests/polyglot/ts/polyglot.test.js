@@ -150,7 +150,10 @@ test("TEST0297 a missing facility is named", async () => {
 // the facilities each export needs
 test("TEST0298 assurance is the program's assurance", () => {
   const a = ASSURANCE;
-  assert.deepEqual([a.program, a.schema_version, a.provenance.lean_version], ["polyglot", 1, "4.34.1"]);
+  // The Lean release the program was compiled from, which the test runner names.
+  const lean = process.env.POLYGLOT_LEAN_VERSION;
+  assert.ok(lean, "POLYGLOT_LEAN_VERSION is not set");
+  assert.deepEqual([a.program, a.schema_version, a.provenance.lean_version], ["polyglot", 1, lean]);
   const claim = (name) => a.claims.find((c) => c.name === name);
   const exp = (name) => a.exports.find((e) => e.name === name);
   const c = claim("Polyglot.factorial_pos");

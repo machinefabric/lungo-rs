@@ -3,6 +3,7 @@ import Lake.Load.Manifest
 import Lake.Load.Workspace
 import Lake.Config.InstallPath
 import LungoWorker.Cbor
+import LungoWorker.Compat
 import LungoWorker.Diagnostics
 
 /-!
@@ -62,9 +63,12 @@ def load (root : FilePath) (sysroot : FilePath) : WorkerM Workspace := do
     configFile := some lakefile
   }]
   for entry in manifest.packages do
-    let (dir, origin) ← match entry.src with
-      | .path dir => pure (root / dir, PackageOrigin.path dir.toString)
-      | .git url rev _ subDir? =>
+    let (dir, origin) ← match Compat.source entry.src with
+      -- A copied path dependency (`copy = true`) is loaded from Lake's copy in the packages
+      -- directory, as a Git dependency is, not from the directory it was copied from.
+      | .path dir copy =>
+        pure (if copy then packagesDir / entry.dirName else root / dir, PackageOrigin.path dir.toString)
+      | .git url rev subDir? =>
         let base := packagesDir / entry.dirName
         pure (match subDir? with | some sub => base / sub | none => base, PackageOrigin.git url rev)
     unless ← dir.pathExists do

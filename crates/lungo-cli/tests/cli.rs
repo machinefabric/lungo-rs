@@ -21,11 +21,18 @@ fn ok(args: &[&str]) -> String {
     stdout
 }
 
+/// The Lean release the example pins.
+fn pinned_release() -> &'static lungo_driver::releases::LeanRelease {
+    let pin = lungo_driver::read_pin(&package().join("lean")).unwrap();
+    lungo_driver::supported_release(&pin).unwrap()
+}
+
 /// TEST0091: prepare reports toolchain and worker
 #[test]
 fn test0091_prepare_reports_toolchain_and_worker() {
     let out = ok(&["prepare"]);
-    assert!(out.contains("Lean 4.34.1 (5045d0056413266e57c625dcd7c365b10e377c52)"), "{out}");
+    let release = pinned_release();
+    assert!(out.contains(&format!("Lean {} ({})", release.version, release.githash)), "{out}");
     assert!(out.contains("worker "), "{out}");
 }
 
@@ -33,7 +40,7 @@ fn test0091_prepare_reports_toolchain_and_worker() {
 #[test]
 fn test0092_check_summarizes_the_program() {
     let out = ok(&["check"]);
-    assert!(out.contains("Lean 4.34.1"), "{out}");
+    assert!(out.contains(&format!("Lean {}", pinned_release().version)), "{out}");
     assert!(out.contains("modules,") && out.contains("compiled declarations"), "{out}");
     assert!(out.contains("generation succeeded"), "{out}");
 }
