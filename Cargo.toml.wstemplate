@@ -73,11 +73,4 @@ windows-sys = "0.59"
 # by a release key two of the build's roots certify (`lungo self update`). The chain is
 # signed-release's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
 [workspace.dependencies.signed-release]
-{%- if env.MFR_LOCAL_LIBS %}
-# MFR_LOCAL_LIBS was set when this was rendered: the working copy in this workspace rather than a
-# published release. Re-render without it before committing or releasing — a path resolves on
-# this machine only.
-path = "{{ projects.signed_release.path_from_here }}"
-{%- else %}
-version = "={{ projects.signed_release.latest_remote_version }}"
-{%- endif %}
+version = "0.1"
