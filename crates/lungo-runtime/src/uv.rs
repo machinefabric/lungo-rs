@@ -510,12 +510,16 @@ mod tests {
     /// once it completed; since 4.35.0, as already requested in both cases
     #[test]
     fn test0384_a_second_shutdown_is_refused_as_the_release_refuses_it() {
-        // Observed with `lean --run` on Lean 4.34.1 and 4.35.0, over loopback.
+        // Observed with `lean --run` on Lean 4.34.1 and 4.35.0, over loopback. The first
+        // shutdown is kept in progress by holding the event loop's lock across both requests:
+        // the loop completes a shutdown only while it holds that lock.
         setup();
         unsafe {
             let (client, peer) = connected_pair();
+            let held = reactor::reactor().lock();
             let first = ok(lean_uv_tcp_shutdown_v4_34_1(client));
             assert_eq!(io_err(lean_uv_tcp_shutdown_v4_34_1(client)), (OTHER_ERROR, errno(errno::UV_EALREADY)));
+            drop(held);
             lean_dec(expect_ok(await_promise(first)));
             assert_eq!(io_err(lean_uv_tcp_shutdown_v4_34_1(client)), (INVALID_ARGUMENT, errno(errno::UV_ENOTCONN)));
             lean_dec(client);
@@ -523,8 +527,10 @@ mod tests {
 
             let already = (OTHER_ERROR, errno(errno::UV_EALREADY), "shutdown already requested".to_owned());
             let (client, peer) = connected_pair();
+            let held = reactor::reactor().lock();
             let first = ok(lean_uv_tcp_shutdown(client));
             assert_eq!(io_err_details(lean_uv_tcp_shutdown(client)), already);
+            drop(held);
             lean_dec(expect_ok(await_promise(first)));
             assert_eq!(io_err_details(lean_uv_tcp_shutdown(client)), already);
             lean_dec(client);
