@@ -73,4 +73,4 @@ windows-sys = "0.59"
 # by a release key two of the build's roots certify (`lungo self update`). The chain is
 # mg-srel's; the formats and charter rules are MachineFabric's, in lungo-cli's release.rs.
 [workspace.dependencies.mg-srel]
-version = "0.1"
+version = "0.5"
