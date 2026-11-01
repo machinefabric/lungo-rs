@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Read;
 
-pub use mg_srel::{ChainError, CharterError};
+pub use mg_srel::CharterError;
 
 /// The command's name in the release registry.
 pub const APP_ID: &str = "lungo-cli";
@@ -572,6 +572,7 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::*;
     use super::*;
+    use mg_srel::ChainError;
 
     const SHA: &str = "b74a72297e9404fc35470af7fc77f157e2899577d2907bcdffe90397f89c14a5";
     const URL: &str = "https://r.example/lungo-cli/release/1.200.0/lungo-1.200.0-linux-x86_64.tar.gz";
