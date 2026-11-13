@@ -68,7 +68,9 @@ pub fn read_pin(project: &Path) -> Result<String> {
     Ok(pin)
 }
 
-fn elan_home() -> Result<PathBuf> {
+/// The per-user elan home every Lean toolchain of the user is installed into: `ELAN_HOME`, else
+/// `.elan` in the home directory.
+pub fn elan_home() -> Result<PathBuf> {
     if let Some(h) = std::env::var_os("ELAN_HOME") {
         return Ok(PathBuf::from(h));
     }
@@ -80,35 +82,30 @@ fn elan_home() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".elan"))
 }
 
-/// The directory elan installs `pin` into.
-fn elan_toolchain_dir(pin: &str) -> Result<PathBuf> {
-    let dir = pin.replace('/', "--").replace(':', "---");
-    Ok(elan_home()?.join("toolchains").join(dir))
+/// The `elan` of the elan home `home`.
+pub fn elan_binary(home: &Path) -> PathBuf {
+    home.join("bin").join(exe("elan"))
+}
+
+/// The directory the elan of the elan home `home` installs `pin` into.
+fn elan_toolchain_dir(home: &Path, pin: &str) -> PathBuf {
+    home.join("toolchains").join(pin.replace('/', "--").replace(':', "---"))
 }
 
 /// Resolves the installation of `pin`, a supported release, either from an explicit directory or
 /// from elan. The installation must be that release: its version and the commit it was built from.
 pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) -> Result<Toolchain> {
     let release = supported_release(pin)?;
-    let root = match explicit_dir {
-        Some(d) => d.to_path_buf(),
-        None => elan_toolchain_dir(pin)?,
+    let (root, elan) = match explicit_dir {
+        Some(d) => (d.to_path_buf(), None),
+        None => {
+            let home = elan_home()?;
+            (elan_toolchain_dir(&home, pin), Some(home))
+        }
     };
     if !root.join("bin").join(exe("lean")).is_file() {
-        match (explicit_dir, policy) {
-            (None, ToolchainPolicy::Install) => {
-                let status = Command::new(exe("elan"))
-                    .args(["toolchain", "install", pin])
-                    .status()
-                    .map_err(|e| Error::io("cannot run elan", e))?;
-                if !status.success() {
-                    return Err(Error::Command {
-                        program: format!("elan toolchain install {pin}"),
-                        status: status.to_string(),
-                        output: String::new(),
-                    });
-                }
-            }
+        match (&elan, policy) {
+            (Some(home), ToolchainPolicy::Install) => install_toolchain(home, pin)?,
             _ => {
                 return Err(Error::ToolchainNotInstalled { toolchain: pin.to_owned(), expected_at: root });
             }
@@ -170,6 +167,31 @@ pub fn resolve(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) 
     Ok(Toolchain { pin: pin.to_owned(), release, root, lean, lake, version, githash, sysroot_identity: h.finish() })
 }
 
+/// Installs `pin` with the elan of the elan home `home`, never an `elan` found on `PATH`.
+fn install_toolchain(home: &Path, pin: &str) -> Result<()> {
+    let elan = elan_binary(home);
+    if !elan.is_file() {
+        return Err(Error::ElanUnavailable(format!(
+            "elan is not installed in the elan home {} (there is no {}); `lungo setup` installs it",
+            home.display(),
+            elan.display()
+        )));
+    }
+    let status = Command::new(&elan)
+        .args(["toolchain", "install", pin])
+        .env("ELAN_HOME", home)
+        .status()
+        .map_err(|e| Error::io(format!("cannot run {}", elan.display()), e))?;
+    if !status.success() {
+        return Err(Error::Command {
+            program: format!("{} toolchain install {pin}", elan.display()),
+            status: status.to_string(),
+            output: String::new(),
+        });
+    }
+    Ok(())
+}
+
 impl Toolchain {
     /// Resolves the installation of the toolchain `pin` (see [`read_pin`]).
     pub fn resolve_pin(pin: &str, explicit_dir: Option<&Path>, policy: ToolchainPolicy) -> Result<Toolchain> {
@@ -199,6 +221,57 @@ mod tests {
         assert_eq!(v, "4.34.1");
         assert_eq!(c, "5045d0056413266e57c625dcd7c365b10e377c52");
         assert!(parse_version("lean 4").is_none());
+    }
+
+    /// An empty directory for one test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lungo-toolchain-{name}-{}", std::process::id()));
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// TEST0397: a missing toolchain is installed by the elan of the elan home lungo resolved,
+    /// told that home, never by an `elan` on PATH
+    #[cfg(unix)]
+    #[test]
+    fn test0397_the_toolchain_is_installed_by_the_elan_of_the_resolved_home() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = scratch("install");
+        let pin = "leanprover/lean4:v4.35.0";
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        let elan = elan_binary(&home);
+        std::fs::write(
+            &elan,
+            "#!/bin/sh\nprintf '%s|%s' \"$ELAN_HOME\" \"$*\" > \"$ELAN_HOME/called\"\n\
+             mkdir -p \"$ELAN_HOME/toolchains/leanprover--lean4---v4.35.0/bin\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&elan, std::fs::Permissions::from_mode(0o755)).unwrap();
+        install_toolchain(&home, pin).unwrap();
+        let called = std::fs::read_to_string(home.join("called")).unwrap();
+        assert_eq!(called, format!("{}|toolchain install {pin}", home.display()));
+        assert!(elan_toolchain_dir(&home, pin).join("bin").is_dir());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// TEST0398: an elan home without elan is refused, naming the home and the elan it lacks
+    #[test]
+    fn test0398_an_elan_home_without_elan_is_refused_naming_it() {
+        let home = scratch("missing");
+        let err = install_toolchain(&home, "leanprover/lean4:v4.35.0").unwrap_err();
+        assert_eq!(err.code(), crate::ErrorCode::ElanUnavailable);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "error[LNG0113]: elan is not installed in the elan home {} (there is no {}); `lungo setup` installs it",
+                home.display(),
+                elan_binary(&home).display()
+            )
+        );
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     /// TEST0141: every supported release is accepted; floating, prerelease and unknown pins are

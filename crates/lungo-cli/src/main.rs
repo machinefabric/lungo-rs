@@ -12,6 +12,7 @@
 
 mod assurance;
 mod config;
+mod elan;
 mod generate;
 mod plugin;
 mod release;
@@ -86,7 +87,8 @@ enum Command {
     Mappings,
     /// Build (or verify) the Lean worker for the project's toolchain.
     Prepare,
-    /// Explicitly install the pinned toolchain and materialize locked Lake dependencies.
+    /// Install elan into the elan home when it has none, install the pinned toolchain with it,
+    /// and materialize locked Lake dependencies.
     Setup,
     /// The prebuilt lungo runtime of this release.
     Runtime {
@@ -614,6 +616,13 @@ fn setup(project: &Path, lean: LeanOptions, base: &Path, env: &Environment) -> R
     let lean = lean.toolchain_policy(lungo_build::ToolchainPolicy::Install);
     let project = if project.is_absolute() { project.to_path_buf() } else { base.join(project) };
     let pin = lungo_build::read_pin(&project)?;
+    if lean.toolchain_dir.is_none() {
+        let home = lungo_build::elan_home()?;
+        if elan::ensure(&home)? {
+            println!("installed elan {} into {}", elan::ELAN_VERSION, home.display());
+        }
+        println!("elan, lake and lean are in {}: put it on PATH to run them yourself", home.join("bin").display());
+    }
     let toolchain = lungo_build::Toolchain::resolve_pin(
         &pin,
         lean.toolchain_dir.as_deref(),

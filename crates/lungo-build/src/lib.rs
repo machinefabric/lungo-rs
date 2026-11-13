@@ -39,7 +39,8 @@ pub use lungo_codegen::rust::Attribute;
 pub use lungo_driver::{
     ADAPTER_VERSION, Analysis, AssuranceIssue, AssurancePolicy, BuildKey, CodegenError, Context, Environment, Error,
     ErrorCode, LeanOptions, Limits, RUNTIME_ABI_VERSION, Result, Toolchain, ToolchainPolicy, WorkerCache, bir,
-    cache_root, canonical_path, codegen, host_triple, protocol, read_pin, relative_path, releases, supported_release,
+    cache_root, canonical_path, codegen, elan_binary, elan_home, host_triple, protocol, read_pin, relative_path,
+    releases, supported_release,
 };
 
 use lungo_driver::{claim_output, on_large_stack, output};

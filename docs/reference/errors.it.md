@@ -45,8 +45,8 @@ supportato, o da un Lean compilato da un commit diverso da quello della sua rele
 ### LNG0103
 
 **Toolchain Lean non installata.** La toolchain fissata non è installata e la configurazione
-non ne consente l'installazione. Installala con `elan toolchain install <toolchain>` oppure
-con `lungo setup`.
+non ne consente l'installazione. Esegui `lungo setup` nel progetto Lake: installa la toolchain,
+e prima ancora elan quando la macchina non ce l'ha.
 
 ### LNG0104
 
@@ -129,6 +129,17 @@ o il digest SHA-256 differiscono), oppure il comando che contiene non dichiara l
 è stato pubblicato. Non viene installato nulla e il download viene scartato. Un errore persistente
 significa che il registro, o la connessione verso di esso, sta servendo qualcosa che non è stato
 pubblicato.
+
+### LNG0113
+
+**elan non disponibile.** La home di elan (`ELAN_HOME`, altrimenti `~/.elan`) non contiene elan, e
+non è stato installato o non è stato possibile installarlo. Una build a cui è chiesto di installare
+una toolchain si rifiuta, indicando la home di elan e l'elan che le manca: esegui `lungo setup`, che
+vi installa elan. Quando `lungo setup` non riesce a installarlo, il messaggio dice quale release di
+elan ha provato a installare, da dove, in quale home e perché: il download è fallito, il download
+non è l'archivio che questo lungo fissa (il suo SHA-256 differisce; il download viene scartato),
+l'installer di elan è fallito (se ne mostra l'output), oppure elan non pubblica alcuna release per
+questa piattaforma.
 
 ## Lean
 

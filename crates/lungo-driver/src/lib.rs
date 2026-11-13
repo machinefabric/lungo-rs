@@ -18,7 +18,7 @@ mod worker;
 pub use assurance::{AssuranceIssue, AssurancePolicy};
 pub use error::{Error, Result};
 pub use lungo_codegen::{CodegenError, ErrorCode};
-pub use toolchain::{Toolchain, ToolchainPolicy, read_pin, supported_release};
+pub use toolchain::{Toolchain, ToolchainPolicy, elan_binary, elan_home, read_pin, supported_release};
 pub use worker::{ADAPTER_VERSION, Limits, Worker, WorkerCache};
 
 // The crates whose types appear in this crate's API, for tools built on the pipeline: through

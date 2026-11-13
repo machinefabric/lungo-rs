@@ -242,10 +242,14 @@ fn install_verified(bytes: &[u8], source: &str, sha256: &str, dir: &Path) -> Res
 }
 
 fn download(url: &str) -> Result<Vec<u8>> {
-    let failed = |e: &dyn std::fmt::Display| Error::RuntimeUnavailable(format!("cannot download {url}: {e}"));
-    let mut response = ureq::get(url).call().map_err(|e| failed(&e))?;
+    http_get(url).map_err(|e| Error::RuntimeUnavailable(format!("cannot download {url}: {e}")))
+}
+
+/// The body served at `url`, or why it could not be downloaded.
+pub(crate) fn http_get(url: &str) -> std::result::Result<Vec<u8>, String> {
+    let mut response = ureq::get(url).call().map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
-    response.body_mut().as_reader().read_to_end(&mut bytes).map_err(|e| failed(&e))?;
+    response.body_mut().as_reader().read_to_end(&mut bytes).map_err(|e| e.to_string())?;
     Ok(bytes)
 }
 

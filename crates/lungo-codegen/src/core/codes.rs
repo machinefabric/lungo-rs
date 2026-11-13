@@ -69,6 +69,9 @@ codes! {
     /// trusts: the manifest's signature does not chain to the roots it was built with, or the
     /// archive is not the file the manifest describes.
     UpdateUntrusted = "LNG0112", "release not trusted";
+    /// The elan home has no elan, and installing it was not asked for or failed: the pinned
+    /// elan release could not be downloaded, was not the file lungo pins, or did not install.
+    ElanUnavailable = "LNG0113", "elan unavailable";
 
     // Lean (02xx).
     /// Lean rejected the program: elaboration, kernel checking, or Lean's compiler.

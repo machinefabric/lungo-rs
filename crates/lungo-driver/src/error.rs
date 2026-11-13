@@ -88,6 +88,8 @@ pub enum Error {
     UpdateUnavailable(String),
     /// A release the registry served is not one this `lungo` trusts.
     UpdateUntrusted(String),
+    /// The elan home has no elan, and it was not, or could not be, installed.
+    ElanUnavailable(String),
     /// A generator plugin failed.
     Plugin(String),
 }
@@ -122,6 +124,7 @@ impl Error {
             Error::OutputDrift(_) => ErrorCode::OutputDrift,
             Error::UpdateUnavailable(_) => ErrorCode::UpdateUnavailable,
             Error::UpdateUntrusted(_) => ErrorCode::UpdateUntrusted,
+            Error::ElanUnavailable(_) => ErrorCode::ElanUnavailable,
             Error::Plugin(_) => ErrorCode::PluginFailed,
         }
     }
@@ -193,7 +196,7 @@ impl fmt::Display for Error {
             }
             Error::ToolchainNotInstalled { toolchain, expected_at } => write!(
                 f,
-                "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `elan toolchain install {toolchain}` or `lungo setup`; builds never install toolchains implicitly.",
+                "Lean toolchain {toolchain} is not installed (expected at {}).\nInstall it explicitly with `lungo setup` in the Lake project, which installs elan too when the machine has none; builds never install toolchains implicitly.",
                 expected_at.display()
             ),
             Error::LeanElaboration { output } => {
@@ -244,6 +247,7 @@ impl fmt::Display for Error {
             | Error::OutputDrift(msg)
             | Error::UpdateUnavailable(msg)
             | Error::UpdateUntrusted(msg)
+            | Error::ElanUnavailable(msg)
             | Error::Plugin(msg) => f.write_str(msg),
         }
     }

@@ -45,8 +45,8 @@ release, fails with this error too.
 ### LNG0103
 
 **Lean toolchain not installed.** The pinned toolchain is not installed, and the
-configuration does not permit installing it. Install it with
-`elan toolchain install <toolchain>` or `lungo setup`.
+configuration does not permit installing it. Run `lungo setup` in the Lake project: it installs
+the toolchain, and elan first when the machine has none.
 
 ### LNG0104
 
@@ -123,6 +123,16 @@ signature does not chain to the keys this `lungo` was built with; or the archive
 differs), or the command in it does not report the version it was published as. Nothing is
 installed, and the download is discarded. A persistent failure means the registry, or the
 connection to it, is serving something that was not published.
+
+### LNG0113
+
+**elan unavailable.** The elan home (`ELAN_HOME`, else `~/.elan`) has no elan, and it was not, or
+could not be, installed. A build asked to install a toolchain refuses, naming the elan home and
+the elan it lacks: run `lungo setup`, which installs elan there. When `lungo setup` cannot install
+it, the message says which elan release it tried to install, from where, into which home, and
+why: the download failed, the download is not the archive this lungo pins (its SHA-256 differs;
+the download is discarded), elan's installer failed (its output is shown), or elan publishes no
+release for this platform.
 
 ## Lean
 

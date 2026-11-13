@@ -117,7 +117,7 @@ them against the code, and the documentation site publishes them at each release
 ## Testing
 
 ```sh
-elan toolchain install leanprover/lean4:v4.35.0   # the release the examples and fixtures pin
+cargo run -p lungo-cli -- --project examples/session/lean setup   # elan and the Lean release the examples and fixtures pin
 rustup target add wasm32-wasip1
 cargo test --workspace --all-features
 cargo check --manifest-path compiler-tests/stdlib-corpus/Cargo.toml

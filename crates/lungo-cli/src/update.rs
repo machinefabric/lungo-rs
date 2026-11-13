@@ -237,7 +237,7 @@ fn version(text: &str) -> std::result::Result<(u64, u64, u64), String> {
     }
 }
 
-fn unpack_zip(bytes: &[u8], into: &Path) -> std::io::Result<()> {
+pub(crate) fn unpack_zip(bytes: &[u8], into: &Path) -> std::io::Result<()> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(std::io::Error::other)?;
     // `extract` refuses entries that would be written outside the directory.
     archive.extract(into).map_err(std::io::Error::other)
