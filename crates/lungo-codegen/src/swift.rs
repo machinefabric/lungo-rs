@@ -3,7 +3,8 @@
 //! and the runtime XCFramework).
 //!
 //! Structures are structs (final classes when they contain themselves), inductive types of
-//! several constructors `indirect enum`s, `Nat` and `Int` `LungoNat` and `LungoInt`, `Char`
+//! several constructors enums (`indirect` when they can contain themselves), `Nat` and `Int`
+//! `LungoNat` and `LungoInt`, `Char`
 //! `Unicode.Scalar`, polymorphic types generic types. Every function throws: `LungoIOError`
 //! (`IO`), `LungoError<ε>` (`EIO ε`), `LungoMalformed` (arguments Lean cannot represent).
 //!
@@ -15,7 +16,7 @@
 
 use crate::CodegenError;
 use crate::c::boundary::{Boundary, Facility, Function, facility_name, operation_name};
-use crate::core::model::value_recursive;
+use crate::core::model::{sum_recursive, value_recursive};
 use crate::core::names::{components, lower_camel_case, upper_camel_case};
 use crate::core::naming::{Scope, distinct_locals, short_names};
 use crate::core::writer::Writer;
@@ -318,10 +319,12 @@ impl Generator for SwiftGenerator {
         files.insert(format!("{root}{program_target}/include/lungo.h"), lungo_runtime::header::HEADER.to_owned());
         files.insert(format!("{root}{program_target}/include/{}_entries.h", b.id), entries_header(request));
         files.insert(format!("{root}{program_target}/api/{}.c", b.id), api_source);
+        let recursive = value_recursive(&b.table);
         let e = Emitter {
             request,
             names: &names,
-            recursive: value_recursive(&b.table),
+            indirect: sum_recursive(&b.table, &recursive),
+            recursive,
             equatable: equatable(&b.table),
             externs: &externs,
         };
@@ -419,7 +422,12 @@ let package = Package(
 struct Emitter<'a> {
     request: &'a GenerateRequest,
     names: &'a Names,
+    /// The structures that contain themselves, which are final classes.
     recursive: Vec<bool>,
+    /// The enums that can contain themselves, which are `indirect`. Only these: an `indirect`
+    /// enum whose values hold nothing of themselves is no different to use, and Swift 6.4's
+    /// optimizer has crashed compiling a switch over one.
+    indirect: Vec<bool>,
     equatable: Vec<bool>,
     /// The extern types, by type index.
     externs: &'a BTreeMap<usize, &'a ExternType>,
@@ -776,7 +784,8 @@ impl Emitter<'_> {
             }
         } else {
             w.line(format!("/// Lean's {}.", named.lean_name));
-            w.line(format!("public indirect enum {}{generics} {{", tn.name));
+            let indirect = if self.indirect[i] { "indirect " } else { "" };
+            w.line(format!("public {indirect}enum {}{generics} {{", tn.name));
             for (c, (case, fields)) in decl.ctors.iter().zip(&tn.ctors) {
                 w.line(format!("    /// Lean's {}.", c.name));
                 if c.fields.is_empty() {
@@ -1143,4 +1152,142 @@ fn raw_hashes(text: &str) -> String {
         n += 1;
     }
     "#".repeat(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::c::boundary::NamedType;
+    use crate::core::assurance::{AssuranceDocument, Provenance, SCHEMA_VERSION};
+    use crate::plugin::{PROTOCOL_VERSION, ProgramInfo, RuntimeInfo};
+    use lungo_runtime::wire::{Ctor, Field, FieldKind, Repr, TypeDecl};
+
+    fn decl(name: &str, params: u32, ctors: Vec<Vec<Type>>) -> TypeDecl {
+        TypeDecl {
+            opaque: false,
+            name: name.into(),
+            params,
+            repr: Repr::Object,
+            trivial: None,
+            ctors: ctors
+                .into_iter()
+                .enumerate()
+                .map(|(i, fields)| Ctor {
+                    name: format!("{name}.c{i}"),
+                    tag: i as u32,
+                    size: fields.len() as u32,
+                    usize: 0,
+                    ssize: 0,
+                    fields: fields
+                        .into_iter()
+                        .enumerate()
+                        .map(|(k, ty)| Field { name: format!("f{k}"), kind: FieldKind::Object(k as u32), ty })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
+    fn ind(i: u32) -> Type {
+        Type::Inductive { index: i, args: vec![] }
+    }
+
+    /// The request of a program named `shapes` with these types and no functions.
+    fn request(types: Vec<TypeDecl>) -> GenerateRequest {
+        let named = types
+            .iter()
+            .map(|d| NamedType {
+                lean_name: d.name.clone(),
+                params: (0..d.params).map(|k| format!("α{k}")).collect(),
+                structure: d.ctors.len() == 1,
+                opaque: false,
+                fingerprint: "0".repeat(64),
+            })
+            .collect();
+        GenerateRequest {
+            protocol_version: PROTOCOL_VERSION,
+            program: ProgramInfo {
+                name: "shapes".into(),
+                lean_version: "4.0.0".into(),
+                lean_githash: String::new(),
+                bir_version: 1,
+                root_modules: vec!["Shapes".into()],
+            },
+            boundary: Boundary {
+                id: "shapes".into(),
+                prefix: "shapes__".into(),
+                table: TypeTable { types },
+                types: named,
+                functions: vec![],
+                facilities: vec![],
+                async_facilities: vec![],
+                run_main: None,
+                set_host_extern: "shapes__set_host_extern".into(),
+                types_symbol: "shapes__types".into(),
+                initialize: "shapes__initialize".into(),
+            },
+            program_files: BTreeMap::new(),
+            runtime: RuntimeInfo {
+                version: "1.0.0".into(),
+                abi_version: 1,
+                distribution: Distribution::Local { dir: "/dist".into() },
+            },
+            options: BTreeMap::new(),
+            extern_types: BTreeMap::new(),
+            assurance: AssuranceDocument {
+                schema_version: SCHEMA_VERSION,
+                program: "shapes".into(),
+                provenance: Provenance {
+                    lean_version: "4.0.0".into(),
+                    lean_githash: String::new(),
+                    lungo_version: "1.0.0".into(),
+                    bir_version: 1,
+                    runtime_abi: 1,
+                },
+                library: None,
+                specifications: vec![],
+                facilities: vec![],
+                assumptions: vec![],
+                claims: vec![],
+                roles: vec![],
+                exports: vec![],
+            },
+        }
+    }
+
+    /// TEST0399: a Swift enum is indirect only when its values can hold one of its own
+    #[test]
+    fn test0399_a_swift_enum_is_indirect_only_when_its_values_can_hold_one_of_its_own() {
+        let types = vec![
+            // 0: nothing in either constructor.
+            decl("Shapes.Fate", 0, vec![vec![], vec![]]),
+            // 1: holds itself.
+            decl("Shapes.Tree", 0, vec![vec![], vec![ind(1), ind(1)]]),
+            // 2 and 3: a structure holding an enum that holds the structure.
+            decl("Shapes.Wrap", 0, vec![vec![ind(3)]]),
+            decl("Shapes.Shape", 0, vec![vec![], vec![ind(2)]]),
+            // 4: holds itself only through a list, which Swift keeps on the heap.
+            decl("Shapes.Items", 0, vec![vec![], vec![Type::List(Box::new(ind(4)))]]),
+            // 5: holds its parameter inline, which may be itself.
+            decl("Shapes.Maybe", 1, vec![vec![], vec![Type::Param(0)]]),
+            // 6: holds its parameter only through a list.
+            decl("Shapes.Many", 1, vec![vec![], vec![Type::List(Box::new(Type::Param(0)))]]),
+        ];
+        let files = SwiftGenerator.generate(&request(types)).unwrap_or_else(|e| panic!("{e:?}"));
+        let swift = &files["Sources/Shapes/Shapes.swift"];
+        let declared = |name: &str| {
+            swift
+                .lines()
+                .find(|l| l.starts_with("public ") && l.contains(&format!("enum {name}")))
+                .unwrap_or_else(|| panic!("no enum {name} in:\n{swift}"))
+                .to_owned()
+        };
+        assert_eq!(declared("Fate"), "public enum Fate {");
+        assert_eq!(declared("Tree"), "public indirect enum Tree {");
+        assert_eq!(declared("Shape"), "public indirect enum Shape {");
+        assert_eq!(declared("Items"), "public enum Items {");
+        assert!(declared("Maybe<").starts_with("public indirect enum Maybe<"));
+        assert!(declared("Many<").starts_with("public enum Many<"));
+        assert!(swift.contains("public struct Wrap {"), "a structure holding an indirect enum stays a struct");
+    }
 }
