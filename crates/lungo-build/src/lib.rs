@@ -413,6 +413,7 @@ impl Builder {
                 inputs: previous.inputs.iter().map(PathBuf::from).collect(),
                 link_directives: previous.link_directives.clone(),
                 reused: true,
+                written: Vec::new(),
             });
         }
         let analysis = analysis(&ctx)?;
@@ -420,8 +421,8 @@ impl Builder {
         let inputs: Vec<PathBuf> = analysis.success.input_files.iter().map(|p| ctx.project.join(p)).collect();
         let info =
             output::BuildInfo::new(&key, &ctx, analysis, &analysis.success.input_files, &generated.link_directives)?;
-        output::publish(&ctx.out_dir, &generated.files, &generated.binary_files, &info)?;
-        Ok(BuildOutcome { name: ctx.name, inputs, link_directives: generated.link_directives, reused: false })
+        let written = output::publish(&ctx.out_dir, &generated.files, &generated.binary_files, &info)?;
+        Ok(BuildOutcome { name: ctx.name, inputs, link_directives: generated.link_directives, reused: false, written })
     }
 
     /// Resolves the project, its name and output, the toolchain, and the worker.
@@ -524,6 +525,9 @@ pub struct BuildOutcome {
     pub link_directives: Vec<String>,
     /// Whether an up-to-date previous output was kept.
     pub reused: bool,
+    /// Every file the generation wrote into the output or removed from it: none when it was
+    /// reused.
+    pub written: Vec<output::Written>,
 }
 
 fn env_string(var: &str) -> Result<String> {

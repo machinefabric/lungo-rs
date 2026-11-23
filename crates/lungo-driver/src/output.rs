@@ -207,16 +207,60 @@ pub fn output_files(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     Ok(out)
 }
 
+/// One file a publication left in an output directory, or took out of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Written {
+    /// A file it wrote, holding bytes with this SHA-256 (lowercase hex).
+    File { path: PathBuf, sha256: String },
+    /// A file the output held before and does not now.
+    Removed { path: PathBuf },
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Every file under `dir` (none if it does not exist), by `/`-separated path, the build record
+/// among them. A symbolic link is a file here: it is not followed.
+fn file_paths(dir: &Path) -> Result<Vec<String>> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        let entries = fs::read_dir(dir).map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io(format!("cannot read {}", dir.display()), e))?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|e| Error::io(format!("cannot read {}", path.display()), e))?;
+            if kind.is_dir() {
+                walk(root, &path, out)?;
+                continue;
+            }
+            let rel = path.strip_prefix(root).expect("under the root");
+            let rel: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            out.push(rel.join("/"));
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    if dir.exists() {
+        walk(dir, dir, &mut out)?;
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// Publishes the generated sources `files` and the platform products `products` into `out_dir`
 /// atomically: the complete set is staged and validated beside `out_dir`, then swapped into
 /// place, so a failed generation never leaves a partially updated output behind. Staging beside
 /// the output keeps the swap a rename within one file system, wherever the output is.
+///
+/// Returns every file the output holds now, the build record among them, and every file the
+/// output it replaced held that it does not.
 pub fn publish(
     out_dir: &Path,
     files: &BTreeMap<String, String>,
     products: &BTreeMap<String, Vec<u8>>,
     info: &BuildInfo,
-) -> Result<()> {
+) -> Result<Vec<Written>> {
     let parent = out_dir.parent().expect("the output directory has a parent");
     fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
     let name = out_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -226,6 +270,7 @@ pub fn publish(
     }
     let entries = files.iter().map(|(k, v)| (k, v.as_bytes())).chain(products.iter().map(|(k, v)| (k, v.as_slice())));
     let mut info = info.clone();
+    let mut written = BTreeMap::new();
     for (rel, bytes) in entries {
         if rel.starts_with('/') || rel.split('/').any(|c| c == ".." || c.is_empty()) {
             return Err(Error::Environment(format!(
@@ -239,6 +284,7 @@ pub fn publish(
         fs::create_dir_all(dest.parent().expect("files have a parent"))
             .map_err(|e| Error::io(format!("cannot create {}", staging.display()), e))?;
         fs::write(&dest, bytes).map_err(|e| Error::io(format!("cannot write {}", dest.display()), e))?;
+        written.insert(rel.clone(), sha256(bytes));
         if products.contains_key(rel) {
             info.platform_products.push(rel.clone());
         } else {
@@ -247,7 +293,8 @@ pub fn publish(
     }
     let mut record = serde_json::to_string_pretty(&info).expect("build info serializes");
     record.push('\n');
-    fs::write(staging.join(BUILD_INFO), record).map_err(|e| Error::io("cannot write build-info.json", e))?;
+    fs::write(staging.join(BUILD_INFO), &record).map_err(|e| Error::io("cannot write build-info.json", e))?;
+    written.insert(BUILD_INFO.to_owned(), sha256(record.as_bytes()));
     let previous = parent.join(format!(".{name}.lungo-previous-{}", std::process::id()));
     if previous.exists() {
         fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
@@ -268,6 +315,7 @@ pub fn publish(
         }
     }
     let had_previous = out_dir.exists();
+    let replaced = file_paths(out_dir)?;
     if had_previous {
         fs::rename(out_dir, &previous).map_err(|e| Error::io(format!("cannot move aside {}", out_dir.display()), e))?;
     }
@@ -280,19 +328,30 @@ pub fn publish(
     if had_previous {
         fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot remove {}", previous.display()), e))?;
     }
-    Ok(())
+    let removed: Vec<Written> = replaced
+        .into_iter()
+        .filter(|rel| !written.contains_key(rel))
+        .map(|rel| Written::Removed { path: out_dir.join(rel) })
+        .collect();
+    Ok(written
+        .into_iter()
+        .map(|(rel, sha256)| Written::File { path: out_dir.join(rel), sha256 })
+        .chain(removed)
+        .collect())
 }
 
 /// Replaces the platform products of the generated output `out_dir` with `products`, linked on
 /// this machine, leaving its sources and build record as they are. Each file is written beside
-/// its destination and renamed over it, so a failure never leaves a partial file.
-pub fn replace_products(out_dir: &Path, products: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+/// its destination and renamed over it, so a failure never leaves a partial file. Returns each
+/// file it wrote.
+pub fn replace_products(out_dir: &Path, products: &BTreeMap<String, Vec<u8>>) -> Result<Vec<Written>> {
     if !out_dir.join(BUILD_INFO).is_file() {
         return Err(Error::Configuration(format!(
             "{} is not a directory lungo generated (it has no {BUILD_INFO}); run `lungo generate` first",
             out_dir.display()
         )));
     }
+    let mut written = Vec::new();
     for (rel, bytes) in products {
         if rel.starts_with('/') || rel.split('/').any(|c| c == ".." || c.is_empty()) {
             return Err(Error::Environment(format!("refusing to write a product outside the output directory: {rel}")));
@@ -304,8 +363,9 @@ pub fn replace_products(out_dir: &Path, products: &BTreeMap<String, Vec<u8>>) ->
         let temp = out_dir.join(format!(".{rel}.linking-{}", std::process::id()));
         fs::write(&temp, bytes).map_err(|e| Error::io(format!("cannot write {}", temp.display()), e))?;
         fs::rename(&temp, &dest).map_err(|e| Error::io(format!("cannot replace {}", dest.display()), e))?;
+        written.push(Written::File { path: dest, sha256: sha256(bytes) });
     }
-    Ok(())
+    Ok(written)
 }
 
 /// Source text of the project's own modules, keyed by module name.
@@ -410,6 +470,59 @@ mod platform_product_tests {
         let products: BTreeMap<String, Vec<u8>> = [("program.wasm".to_string(), b"x".to_vec())].into();
         assert!(replace_products(root.path(), &products).is_err());
         assert!(!root.path().join("program.wasm").exists());
+    }
+
+    /// Every file under `dir` with the SHA-256 of what it holds, as read back from the disk.
+    fn on_disk(dir: &Path) -> BTreeMap<PathBuf, String> {
+        file_paths(dir).unwrap().into_iter().map(|rel| (dir.join(&rel), sha256(&fs::read(dir.join(rel)).unwrap()))).collect()
+    }
+
+    /// TEST0401: A publication returns every file the output holds after it, the build record
+    /// among them, each with the SHA-256 of what is on disk, and every file the output it replaced
+    /// held that it does not; relinking returns each product it wrote. A caller that reports
+    /// these has reported everything the generation changed in the output.
+    #[test]
+    fn test0401_a_publication_returns_every_file_it_wrote_or_removed() {
+        let root = Scratch::new("written");
+        let out = root.path().join("out");
+        let files: BTreeMap<String, String> =
+            [("index.js".to_string(), "js".to_string()), ("lib/a.js".to_string(), "a".to_string())].into();
+        let products: BTreeMap<String, Vec<u8>> = [("program.wasm".to_string(), b"one".to_vec())].into();
+        let first = publish(&out, &files, &products, &record()).expect("published");
+        let wrote: BTreeMap<PathBuf, String> = first
+            .iter()
+            .map(|w| match w {
+                Written::File { path, sha256 } => (path.clone(), sha256.clone()),
+                Written::Removed { path } => panic!("a fresh output removed {}", path.display()),
+            })
+            .collect();
+        assert_eq!(wrote, on_disk(&out), "the first publication returns exactly what is on disk");
+        assert!(wrote.contains_key(&out.join(BUILD_INFO)), "the build record is a file it wrote");
+
+        let fewer: BTreeMap<String, String> = [("index.js".to_string(), "js, again".to_string())].into();
+        let second = publish(&out, &fewer, &BTreeMap::new(), &record()).expect("published again");
+        let removed: Vec<&PathBuf> = second
+            .iter()
+            .filter_map(|w| match w {
+                Written::Removed { path } => Some(path),
+                Written::File { .. } => None,
+            })
+            .collect();
+        assert_eq!(removed, vec![&out.join("lib/a.js"), &out.join("program.wasm")]);
+        let wrote: BTreeMap<PathBuf, String> = second
+            .iter()
+            .filter_map(|w| match w {
+                Written::File { path, sha256 } => Some((path.clone(), sha256.clone())),
+                Written::Removed { .. } => None,
+            })
+            .collect();
+        assert_eq!(wrote, on_disk(&out), "the second publication returns exactly what is on disk");
+
+        let relinked: BTreeMap<String, Vec<u8>> = [("program.wasm".to_string(), b"two".to_vec())].into();
+        assert_eq!(
+            replace_products(&out, &relinked).expect("relinked"),
+            vec![Written::File { path: out.join("program.wasm"), sha256: sha256(b"two") }]
+        );
     }
 }
 

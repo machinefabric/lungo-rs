@@ -38,6 +38,9 @@ pub struct Settings<'a> {
     pub runtime_dir: Option<PathBuf>,
     pub wasi_sdk: Option<PathBuf>,
     pub mode: Mode,
+    /// The file each file the run writes into an output or removes from one is reported in, one
+    /// JSON line each, as it is written ([`report_writes`]).
+    pub report_writes: Option<PathBuf>,
 }
 
 /// What `lungo generate` does with each output.
@@ -193,6 +196,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         } else {
             let env = Environment { out_dir: dir.clone(), ..base.clone() };
             let outcome = builder.run_with(&project, &env, &|ctx| analyses.get(ctx, &env))?;
+            report_writes(s.report_writes.as_deref(), &outcome.written)?;
             let at = dir.join(&outcome.name);
             report.push(if outcome.reused {
                 format!("up to date: rust {}", at.display())
@@ -322,7 +326,8 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             binary.insert(WASM_MODULE.to_owned(), module);
         }
         if s.mode == Mode::Link {
-            output::replace_products(&dir, &binary)?;
+            let written = output::replace_products(&dir, &binary)?;
+            report_writes(s.report_writes.as_deref(), &written)?;
             if work.exists() {
                 std::fs::remove_dir_all(&work)
                     .map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
@@ -331,13 +336,49 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             continue;
         }
         let info = output::BuildInfo::new(&key, &ctx, analysis, &analysis.success.input_files, &[])?;
-        output::publish(&dir, &files, &binary, &info)?;
+        let written = output::publish(&dir, &files, &binary, &info)?;
+        report_writes(s.report_writes.as_deref(), &written)?;
         if work.exists() {
             std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
         }
         report.push(format!("generated {} into {}", o.language, o.dir.display()));
     }
     finish(report, drifts)
+}
+
+/// Append one JSON line to `file` for each of `written`, as soon as it is written, so a run that
+/// fails later has still reported what it wrote: `{"path": …, "sha256": …}` for a file, with the
+/// SHA-256 of its bytes in lowercase hex, and `{"path": …, "removed": true}` for a file it took
+/// out of an output. Each path is absolute. Nothing when no file is given.
+pub fn report_writes(file: Option<&Path>, written: &[output::Written]) -> Result<()> {
+    let Some(file) = file else {
+        return Ok(());
+    };
+    let mut lines = String::new();
+    for one in written {
+        let line = match one {
+            output::Written::File { path, sha256 } => {
+                serde_json::json!({"path": absolute(path)?, "sha256": sha256})
+            }
+            output::Written::Removed { path } => serde_json::json!({"path": absolute(path)?, "removed": true}),
+        };
+        lines.push_str(&line.to_string());
+        lines.push('\n');
+    }
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut f| f.write_all(lines.as_bytes()))
+        .map_err(|e| Error::io(format!("cannot report what was written in {}", file.display()), e))
+}
+
+fn absolute(path: &Path) -> Result<String> {
+    let path = std::path::absolute(path).map_err(|e| Error::io(format!("cannot resolve {}", path.display()), e))?;
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| Error::Environment(format!("{} is not UTF-8, so it cannot be reported", path.display())))
 }
 
 /// The report, or every output that is not what the project generates now.

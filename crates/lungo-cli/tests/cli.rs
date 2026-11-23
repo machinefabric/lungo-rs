@@ -68,6 +68,65 @@ fn test0093_generate_writes_rust_then_reuses_it() {
     }
 }
 
+/// TEST0402: generate --report-writes appends a line for every file it writes into an output,
+/// the build record among them, with the SHA-256 of what is on disk, and for every file it took
+/// out of the output it replaced; an output that is up to date reports nothing more.
+#[test]
+fn test0402_generate_reports_every_file_it_writes_or_removes() {
+    use sha2::{Digest, Sha256};
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("reported-out");
+    let module = tmp.join("formal");
+    if tmp.exists() {
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+    // An output lungo wrote earlier, holding a file this generation does not write.
+    std::fs::create_dir_all(&module).unwrap();
+    std::fs::write(module.join("build-info.json"), "{}\n").unwrap();
+    std::fs::write(module.join("stale.rs"), "// generated once\n").unwrap();
+    let report = tmp.join("writes.jsonl");
+    let flags = [format!("--rust_out={}", tmp.display()), format!("--report-writes={}", report.display())];
+    let run = || ok(&["generate", &flags[0], &flags[1]]);
+    run();
+
+    let lines: Vec<serde_json::Value> = std::fs::read_to_string(&report)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut files = std::collections::BTreeMap::new();
+    let mut removed = Vec::new();
+    for line in &lines {
+        let path = PathBuf::from(line["path"].as_str().unwrap());
+        assert!(path.is_absolute(), "{line}");
+        match (line.get("sha256"), line.get("removed")) {
+            (Some(sha256), None) => {
+                files.insert(path, sha256.as_str().unwrap().to_string());
+            }
+            (None, Some(serde_json::Value::Bool(true))) => removed.push(path),
+            _ => panic!("not a report of one file: {line}"),
+        }
+    }
+    fn on_disk(dir: &Path, into: &mut std::collections::BTreeMap<PathBuf, String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                on_disk(&path, into);
+                continue;
+            }
+            let sha256: String = Sha256::digest(std::fs::read(&path).unwrap()).iter().map(|b| format!("{b:02x}")).collect();
+            into.insert(path, sha256);
+        }
+    }
+    let mut held = std::collections::BTreeMap::new();
+    on_disk(&module, &mut held);
+    assert_eq!(files, held, "every file of the output is reported with what it holds");
+    assert!(files.contains_key(&module.join("build-info.json")), "{files:?}");
+    assert_eq!(removed, vec![module.join("stale.rs")]);
+
+    run();
+    assert_eq!(std::fs::read_to_string(&report).unwrap().lines().count(), lines.len(), "an output up to date reports nothing");
+}
+
 /// TEST0094: generate writes the outputs the configuration names
 #[test]
 fn test0094_generate_writes_the_outputs_the_configuration_names() {

@@ -133,6 +133,12 @@ struct GenerateArgs {
     /// sources are not what the project generates now.
     #[arg(long)]
     link: bool,
+    /// Append to FILE one JSON line for each file this run writes into an output or removes from
+    /// one, as it does: `{"path": ABSOLUTE, "sha256": HEX}` for a file it wrote, with the SHA-256
+    /// of its bytes, and `{"path": ABSOLUTE, "removed": true}` for one it removed. An output that
+    /// is up to date writes nothing and reports nothing.
+    #[arg(long, value_name = "FILE", conflicts_with = "verify")]
+    report_writes: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -566,6 +572,7 @@ fn generate_settings<'a>(
         outputs,
         runtime_dir: args.runtime_dir,
         wasi_sdk: args.wasi_sdk,
+        report_writes: args.report_writes.map(|f| resolve_arg(&f)),
         mode: if args.verify {
             generate::Mode::Verify
         } else if args.link {
