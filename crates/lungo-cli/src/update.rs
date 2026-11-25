@@ -118,9 +118,8 @@ pub fn update_from(at: &Installation) -> Result<Updated> {
     // One name, so that what an update that was stopped left behind is found by the next one
     // and cleared: a download or an unpacked archive that was never installed.
     if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| {
-            Error::io(format!("cannot clear {}, which an earlier update left", staging.display()), e)
-        })?;
+        lungo_driver::remove_tree(&staging)
+            .map_err(|e| Error::io(format!("cannot clear {}, which an earlier update left", staging.display()), e))?;
     }
     fs::create_dir(&staging).map_err(|e| {
         Error::io(
@@ -133,7 +132,7 @@ pub fn update_from(at: &Installation) -> Result<Updated> {
         )
     })?;
     let outcome = install(at, &release, &staging);
-    let cleared = fs::remove_dir_all(&staging);
+    let cleared = lungo_driver::remove_tree(&staging);
     outcome?;
     cleared.map_err(|e| Error::io(format!("cannot remove {}", staging.display()), e))?;
     Ok(Updated { from: at.current.to_owned(), to: release.version })
@@ -320,7 +319,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Scratch {
             let dir = std::env::temp_dir().join(format!("lungo-update-test-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&dir);
+            let _ = lungo_driver::remove_tree(&dir);
             fs::create_dir_all(&dir).unwrap();
             Scratch(lungo_build::canonical_path(&dir).unwrap())
         }
@@ -328,7 +327,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            let _ = lungo_driver::remove_tree(&self.0);
         }
     }
 

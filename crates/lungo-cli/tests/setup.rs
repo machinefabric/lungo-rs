@@ -131,5 +131,5 @@ fn test0392_setup_installs_elan_into_an_empty_home_and_then_uses_it() {
     assert!(again.contains(&format!("toolchain {pin} ready")), "{again}");
     assert!(again.contains(&commands), "{again}");
 
-    std::fs::remove_dir_all(&root).unwrap();
+    lungo_driver::remove_tree(&root).unwrap();
 }

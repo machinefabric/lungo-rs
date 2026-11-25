@@ -13,7 +13,7 @@ fn repo() -> PathBuf {
 fn scratch(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("assurance-cli").join(name);
     if dir.exists() {
-        std::fs::remove_dir_all(&dir).unwrap();
+        lungo_driver::remove_tree(&dir).unwrap();
     }
     std::fs::create_dir_all(&dir).unwrap();
     dir

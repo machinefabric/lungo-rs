@@ -74,7 +74,7 @@ pub(crate) fn generate(
     }
     let objects_dir = ctx.work_dir.join("oracle-objects");
     if objects_dir.exists() {
-        std::fs::remove_dir_all(&objects_dir).map_err(|e| Error::io("cannot clear oracle objects", e))?;
+        lungo_driver::remove_tree(&objects_dir).map_err(|e| Error::io("cannot clear oracle objects", e))?;
     }
     std::fs::create_dir_all(&objects_dir).map_err(|e| Error::io("cannot create oracle objects", e))?;
     let shim = objects_dir.join("lungo_oracle_shim.c");

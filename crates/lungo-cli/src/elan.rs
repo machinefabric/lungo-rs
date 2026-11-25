@@ -107,7 +107,7 @@ fn ensure_with(
     }
     let staging = home.join(format!(".lungo-install-{}", std::process::id()));
     let installed = install(home, archive, &bytes, &staging).map_err(failed);
-    let cleared = fs::remove_dir_all(&staging);
+    let cleared = lungo_driver::remove_tree(&staging);
     installed?;
     cleared.map_err(|e| failed(format!("elan is installed, but {} cannot be removed: {e}", staging.display())))?;
     Ok(true)
@@ -117,7 +117,7 @@ fn ensure_with(
 /// checks that the elan it installed is there and is the pinned release.
 fn install(home: &Path, archive: &Pinned<'_>, bytes: &[u8], staging: &Path) -> std::result::Result<(), String> {
     if staging.exists() {
-        fs::remove_dir_all(staging).map_err(|e| format!("cannot clear {}: {e}", staging.display()))?;
+        lungo_driver::remove_tree(staging).map_err(|e| format!("cannot clear {}: {e}", staging.display()))?;
     }
     let unpacked = match archive.packing {
         Packing::TarGz => crate::runtime::unpack(bytes, staging),
@@ -167,7 +167,7 @@ mod tests {
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("lungo-elan-{name}-{}", std::process::id()));
         if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
+            lungo_driver::remove_tree(&dir).unwrap();
         }
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -220,7 +220,7 @@ mod tests {
         assert!(!installed);
         assert_eq!(listing(&home), ["bin"]);
         assert_eq!(fs::read(lungo_build::elan_binary(&home)).unwrap(), b"the elan already there");
-        fs::remove_dir_all(&home).unwrap();
+        lungo_driver::remove_tree(&home).unwrap();
     }
 
     /// TEST0394: a download that is not the archive lungo pins is discarded, and the refusal
@@ -239,7 +239,7 @@ mod tests {
         }
         assert!(!lungo_build::elan_binary(&home).exists());
         assert_eq!(listing(&home), [".lungo-install.lock"]);
-        fs::remove_dir_all(&root).unwrap();
+        lungo_driver::remove_tree(&root).unwrap();
     }
 
     /// TEST0395: the pinned archive's installer installs elan into the elan home, which is used
@@ -255,7 +255,7 @@ mod tests {
         assert!(lungo_build::elan_binary(&home).is_file());
         assert_eq!(listing(&home), [".lungo-install.lock", "bin"], "the installer is not left behind");
         assert!(!ensure_with(&home, &pinned(&sha256), || panic!("elan was downloaded again")).unwrap());
-        fs::remove_dir_all(&root).unwrap();
+        lungo_driver::remove_tree(&root).unwrap();
     }
 
     /// TEST0396: an installation that fails says what was attempted, from where, into which
@@ -289,6 +289,6 @@ mod tests {
         let text = ensure_with(&home, &pinned(&sha256), || Ok(other.clone())).unwrap_err().to_string();
         assert!(text.starts_with(&attempt), "{text}");
         assert!(text.contains(&format!("says \"elan 1.0.0 (test)\", not elan {ELAN_VERSION}")), "{text}");
-        fs::remove_dir_all(&root).unwrap();
+        lungo_driver::remove_tree(&root).unwrap();
     }
 }

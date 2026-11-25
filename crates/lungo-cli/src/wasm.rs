@@ -75,7 +75,7 @@ pub fn link(
 ) -> Result<Vec<u8>> {
     let src = work.join("wasm-src");
     if src.exists() {
-        std::fs::remove_dir_all(&src).map_err(|e| Error::io(format!("cannot clear {}", src.display()), e))?;
+        lungo_driver::remove_tree(&src).map_err(|e| Error::io(format!("cannot clear {}", src.display()), e))?;
     }
     let mut sources = Vec::new();
     for (rel, text) in program_files {

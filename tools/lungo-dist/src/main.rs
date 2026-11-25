@@ -381,7 +381,7 @@ pub fn runtime(target: &str, out: &Path, linker: Linker) -> Result<()> {
     let built = runtime_target_dir().join(target).join("release");
     let libs = libraries(target);
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     for d in ["include", "lib/cmake/lungo", "lib/pkgconfig", "bin"] {
         io("cannot create the package", fs::create_dir_all(out.join(d)))?;
@@ -477,7 +477,7 @@ fn local(out: &Path, components: &[String], python: Option<&Path>) -> Result<()>
         let python = python.ok_or("the wheel component is built with --python")?;
         let wheels = out.join("wheels");
         if wheels.exists() {
-            io(format!("cannot replace {}", wheels.display()), fs::remove_dir_all(&wheels))?;
+            io(format!("cannot replace {}", wheels.display()), lungo_driver::remove_tree(&wheels))?;
         }
         release::local_wheel(&host, python, &wheels)?;
     }

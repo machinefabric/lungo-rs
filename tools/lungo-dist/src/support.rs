@@ -115,7 +115,7 @@ pub fn go_platform(target: &str) -> Option<(&'static str, &'static str)> {
 /// (replaced).
 pub fn go(runtimes: &[(String, PathBuf)], out: &Path) -> Result<()> {
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     let repo = repo();
     copy_library(&library("lungo-go")?, out, &|_| false)?;
@@ -168,7 +168,7 @@ pub fn go(runtimes: &[(String, PathBuf)], out: &Path) -> Result<()> {
 /// (replaced). The wheel carries the shared runtime library, its header and its CMake package.
 pub fn python(runtime: &Path, out: &Path) -> Result<()> {
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     let repo = repo();
     copy_library(&library("lungo-py")?, out, &|_| false)?;
@@ -197,13 +197,13 @@ const MODULE_MAP: &str = "module LungoRuntime {\n    header \"lungo.h\"\n    exp
 pub fn xcframework(libraries: &[PathBuf], out: &Path) -> Result<()> {
     let work = out.parent().expect("the output has a parent").join(".xcframework-headers");
     if work.exists() {
-        io("cannot clear the headers", fs::remove_dir_all(&work))?;
+        io("cannot clear the headers", lungo_driver::remove_tree(&work))?;
     }
     io("cannot create the headers", fs::create_dir_all(&work))?;
     io("cannot write lungo.h", fs::write(work.join("lungo.h"), lungo_runtime::header::HEADER))?;
     io("cannot write the module map", fs::write(work.join("module.modulemap"), MODULE_MAP))?;
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     let mut cmd = std::process::Command::new("xcodebuild");
     cmd.arg("-create-xcframework");
@@ -212,7 +212,7 @@ pub fn xcframework(libraries: &[PathBuf], out: &Path) -> Result<()> {
     }
     cmd.arg("-output").arg(out);
     crate::run(&mut cmd)?;
-    io("cannot remove the headers", fs::remove_dir_all(&work))?;
+    io("cannot remove the headers", lungo_driver::remove_tree(&work))?;
     Ok(())
 }
 
@@ -268,7 +268,7 @@ pub fn swift(runtime_target: &str, runtime: &Path, out: &Path) -> Result<()> {
 /// The Swift package of a local distribution: an XCFramework of this Mac's runtime.
 pub fn swift_local(runtime: &Path, out: &Path) -> Result<()> {
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
     xcframework(&[runtime.join("lib/liblungo.a")], &out.join("LungoRuntime.xcframework"))?;
@@ -278,7 +278,7 @@ pub fn swift_local(runtime: &Path, out: &Path) -> Result<()> {
 /// The npm package `lungo-ts` in `out` (replaced).
 pub fn typescript(out: &Path) -> Result<()> {
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     let repo = repo();
     let typescript = library("lungo-ts")?;
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn test0265_a_library_is_its_files_without_a_repository_to_ask() {
         let root = std::env::temp_dir().join(format!("lungo-dist-copy-library-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = lungo_driver::remove_tree(&root);
         // An ignore rule in the tree the library sits in is not the library's.
         write(&root.join(".gitignore"), "*.go\n");
         let lib = root.join("lib");
@@ -353,6 +353,6 @@ mod tests {
         let out = root.join("out");
         copy_library(&lib, &out, &|rel| rel.starts_with("notes")).unwrap();
         assert_eq!(files(&out), ["go.mod", "runtime.go", "src/pkg/mod.py", "src/version.txt"]);
-        fs::remove_dir_all(&root).unwrap();
+        lungo_driver::remove_tree(&root).unwrap();
     }
 }

@@ -160,7 +160,7 @@ fn linker_for(target: &str) -> Result<Linker> {
 fn work_dir(what: &str) -> Result<PathBuf> {
     let dir = crate::target_dir().join("lungo-dist").join("release-work").join(what);
     if dir.exists() {
-        io(format!("cannot clear {}", dir.display()), fs::remove_dir_all(&dir))?;
+        io(format!("cannot clear {}", dir.display()), lungo_driver::remove_tree(&dir))?;
     }
     io(format!("cannot create {}", dir.display()), fs::create_dir_all(&dir))?;
     Ok(dir)
@@ -182,7 +182,7 @@ pub fn runtime_archive(target: &str, out_dir: &Path) -> Result<()> {
     create_out(out_dir)?;
     let out = out_dir.join(runtime_archive_name(target));
     archive(&package, &out)?;
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     Ok(())
 }
@@ -221,7 +221,7 @@ pub fn xcframework(out_dir: &Path) -> Result<()> {
         io(format!("cannot replace {}", out.display()), fs::remove_file(&out))?;
     }
     run(Command::new("ditto").args(["-c", "-k", "--keepParent"]).arg(&framework).arg(&out))?;
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     println!("checksum {}", sha256_file(&out)?);
     Ok(())
@@ -374,7 +374,7 @@ pub fn go(manifest: &Path, out: &Path) -> Result<()> {
         runtimes.push((target.to_owned(), published_runtime(&artifacts, target, &work)?));
     }
     support::go(&runtimes, out)?;
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     Ok(())
 }
@@ -389,7 +389,7 @@ pub fn swift(manifest: &Path, out: &Path) -> Result<()> {
     // The native libraries a Swift binary links come from the macOS runtime package.
     let macos = published_runtime(&artifacts, "aarch64-apple-darwin", &work)?;
     if out.exists() {
-        io(format!("cannot replace {}", out.display()), fs::remove_dir_all(out))?;
+        io(format!("cannot replace {}", out.display()), lungo_driver::remove_tree(out))?;
     }
     io(format!("cannot create {}", out.display()), fs::create_dir_all(out))?;
     let target = format!(
@@ -398,7 +398,7 @@ pub fn swift(manifest: &Path, out: &Path) -> Result<()> {
         serde_json::to_string(&framework.sha256).expect("JSON")
     );
     support::swift(&target, &macos, out)?;
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     Ok(())
 }
@@ -452,7 +452,7 @@ pub fn cli(platform: &str, manifest: &Path, out_dir: &Path) -> Result<()> {
     } else {
         archive(&package, &out)?;
     }
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     Ok(())
 }
@@ -540,7 +540,7 @@ fn build_wheel(target: &str, tag: &str, linker: Linker, python: &Path, out_dir: 
     create_out(out_dir)?;
     let out = out_dir.join(&name);
     io(format!("cannot write {}", out.display()), fs::copy(built.join(&name), &out).map(|_| ()))?;
-    io("cannot remove the scratch directory", fs::remove_dir_all(&work))?;
+    io("cannot remove the scratch directory", lungo_driver::remove_tree(&work))?;
     println!("{}", out.display());
     Ok(())
 }

@@ -266,7 +266,7 @@ pub fn publish(
     let name = out_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let staging = parent.join(format!(".{name}.lungo-staging-{}", std::process::id()));
     if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| Error::io(format!("cannot clear {}", staging.display()), e))?;
+        crate::remove_tree(&staging).map_err(|e| Error::io(format!("cannot clear {}", staging.display()), e))?;
     }
     let entries = files.iter().map(|(k, v)| (k, v.as_bytes())).chain(products.iter().map(|(k, v)| (k, v.as_slice())));
     let mut info = info.clone();
@@ -297,7 +297,7 @@ pub fn publish(
     written.insert(BUILD_INFO.to_owned(), sha256(record.as_bytes()));
     let previous = parent.join(format!(".{name}.lungo-previous-{}", std::process::id()));
     if previous.exists() {
-        fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
+        crate::remove_tree(&previous).map_err(|e| Error::io(format!("cannot clear {}", previous.display()), e))?;
     }
     // The output directory belongs to lungo: it is replaced as a whole. A directory lungo did
     // not create is never replaced.
@@ -307,7 +307,7 @@ pub fn publish(
             .next()
             .is_none();
         if !empty {
-            fs::remove_dir_all(&staging).map_err(|e| Error::io(format!("cannot remove {}", staging.display()), e))?;
+            crate::remove_tree(&staging).map_err(|e| Error::io(format!("cannot remove {}", staging.display()), e))?;
             return Err(Error::Configuration(format!(
                 "refusing to replace {}: it is not a directory lungo generated (it has no {BUILD_INFO}); choose an empty or new output directory",
                 out_dir.display()
@@ -326,7 +326,7 @@ pub fn publish(
         return Err(Error::io(format!("cannot publish {}", out_dir.display()), e));
     }
     if had_previous {
-        fs::remove_dir_all(&previous).map_err(|e| Error::io(format!("cannot remove {}", previous.display()), e))?;
+        crate::remove_tree(&previous).map_err(|e| Error::io(format!("cannot remove {}", previous.display()), e))?;
     }
     let removed: Vec<Written> = replaced
         .into_iter()
@@ -413,7 +413,7 @@ mod platform_product_tests {
         fn new(name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("lungo-{name}-{}", std::process::id()));
             if dir.exists() {
-                fs::remove_dir_all(&dir).expect("clear the scratch directory");
+                crate::remove_tree(&dir).expect("clear the scratch directory");
             }
             fs::create_dir_all(&dir).expect("create the scratch directory");
             Scratch(dir)
@@ -426,7 +426,7 @@ mod platform_product_tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            let _ = crate::remove_tree(&self.0);
         }
     }
 
@@ -523,6 +523,53 @@ mod platform_product_tests {
             replace_products(&out, &relinked).expect("relinked"),
             vec![Written::File { path: out.join("program.wasm"), sha256: sha256(b"two") }]
         );
+    }
+
+    /// TEST0405: An output is replaced while other readers list it. A directory of the output it
+    /// replaces is listed over and over (as an indexer or a build reading the sources lists one)
+    /// while it is removed, and every replacement still succeeds, leaving nothing of the old
+    /// output behind. APFS loses its place in a listing whose entries are removed under it once
+    /// 32 other listings of the directory have begun, so a removal that removes entries as it
+    /// reads them leaves the rest and fails with "Directory not empty".
+    #[test]
+    fn test0405_an_output_is_replaced_while_other_readers_list_it() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let root = Scratch::new("listed");
+        let out = root.path().join("out");
+        // Enough entries that one directory takes several batches of a listing.
+        let files: BTreeMap<String, String> = (0..300)
+            .map(|i| {
+                (format!("Sources/Program/modules/Init-Data-Float-Model-Unpacked-{i:04}.c"), format!("module {i}"))
+            })
+            .collect();
+        publish(&out, &files, &BTreeMap::new(), &record()).expect("published");
+        let listed =
+            root.path().join(format!(".out.lungo-previous-{}", std::process::id())).join("Sources/Program/modules");
+        let stop = Arc::new(AtomicBool::new(false));
+        let readers: Vec<_> = (0..2)
+            .map(|_| {
+                let (listed, stop) = (listed.clone(), stop.clone());
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        if let Ok(mut entries) = fs::read_dir(&listed) {
+                            entries.next();
+                        }
+                    }
+                })
+            })
+            .collect();
+        let replaced: Vec<_> = (0..20).map(|_| publish(&out, &files, &BTreeMap::new(), &record())).collect();
+        stop.store(true, Ordering::Relaxed);
+        for reader in readers {
+            reader.join().expect("the reader ends");
+        }
+        for (round, result) in replaced.iter().enumerate() {
+            assert!(result.is_ok(), "replacement {round} failed: {}", result.as_ref().unwrap_err());
+        }
+        assert!(!listed.exists(), "the replaced output is left behind");
+        assert_eq!(output_files(&out).unwrap().len(), files.len());
     }
 }
 

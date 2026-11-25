@@ -241,7 +241,7 @@ fn test0107_typescript_programs_share_data_but_not_handles() {
         for stale in ["node_modules", "package-lock.json"] {
             let p = host.join(stale);
             if p.is_dir() {
-                std::fs::remove_dir_all(&p).unwrap();
+                lungo_driver::remove_tree(&p).unwrap();
             } else if p.exists() {
                 std::fs::remove_file(&p).unwrap();
             }

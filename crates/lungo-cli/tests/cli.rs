@@ -77,7 +77,7 @@ fn test0402_generate_reports_every_file_it_writes_or_removes() {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("reported-out");
     let module = tmp.join("formal");
     if tmp.exists() {
-        std::fs::remove_dir_all(&tmp).unwrap();
+        lungo_driver::remove_tree(&tmp).unwrap();
     }
     // An output lungo wrote earlier, holding a file this generation does not write.
     std::fs::create_dir_all(&module).unwrap();
@@ -287,7 +287,7 @@ fn test0369_a_lungo_that_is_not_a_registry_release_has_nothing_to_update_from() 
 fn test0104_verify_names_every_file_that_is_not_what_the_project_generates() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("verify-out");
     if out.exists() {
-        std::fs::remove_dir_all(&out).unwrap();
+        lungo_driver::remove_tree(&out).unwrap();
     }
     let flag = format!("--rust_out={}", out.display());
     let verify = |label: &str| -> (bool, String, String) {

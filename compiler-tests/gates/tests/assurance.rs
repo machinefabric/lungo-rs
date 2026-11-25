@@ -35,7 +35,7 @@ impl Scratch {
     fn new(test: &str) -> Scratch {
         let package = Path::new(env!("CARGO_TARGET_TMPDIR")).join("assurance-gates").join(test);
         if package.exists() {
-            std::fs::remove_dir_all(&package).unwrap();
+            lungo_driver::remove_tree(&package).unwrap();
         }
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
         copy_tree(&manifest.join("fixtures/assurance"), &package.join("lean"));

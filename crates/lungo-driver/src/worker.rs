@@ -171,11 +171,11 @@ pub fn prepare(toolchain: &Toolchain, cache: &WorkerCache, host: &str) -> Result
     }
     // Absent or stale: rebuild from scratch.
     if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e| Error::io(format!("cannot remove stale worker {}", dir.display()), e))?;
+        crate::remove_tree(&dir).map_err(|e| Error::io(format!("cannot remove stale worker {}", dir.display()), e))?;
     }
     let tmp = root.join(format!("{id}.tmp-{}", std::process::id()));
     if tmp.exists() {
-        fs::remove_dir_all(&tmp).map_err(|e| Error::io(format!("cannot remove {}", tmp.display()), e))?;
+        crate::remove_tree(&tmp).map_err(|e| Error::io(format!("cannot remove {}", tmp.display()), e))?;
     }
     for (path, text) in &files {
         let dest = tmp.join(path);
@@ -456,7 +456,7 @@ impl Exchange {
 
 impl Drop for Exchange {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
+        let _ = crate::remove_tree(&self.dir);
     }
 }
 
@@ -579,7 +579,7 @@ mod tests {
 
     fn setup(name: &str) -> Setup {
         let dir = std::env::temp_dir().join(format!("lungo-worker-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = crate::remove_tree(&dir);
         let project = dir.join("project");
         fs::create_dir_all(&project).unwrap();
         let pin = lungo_runtime::releases::newest().pin();

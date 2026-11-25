@@ -77,7 +77,7 @@ Con la feature `serde` del crate `lungo`, i tipi della facciata implementano `Se
 
 ```toml
 [dependencies]
-lungo = { version = "1.130.68", features = ["serde"] }
+lungo = { version = "1.131.83", features = ["serde"] }
 ```
 
 | Rust | Serializzato come |

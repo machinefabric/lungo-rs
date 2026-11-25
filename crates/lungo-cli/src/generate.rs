@@ -185,7 +185,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
                 Ok((dir.join(&o.name), expected, actual))
             });
             if scratch.exists() {
-                std::fs::remove_dir_all(&scratch)
+                lungo_driver::remove_tree(&scratch)
                     .map_err(|e| Error::io(format!("cannot remove {}", scratch.display()), e))?;
             }
             let (at, expected, actual) = compared?;
@@ -329,7 +329,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
             let written = output::replace_products(&dir, &binary)?;
             report_writes(s.report_writes.as_deref(), &written)?;
             if work.exists() {
-                std::fs::remove_dir_all(&work)
+                lungo_driver::remove_tree(&work)
                     .map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
             }
             report.push(format!("linked: {} {} for this machine", o.language, o.dir.display()));
@@ -339,7 +339,7 @@ pub fn run(s: &Settings) -> Result<Vec<String>> {
         let written = output::publish(&dir, &files, &binary, &info)?;
         report_writes(s.report_writes.as_deref(), &written)?;
         if work.exists() {
-            std::fs::remove_dir_all(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
+            lungo_driver::remove_tree(&work).map_err(|e| Error::io(format!("cannot remove {}", work.display()), e))?;
         }
         report.push(format!("generated {} into {}", o.language, o.dir.display()));
     }

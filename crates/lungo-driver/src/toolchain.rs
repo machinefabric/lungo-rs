@@ -227,7 +227,7 @@ mod tests {
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("lungo-toolchain-{name}-{}", std::process::id()));
         if dir.exists() {
-            std::fs::remove_dir_all(&dir).unwrap();
+            crate::remove_tree(&dir).unwrap();
         }
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -254,7 +254,7 @@ mod tests {
         let called = std::fs::read_to_string(home.join("called")).unwrap();
         assert_eq!(called, format!("{}|toolchain install {pin}", home.display()));
         assert!(elan_toolchain_dir(&home, pin).join("bin").is_dir());
-        std::fs::remove_dir_all(&home).unwrap();
+        crate::remove_tree(&home).unwrap();
     }
 
     /// TEST0398: an elan home without elan is refused, naming the home and the elan it lacks
@@ -271,7 +271,7 @@ mod tests {
                 elan_binary(&home).display()
             )
         );
-        std::fs::remove_dir_all(&home).unwrap();
+        crate::remove_tree(&home).unwrap();
     }
 
     /// TEST0141: every supported release is accepted; floating, prerelease and unknown pins are
@@ -307,6 +307,6 @@ mod tests {
                 other => panic!("{pin}: {other:?}"),
             }
         }
-        std::fs::remove_dir_all(&dir).unwrap();
+        crate::remove_tree(&dir).unwrap();
     }
 }

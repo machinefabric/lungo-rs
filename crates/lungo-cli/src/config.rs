@@ -145,6 +145,6 @@ mod tests {
         assert!(ProjectFile::load(&file).is_err(), "host-externs is not a setting");
         std::fs::write(&file, "project = \"lean\"\n[assurance]\nrequire = [\".\"]\n").unwrap();
         assert!(ProjectFile::load(&file).is_err(), "the assurance table rejects unknown keys");
-        std::fs::remove_dir_all(&dir).unwrap();
+        lungo_driver::remove_tree(&dir).unwrap();
     }
 }

@@ -11,4 +11,5 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 lungo-build.workspace = true
+lungo-driver.workspace = true
 serde_json.workspace = true

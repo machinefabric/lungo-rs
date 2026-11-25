@@ -39,7 +39,7 @@ fn main() -> lungo_build::Result<()> {
         });
         let dir = out.join("c").join(name);
         if dir.exists() {
-            std::fs::remove_dir_all(&dir).expect("removable generated C");
+            lungo_driver::remove_tree(&dir).expect("removable generated C");
         }
         let mut build = cc::Build::new();
         build.include(dir.join(lungo_build::codegen::c::PROGRAM_DIR));

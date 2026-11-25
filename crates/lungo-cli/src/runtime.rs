@@ -228,16 +228,16 @@ fn install_verified(bytes: &[u8], source: &str, sha256: &str, dir: &Path) -> Res
     fs::create_dir_all(parent).map_err(|e| Error::io(format!("cannot create {}", parent.display()), e))?;
     let partial = parent.join(format!(".download-{}", std::process::id()));
     if partial.exists() {
-        fs::remove_dir_all(&partial).map_err(|e| Error::io(format!("cannot clear {}", partial.display()), e))?;
+        lungo_driver::remove_tree(&partial).map_err(|e| Error::io(format!("cannot clear {}", partial.display()), e))?;
     }
     unpack(bytes, &partial).map_err(|e| Error::io(format!("cannot unpack {source}"), e))?;
     let root = single_top_level(&partial)?;
     fs::write(root.join(VERIFIED), format!("{sha256}\n")).map_err(|e| Error::io("cannot record the digest", e))?;
     if dir.exists() {
-        fs::remove_dir_all(dir).map_err(|e| Error::io(format!("cannot replace {}", dir.display()), e))?;
+        lungo_driver::remove_tree(dir).map_err(|e| Error::io(format!("cannot replace {}", dir.display()), e))?;
     }
     fs::rename(&root, dir).map_err(|e| Error::io(format!("cannot move the download to {}", dir.display()), e))?;
-    let _ = fs::remove_dir_all(&partial);
+    let _ = lungo_driver::remove_tree(&partial);
     Ok(())
 }
 
@@ -355,7 +355,7 @@ mod tests {
     fn test0088_a_local_distribution_is_identified_by_what_it_holds() {
         let root = std::env::temp_dir().join(format!("lungo-distribution-digest-{}", std::process::id()));
         if root.exists() {
-            std::fs::remove_dir_all(&root).unwrap();
+            lungo_driver::remove_tree(&root).unwrap();
         }
         struct Dir(PathBuf);
         impl Dir {
@@ -365,7 +365,7 @@ mod tests {
         }
         impl Drop for Dir {
             fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
+                let _ = lungo_driver::remove_tree(&self.0);
             }
         }
         let dir = Dir(root);
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn test0090_a_tampered_archive_is_rejected_and_never_unpacked() {
         let dir = std::env::temp_dir().join(format!("lungo-runtime-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = lungo_driver::remove_tree(&dir);
         let tarball = tarball();
         let good = hex(&Sha256::digest(&tarball));
         let target = dir.join("cache").join("x86_64-unknown-linux-gnu");
@@ -447,7 +447,7 @@ mod tests {
         assert_eq!(fs::read_to_string(target.join(VERIFIED)).unwrap().trim(), good);
         // A second install replaces the first.
         install_verified(&tarball, "test.tar.gz", &good, &target).unwrap();
-        fs::remove_dir_all(&dir).unwrap();
+        lungo_driver::remove_tree(&dir).unwrap();
     }
 
     /// TEST0376: installers racing for one cache directory install it once and never replace it
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn test0376_racing_installers_install_once_and_never_replace_the_install() {
         let dir = std::env::temp_dir().join(format!("lungo-runtime-race-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = lungo_driver::remove_tree(&dir);
         let tarball = tarball();
         let good = hex(&Sha256::digest(&tarball));
         let target = dir.join("cache").join("wasi-sdk");
@@ -485,6 +485,6 @@ mod tests {
         // A later installer finds it and downloads nothing.
         ensure_verified_with("test.tar.gz", &good, &target, || panic!("an installed archive is not fetched again"))
             .unwrap();
-        fs::remove_dir_all(&dir).unwrap();
+        lungo_driver::remove_tree(&dir).unwrap();
     }
 }

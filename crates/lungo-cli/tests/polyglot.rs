@@ -52,7 +52,7 @@ fn test0111_c_binding() {
     let build = root().join("c-build");
     // A fresh build: a CMake cache records the absolute paths it was configured with.
     if build.exists() {
-        std::fs::remove_dir_all(&build).unwrap();
+        lungo_driver::remove_tree(&build).unwrap();
     }
     run(Command::new("cmake")
         .arg("-S")
@@ -124,7 +124,7 @@ fn test0113_python_binding() {
     let package = generate("python");
     let venv = root().join("python-venv");
     if venv.exists() {
-        std::fs::remove_dir_all(&venv).unwrap();
+        lungo_driver::remove_tree(&venv).unwrap();
     }
     let python = std::env::var("PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
     run(Command::new(python).args(["-m", "venv"]).arg(&venv));
@@ -135,7 +135,7 @@ fn test0113_python_binding() {
     run(Command::new(&py).args(["-m", "pip", "install", "--quiet"]).arg(&package));
     let tests = root().join("python-tests");
     if tests.exists() {
-        std::fs::remove_dir_all(&tests).unwrap();
+        lungo_driver::remove_tree(&tests).unwrap();
     }
     std::fs::create_dir_all(&tests).unwrap();
     std::fs::copy(fixture("python").join("test_polyglot.py"), tests.join("test_polyglot.py")).unwrap();
@@ -167,7 +167,7 @@ fn test0114_swift_binding() {
     let package = generate("swift");
     let tests = root().join("swift-tests");
     if tests.exists() {
-        std::fs::remove_dir_all(&tests).unwrap();
+        lungo_driver::remove_tree(&tests).unwrap();
     }
     std::fs::create_dir_all(tests.join("Tests/PolyglotTests")).unwrap();
     std::fs::create_dir_all(tests.join("Tests/PolyglotCAPITests")).unwrap();
@@ -269,7 +269,7 @@ fn test0115_ts_binding() {
     std::fs::write(&module, &linked).unwrap();
     let project = root().join("ts-project");
     if project.exists() {
-        std::fs::remove_dir_all(&project).unwrap();
+        lungo_driver::remove_tree(&project).unwrap();
     }
     std::fs::create_dir_all(&project).unwrap();
     for f in ["polyglot.test.js", "typecheck.ts"] {

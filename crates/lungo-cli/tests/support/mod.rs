@@ -30,7 +30,7 @@ pub fn run(cmd: &mut Command) -> String {
 /// `dir`, emptied.
 pub fn fresh(dir: &Path) -> PathBuf {
     if dir.exists() {
-        std::fs::remove_dir_all(dir).unwrap();
+        lungo_driver::remove_tree(dir).unwrap();
     }
     std::fs::create_dir_all(dir).unwrap();
     dir.to_path_buf()

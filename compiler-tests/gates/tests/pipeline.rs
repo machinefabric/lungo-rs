@@ -17,7 +17,7 @@ impl Scratch {
     fn new(fixture: &str, test: &str) -> Scratch {
         let package = Path::new(env!("CARGO_TARGET_TMPDIR")).join("gates").join(test);
         if package.exists() {
-            std::fs::remove_dir_all(&package).unwrap();
+            lungo_driver::remove_tree(&package).unwrap();
         }
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures").join(fixture);
         copy_tree(&src, &package.join("lean"));
