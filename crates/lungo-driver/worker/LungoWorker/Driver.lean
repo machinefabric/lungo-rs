@@ -20,7 +20,7 @@ namespace LungoWorker.Driver
 open Lean LungoWorker.Cbor System
 
 /-- Version of this adapter; part of the worker identity. -/
-def adapterVersion : Nat := 3
+def adapterVersion : Nat := 4
 
 def toolchainCbor : Value :=
   obj [
@@ -355,6 +355,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
     let (t, idx') ← trust ctx idx exportMap n
     idx := idx'
     let (source, _) ← runCore env opts (sourceRange ctx n)
+    let (doc, _) ← runCore env opts (Interface.docString n)
     exportsCbor := exportsCbor.push (obj [
       ("name", BridgeIR.name n),
       ("module", BridgeIR.name (modules[modIdx.toNat]!.name)),
@@ -363,6 +364,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
       ("params", arr (sig.params.map (·.toCbor))),
       ("result", sig.result.toCbor),
       ("source", opt source),
+      ("doc", opt (doc.map str)),
       ("trust", obj [
         ("axioms", arr (t.axioms.map BridgeIR.name)),
         ("depends_on_sorry", .bool t.dependsOnSorry),
@@ -384,6 +386,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
         | some ci => return some (toString (← (Meta.ppExpr ci.type).run'))
         | none => return none
       let (source, _) ← runCore env opts (match o with | some o => sourceRange ctx o | none => pure none)
+      let (doc, _) ← runCore env opts (match o with | some o => Interface.docString o | none => pure none)
       -- The Rust-facing signature an application-provided implementation receives. Externs whose
       -- declaration has no source-level constant (or whose type does not expose its compiled
       -- arity) have none; they can only be provided by the runtime or by `@[export]`ed Lean code.
@@ -409,6 +412,7 @@ def run (request : Protocol.Request) : WorkerM Value := do
         ("params", arr (← xs.mapM fun p => liftExcept .adapter "extern parameter" (BridgeIR.param p))),
         ("result", ← liftExcept .adapter "extern result" (BridgeIR.irType ty)),
         ("source", opt source),
+        ("doc", opt (doc.map str)),
         ("facade", opt facade)
       ])
   let ((types, _), _) ← runCore env opts ((Interface.describePending).run facadeState).run'

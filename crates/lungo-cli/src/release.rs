@@ -29,13 +29,13 @@
 //! trust: it has no release line ([`identity`] is `None`).
 
 use lungo_build::{Error, Result};
-use serde::Deserialize;
 use mg_srel::{CharterExpectation, CharterRules, CharterTrust, Formats, KindRule, LocationRule};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Read;
 
-pub use mg_srel::{ChainError, CharterError};
+pub use mg_srel::CharterError;
 
 /// The command's name in the release registry.
 pub const APP_ID: &str = "lungo-cli";
@@ -572,6 +572,7 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::*;
     use super::*;
+    use mg_srel::ChainError;
 
     const SHA: &str = "b74a72297e9404fc35470af7fc77f157e2899577d2907bcdffe90397f89c14a5";
     const URL: &str = "https://r.example/lungo-cli/release/1.200.0/lungo-1.200.0-linux-x86_64.tar.gz";
@@ -581,7 +582,12 @@ mod tests {
     }
 
     /// The manifest's chain verified as a published `lungo` verifies it.
-    fn verify_manifest(manifest: &[u8], envelope: &[u8], trust: &Trust, now: u64) -> std::result::Result<(), ChainError> {
+    fn verify_manifest(
+        manifest: &[u8],
+        envelope: &[u8],
+        trust: &Trust,
+        now: u64,
+    ) -> std::result::Result<(), ChainError> {
         mg_srel::verify_manifest(envelope, manifest, &content_trust(trust).unwrap(), now).map(|_| ())
     }
 
@@ -786,7 +792,11 @@ mod tests {
         assert_eq!(verify_manifest(&manifest, &envelope, &line.trust("prod"), NOT_AFTER), Ok(()));
         assert_eq!(
             verify_manifest(&manifest, &envelope, &line.trust("prod"), ISSUED_AT - 1),
-            Err(ChainError::NotYetValidCertificate { key_id: line.release.id(), issued_at: ISSUED_AT, now: ISSUED_AT - 1 })
+            Err(ChainError::NotYetValidCertificate {
+                key_id: line.release.id(),
+                issued_at: ISSUED_AT,
+                now: ISSUED_AT - 1
+            })
         );
     }
 
@@ -798,7 +808,10 @@ mod tests {
         let certificate = Line::certificate(&line.release, "prod", ISSUED_AT, NOT_AFTER);
         let other = Key::new(8);
         let envelope = Line::envelope(&manifest, &certificate, &[&line.roots[0], &line.roots[1]], &other);
-        assert_eq!(chain(&manifest, &envelope, &line), Err(ChainError::NoAuthorizingCertificate { key_id: other.id() }));
+        assert_eq!(
+            chain(&manifest, &envelope, &line),
+            Err(ChainError::NoAuthorizingCertificate { key_id: other.id() })
+        );
     }
 
     /// TEST0355: a certificate whose stated key id is not its keys is refused

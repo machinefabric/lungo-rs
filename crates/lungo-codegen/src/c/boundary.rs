@@ -65,6 +65,8 @@ pub struct Function {
     /// first step.
     pub returns: Returns,
     pub source: Option<DeclSource>,
+    /// The declaration's docstring, when it has one.
+    pub doc: Option<String>,
 }
 
 /// An operation of a facility: an `@[extern]` declaration the host implements.
@@ -80,6 +82,8 @@ pub struct Operation {
     /// Type parameters of a polymorphic extern are passed as opaque values.
     pub params: Vec<Param>,
     pub returns: Returns,
+    /// The declaration's docstring, when it has one.
+    pub doc: Option<String>,
 }
 
 /// A facility the host provides by implementing its operations, each called synchronously.
@@ -153,6 +157,20 @@ pub struct NamedType {
     /// The type's layout fingerprint (`crate::core::fingerprint`): what a package using this
     /// type from another package checks it agrees on.
     pub fingerprint: String,
+    /// The type's docstring, when it has one.
+    pub doc: Option<String>,
+    /// The docstrings of its constructors and their fields, aligned with the table entry's
+    /// constructors (none for an opaque type).
+    pub ctors: Vec<CtorDocs>,
+}
+
+/// The docstrings of a constructor and of its fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CtorDocs {
+    pub doc: Option<String>,
+    /// One entry per field: a structure field's docstring (its projection's), when it has one.
+    pub fields: Vec<Option<String>>,
 }
 
 /// The program's boundary, the input of every binding generator.
@@ -621,6 +639,18 @@ pub fn generate(input: &BoundaryInput, e: &Emitter) -> Result<(Boundary, String)
                 structure: d.structure && !d.opaque,
                 opaque: d.opaque,
                 fingerprint: fingerprints[&d.name].clone(),
+                doc: d.doc.clone(),
+                ctors: if d.opaque {
+                    Vec::new()
+                } else {
+                    d.ctors
+                        .iter()
+                        .map(|c| CtorDocs {
+                            doc: c.doc.clone(),
+                            fields: c.fields.iter().map(|f| f.doc.clone()).collect(),
+                        })
+                        .collect()
+                },
             })
             .collect(),
         functions,
@@ -809,6 +839,7 @@ fn emit_call(
         params,
         returns,
         source: export.source.clone(),
+        doc: export.doc.clone(),
     })
 }
 
@@ -948,5 +979,6 @@ fn emit_host_adapter(
         lean_type: req.lean_type.clone(),
         params,
         returns,
+        doc: req.doc.clone(),
     })
 }

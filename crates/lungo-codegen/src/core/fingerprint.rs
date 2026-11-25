@@ -159,7 +159,7 @@ mod tests {
     use lungo_protocol::{CtorDecl, FieldDecl};
 
     fn field(name: &str, ty: FacadeType, kind: FieldKind) -> FieldDecl {
-        FieldDecl { name: name.into(), ty, kind }
+        FieldDecl { name: name.into(), ty, kind, doc: None }
     }
 
     /// `structure Urn where tags : List Tag`, `structure Tag where key : String`, and an opaque
@@ -179,7 +179,9 @@ mod tests {
                 usize: 0,
                 ssize: 0,
                 fields,
+                doc: None,
             }],
+            doc: None,
         };
         let inductive = |n: &str| FacadeType::Inductive { name: n.into(), args: vec![] };
         vec![
@@ -214,6 +216,19 @@ mod tests {
         assert_ne!(before["Wf"], fingerprints(&model(FacadeType::String), "4.35.0")["Wf"]);
         // Distinct types have distinct fingerprints even where their layouts coincide.
         assert_ne!(before["Urn"], before["Tag"]);
+        // Docstrings are no part of a layout: documenting a type, a constructor or a field
+        // leaves every fingerprint as it was.
+        let mut documented = model(FacadeType::String);
+        for t in &mut documented {
+            t.doc = Some(format!("The {}.", t.name));
+            for c in &mut t.ctors {
+                c.doc = Some("Makes one.".into());
+                for f in &mut c.fields {
+                    f.doc = Some(format!("Its {}.", f.name));
+                }
+            }
+        }
+        assert_eq!(before, fingerprints(&documented, "4.34.1"));
     }
 
     /// TEST0121: recursive types are named where they recur
@@ -237,7 +252,9 @@ mod tests {
                     FacadeType::List(Box::new(FacadeType::Inductive { name: "Tree".into(), args: vec![] })),
                     FieldKind::Object(0),
                 )],
+                doc: None,
             }],
+            doc: None,
         };
         let one = fingerprints(std::slice::from_ref(&t), "4.34.1");
         assert_eq!(one["Tree"].len(), 64);

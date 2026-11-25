@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Version of the worker adapter this crate is built for; the worker reports its own.
-pub const ADAPTER_VERSION: u32 = 3;
+pub const ADAPTER_VERSION: u32 = 4;
 
 /// The worker's Lean sources shared by every supported Lean release, distributed with this crate
 /// and compiled against each project's toolchain.

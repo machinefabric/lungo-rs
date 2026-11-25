@@ -92,6 +92,11 @@ def builtinName? : Name → Option String
 def pretty (e : Expr) : MetaM String := do
   return toString (← ppExpr e)
 
+/-- The docstring of declaration `n` (its `/-- … -/` comment, or the one `@[inherit_doc]` names),
+as Lean shows it, or none. -/
+def docString (n : Name) : CoreM (Option String) := do
+  findDocString? (← getEnv) n
+
 /-- Whether `t` (a binder or field type) has no runtime representation. -/
 def isErasedType (t : Expr) : MetaM Bool := do
   return (← isProp t) || (← isTypeFormerType t)
@@ -227,6 +232,9 @@ def describeInductive (n : Name) : FacadeM Value := do
     let mut paramNames := #[]
     for p in params do
       paramNames := paramNames.push (str (← p.fvarId!.getUserName).toString)
+    -- A structure's fields are documented on their projections, in the constructor's order.
+    let env ← getEnv
+    let structFields := if isStruct then getStructureFields env n else #[]
     let mut ctors := #[]
     for ctor in info.ctors do
       let cinfo ← getConstInfoCtor ctor
@@ -242,10 +250,14 @@ def describeInductive (n : Name) : FacadeM Value := do
           let fty ← match kind with
             | .erased | .void => pure (FType.opaque none (← pretty (← inferType x)))
             | _ => facade tparams (← inferType x)
+          let doc ← match structFields[i]?.bind (getProjFnForField? env n) with
+            | some proj => docString proj
+            | none => pure none
           fields := fields.push (obj [
             ("name", str (← x.fvarId!.getUserName).eraseMacroScopes.toString),
             ("ty", fty.toCbor),
-            ("kind", ← ofExcept (fieldKind kind))
+            ("kind", ← ofExcept (fieldKind kind)),
+            ("doc", opt (doc.map str))
           ])
         return fields
       ctors := ctors.push (obj [
@@ -254,7 +266,8 @@ def describeInductive (n : Name) : FacadeM Value := do
         ("size", nat layout.ctorInfo.size),
         ("usize", nat layout.ctorInfo.usize),
         ("ssize", nat layout.ctorInfo.ssize),
-        ("fields", arr fields)
+        ("fields", arr fields),
+        ("doc", opt ((← docString ctor).map str))
       ])
     return obj [
       ("name", BridgeIR.name n),
@@ -263,7 +276,8 @@ def describeInductive (n : Name) : FacadeM Value := do
       ("repr", repr),
       ("trivial", opt (trivial.map fun t => obj [("ctor", BridgeIR.name t.ctorName), ("field", nat t.fieldIdx)])),
       ("structure", .bool isStruct),
-      ("ctors", arr ctors)
+      ("ctors", arr ctors),
+      ("doc", opt ((← docString n).map str))
     ]
 
 /-- Describes every inductive type queued by facade computations, including those reached

@@ -305,6 +305,66 @@ fn js_string(s: &str) -> String {
     serde_json::to_string(s).expect("strings serialize")
 }
 
+/// The lines of a documentation text, as a JSDoc comment holds them: a Lean docstring's
+/// surrounding blank lines and trailing spaces dropped, the indentation its lines after the first
+/// share (the source's, inside `/-- … -/`) removed, and `*/` kept from closing the comment.
+fn doc_lines(text: &str) -> Vec<String> {
+    let mut lines: Vec<&str> = text.lines().map(str::trim_end).collect();
+    while lines.first().is_some_and(|l| l.trim().is_empty()) {
+        lines.remove(0);
+    }
+    while lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    let indent = lines
+        .iter()
+        .skip(1)
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let l = if i == 0 { l.trim_start() } else { l.get(indent..).unwrap_or("") };
+            l.replace("*/", "*\\/")
+        })
+        .collect()
+}
+
+/// Writes `text` as a JSDoc comment at `indent`: on one line when it is one line.
+fn jsdoc(w: &mut Writer, indent: &str, text: &str) {
+    let lines = doc_lines(text);
+    if let [line] = lines.as_slice() {
+        w.line(format!("{indent}/** {line} */"));
+        return;
+    }
+    w.line(format!("{indent}/**"));
+    for l in &lines {
+        w.line(if l.is_empty() { format!("{indent} *") } else { format!("{indent} * {l}") });
+    }
+    w.line(format!("{indent} */"));
+}
+
+/// A Lean declaration's documentation: its docstring when it has one, else `fallback`.
+fn lean_doc(doc: Option<&str>, fallback: impl FnOnce() -> String) -> String {
+    match doc {
+        Some(d) if !d.trim().is_empty() => d.to_owned(),
+        _ => fallback(),
+    }
+}
+
+/// A Lean function's documentation: its docstring, when it has one, above the line naming the
+/// declaration and its Lean type that documents it otherwise.
+fn function_doc(doc: Option<&str>, lean_name: &str, lean_type: &str) -> String {
+    let signature = format!("Lean's {lean_name} : {}", lean_type.replace('\n', " "));
+    match doc {
+        Some(d) if !d.trim().is_empty() => format!("{}\n\n{signature}", doc_lines(d).join("\n")),
+        _ => signature,
+    }
+}
+
 fn valid_npm_name(n: &str) -> bool {
     !n.is_empty()
         && n.len() <= 214
@@ -870,15 +930,25 @@ impl Emitter<'_> {
             if self.externs.contains_key(&i) {
                 continue;
             }
+            let type_doc = lean_doc(named.doc.as_deref(), || format!("Lean's {}.", named.lean_name));
             if named.opaque {
                 w.line("");
-                w.line(format!(
-                    "/** Lean's {}, held by handle: only the program's functions make and read its values. */",
-                    named.lean_name
-                ));
+                jsdoc(
+                    &mut w,
+                    "",
+                    &format!(
+                        "{}\n\nHeld by handle: only the program's functions make and read its values.",
+                        doc_lines(&type_doc).join("\n")
+                    ),
+                );
                 w.line(format!("export class {} extends L.Opaque {{", tn.name));
                 w.line("  private constructor();");
                 w.line("}");
+                jsdoc(
+                    &mut w,
+                    "",
+                    &format!("The descriptor of {}: how its handles cross the boundary.", named.lean_name),
+                );
                 w.line(format!("export function {}(): L.Type<{}>;", tn.descriptor, tn.name));
                 continue;
             }
@@ -887,28 +957,58 @@ impl Emitter<'_> {
             } else {
                 format!("<{}>", (0..n).map(param_name).collect::<Vec<_>>().join(", "))
             };
+            let docs = &named.ctors;
+            // What documents a field: its docstring, else the Lean declaration it stands for.
+            let field_doc = |ci: usize, k: usize| {
+                let c = &decl.ctors[ci];
+                let f = &c.fields[k];
+                lean_doc(docs[ci].fields[k].as_deref(), || match (named.structure, f.name.is_empty()) {
+                    (true, false) => format!("Lean's {}.{}.", named.lean_name, f.name),
+                    (_, false) => format!("The field `{}` of Lean's {}.", f.name, c.name),
+                    (_, true) => format!("Field {k} of Lean's {}.", c.name),
+                })
+            };
             w.line("");
-            w.line(format!("/** Lean's {}. */", named.lean_name));
             if decl.ctors.len() == 1 {
+                // One constructor: the interface stands for the type and its constructor both.
+                let text = match docs[0].doc.as_deref() {
+                    Some(c) if !c.trim().is_empty() => {
+                        format!("{}\n\n{}", doc_lines(&type_doc).join("\n"), doc_lines(c).join("\n"))
+                    }
+                    _ => type_doc,
+                };
+                jsdoc(&mut w, "", &text);
                 w.line(format!("export interface {}{generics} {{", tn.name));
-                for (f, fname) in decl.ctors[0].fields.iter().zip(&tn.ctors[0].1) {
+                for (k, (f, fname)) in decl.ctors[0].fields.iter().zip(&tn.ctors[0].1).enumerate() {
+                    jsdoc(&mut w, "  ", &field_doc(0, k));
                     w.line(format!("  readonly {fname}: {};", self.ts_type(&f.ty)));
                 }
                 w.line("}");
             } else {
+                jsdoc(&mut w, "", &type_doc);
                 w.line(format!("export type {}{generics} =", tn.name));
-                for (c, (kind, fields)) in decl.ctors.iter().zip(&tn.ctors) {
-                    let mut parts = vec![format!("readonly kind: {}", js_string(kind))];
-                    parts.extend(
-                        c.fields
-                            .iter()
-                            .zip(fields)
-                            .map(|(f, fname)| format!("readonly {fname}: {}", self.ts_type(&f.ty))),
-                    );
-                    w.line(format!("  | {{ {} }}", parts.join("; ")));
+                for (ci, (c, (kind, fields))) in decl.ctors.iter().zip(&tn.ctors).enumerate() {
+                    w.line("  | {");
+                    jsdoc(&mut w, "      ", &lean_doc(docs[ci].doc.as_deref(), || format!("Lean's {}.", c.name)));
+                    w.line(format!("      readonly kind: {};", js_string(kind)));
+                    for (k, (f, fname)) in c.fields.iter().zip(fields).enumerate() {
+                        jsdoc(&mut w, "      ", &field_doc(ci, k));
+                        w.line(format!("      readonly {fname}: {};", self.ts_type(&f.ty)));
+                    }
+                    w.line("    }");
                 }
                 w.line(";");
             }
+            let mut descriptor_doc =
+                format!("The descriptor of {}: how its values cross the boundary.", named.lean_name);
+            for k in 0..n {
+                descriptor_doc.push_str(&format!(
+                    "\n@param {} The descriptor of its type argument {}.",
+                    param_name(k).to_lowercase(),
+                    param_name(k)
+                ));
+            }
+            jsdoc(&mut w, "", &descriptor_doc);
             let params: Vec<String> =
                 (0..n).map(|k| format!("{}: L.Type<{}>", param_name(k).to_lowercase(), param_name(k))).collect();
             w.line(format!(
@@ -921,7 +1021,12 @@ impl Emitter<'_> {
         w.line("");
         w.line("/** The layout fingerprint and descriptor of each type, by Lean name, for modules using them. */");
         w.line("export const leanTypes: {");
-        w.line("  readonly [lean: string]: { readonly fingerprint: string; readonly type: (...args: L.Type<any>[]) => L.Type<any> };");
+        w.line("  readonly [lean: string]: {");
+        w.line("    /** The type's layout fingerprint, which a module using the type checks it agrees on. */");
+        w.line("    readonly fingerprint: string;");
+        w.line("    /** The type's descriptor, given the descriptors of its type arguments. */");
+        w.line("    readonly type: (...args: L.Type<unknown>[]) => L.Type<unknown>;");
+        w.line("  };");
         w.line("};");
         w.line("");
         w.line(format!("/** The Lean program {}. */", self.request.program.name));
@@ -942,11 +1047,7 @@ impl Emitter<'_> {
                 params.insert(0, format!("handler: {}", self.names.asyncs[self.async_index(*op)].handler));
                 params.push("options?: { signal?: AbortSignal }".to_owned());
             }
-            w.line(format!(
-                "  /** Lean's {} : {} */",
-                f.lean_name,
-                f.lean_type.replace('\n', " ").replace("*/", "* /")
-            ));
+            jsdoc(&mut w, "  ", &function_doc(f.doc.as_deref(), &f.lean_name, &f.lean_type));
             w.line(format!("  {name}{generics}({}): {};", params.join(", "), self.result_type(&f.returns)));
         }
         if b.run_main.is_some() {
@@ -975,11 +1076,11 @@ impl Emitter<'_> {
                 let locals = distinct_locals(o.params.iter().enumerate().map(|(i, p)| js_local(&p.name, i)).collect());
                 let params: Vec<String> =
                     o.params.iter().zip(&locals).map(|(p, l)| format!("{l}: {}", self.ts_type(&p.ty))).collect();
-                w.line(format!(
-                    "  /** Lean's {} : {} */",
-                    o.declaration,
-                    o.lean_type.as_deref().unwrap_or("?").replace('\n', " ").replace("*/", "* /")
-                ));
+                jsdoc(
+                    &mut w,
+                    "  ",
+                    &function_doc(o.doc.as_deref(), &o.declaration, o.lean_type.as_deref().unwrap_or("?")),
+                );
                 w.line(format!("  {m}({}): {};", params.join(", "), self.result_type(&o.returns)));
             }
             w.line("}");
@@ -988,7 +1089,8 @@ impl Emitter<'_> {
             w.line("");
             w.line("/** The facilities the program needs, by name. */");
             w.line(format!("export interface {facilities} {{"));
-            for n in &self.names.facilities {
+            for (c, n) in b.facilities.iter().zip(&self.names.facilities) {
+                jsdoc(&mut w, "  ", &format!("The facility {} (`{}`).", c.id, c.lean_name));
                 w.line(format!("  {}: {};", n.key, n.interface));
             }
             w.line("}");
@@ -1005,12 +1107,17 @@ impl Emitter<'_> {
                 note.replace("*/", "* /")
             ));
             w.line(format!("export interface {} {{", n.handler));
+            let docs = &b.types[c.op_type as usize].ctors;
             for ((o, ctor), m) in c.operations.iter().zip(&decl.ctors).zip(&n.methods) {
                 let fields = &tn.ctors[o.ctor as usize].1;
                 let params: Vec<String> =
                     ctor.fields.iter().zip(fields).map(|(f, l)| format!("{l}: {}", self.ts_type(&f.ty))).collect();
                 let a = self.ts_type(&o.answer);
-                w.line(format!("  /** Performs {}. */", o.lean_name));
+                jsdoc(
+                    &mut w,
+                    "  ",
+                    &lean_doc(docs[o.ctor as usize].doc.as_deref(), || format!("Performs {}.", o.lean_name)),
+                );
                 w.line(format!("  {m}({}): {a} | Promise<{a}>;", params.join(", ")));
             }
             w.line("}");
@@ -1019,17 +1126,158 @@ impl Emitter<'_> {
         w.line("/** The program's assurance document. */");
         w.line("export const ASSURANCE: L.Assurance;");
         w.line("");
+        w.line("/** What `load` instantiates the program with. */");
         w.line("export interface LoadOptions {");
         if !b.facilities.is_empty() {
+            w.line("  /** The facilities the program needs, one object per facility with a method per operation. */");
             w.line(format!("  facilities: {facilities};"));
         }
         w.line("  /** The program module (default: `program.wasm` next to this file). */");
         w.line("  module?: WebAssembly.Module | BufferSource;");
+        w.line("  /** The WASI implementation the module runs on (default: Node's `node:wasi`, else lungo-ts's minimal one). */");
         w.line("  wasi?: L.Wasi;");
         w.line("}");
         w.line("");
         let optional = if b.facilities.is_empty() { "?" } else { "" };
+        if b.facilities.is_empty() {
+            w.line("/** Instantiates the program. */");
+        } else {
+            w.line("/** Instantiates the program; `options.facilities` provides the facilities it needs, and `load` rejects");
+            w.line(" *  with `L.MissingFacilityError` when one is missing. */");
+        }
         w.line(format!("export function load(options{optional}: LoadOptions): Promise<{}>;", self.names.class));
         w.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::c::boundary::{Facility, Operation, Param};
+    use crate::core::fixture::{decl, ind, named, request};
+
+    /// The program `shapes`: a documented structure with one documented field, a type of two
+    /// constructors of which one is documented, an undocumented polymorphic type, an opaque
+    /// type, a documented and an undocumented function, and a facility with a documented and an
+    /// undocumented operation.
+    fn documented_program() -> GenerateRequest {
+        let tree = Type::Inductive { index: 2, args: vec![Type::Param(0)] };
+        let mut types = vec![
+            decl("Shapes.Point", 0, vec![vec![Type::Float, Type::Float]]),
+            decl("Shapes.Shape", 0, vec![vec![ind(0), Type::Float], vec![]]),
+            decl("Shapes.Tree", 1, vec![vec![], vec![tree.clone(), Type::Param(0), tree]]),
+            decl("Shapes.Handle", 0, vec![]),
+        ];
+        types[0].ctors[0].fields[0].name = "x".into();
+        types[0].ctors[0].fields[1].name = "y".into();
+        types[1].ctors[0].name = "Shapes.Shape.circle".into();
+        types[1].ctors[1].name = "Shapes.Shape.empty".into();
+        types[1].ctors[0].fields[0].name = "center".into();
+        types[1].ctors[0].fields[1].name = "radius".into();
+        types[3].opaque = true;
+        let mut names = named(&types);
+        // As Lean keeps a docstring: the text between `/--` and `-/`, its later lines indented as
+        // in the source.
+        names[0].doc = Some(" A point of the plane,\n  in pixels from the top left corner. ".into());
+        names[0].ctors[0].fields[0] = Some(" Its distance from the left edge: never `*/` closing. ".into());
+        names[1].ctors[0].doc = Some(" A disc. ".into());
+        names[3].doc = Some(" A window the host draws. ".into());
+        let function = |name: &str, doc: Option<&str>| Function {
+            lean_name: format!("Shapes.{name}"),
+            module: "Shapes".into(),
+            lean_type: "Shapes.Shape → Float".into(),
+            symbol: format!("shapes__{name}"),
+            type_params: vec![],
+            params: vec![Param { name: "s".into(), ty: ind(1) }],
+            returns: Returns::Value(Type::Float),
+            source: None,
+            doc: doc.map(str::to_owned),
+        };
+        let operation = |index: usize, name: &str, doc: Option<&str>| Operation {
+            index,
+            key: format!("shapes_{name}"),
+            declaration: format!("Shapes.Host.{name}"),
+            lean_type: Some("Float → Float".into()),
+            params: vec![Param { name: "x".into(), ty: Type::Float }],
+            returns: Returns::Value(Type::Float),
+            doc: doc.map(str::to_owned),
+        };
+        request(
+            types,
+            names,
+            vec![function("area", Some(" The area `s` covers. ")), function("perimeter", None)],
+            vec![Facility {
+                id: "shapes.host".into(),
+                lean_name: "Shapes.Host.facility".into(),
+                operations: vec![
+                    operation(0, "scale", Some(" Scales a length to the screen. ")),
+                    operation(1, "round", None),
+                ],
+            }],
+        )
+    }
+
+    /// The lines of `d_ts` that declare something: what is not a comment, a blank line, an
+    /// import, the banner, the end of a block or union member, or a private constructor.
+    fn declarations(d_ts: &str) -> Vec<(usize, &str)> {
+        d_ts.lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let t = l.trim();
+                !(t.is_empty()
+                    || t.starts_with("//")
+                    || t.starts_with("/**")
+                    || t.starts_with('*')
+                    || t.starts_with("import ")
+                    || matches!(t, "}" | "};" | ";" | "| {" | "private constructor();")
+                    || t.starts_with("readonly [lean: string]"))
+            })
+            .collect()
+    }
+
+    /// TEST0403: TypeScript declarations carry each Lean docstring, document every public symbol,
+    /// and use no `any`
+    #[test]
+    fn test0403_typescript_declarations_carry_docstrings_document_every_symbol_and_use_no_any() {
+        let files = TsGenerator.generate(&documented_program()).unwrap_or_else(|e| panic!("{e:?}"));
+        let d_ts = &files["index.d.ts"];
+        // A docstring is the declaration's JSDoc, its lines as written; a declaration without one
+        // names the Lean declaration it stands for.
+        for expected in [
+            "/**\n * A point of the plane,\n * in pixels from the top left corner.\n */\nexport interface Point {",
+            "  /** Its distance from the left edge: never `*\\/` closing. */\n  readonly x: number;",
+            "  /** Lean's Shapes.Point.y. */\n  readonly y: number;",
+            "/** Lean's Shapes.Shape. */\nexport type Shape =",
+            "      /** A disc. */\n      readonly kind: \"circle\";",
+            "      /** The field `center` of Lean's Shapes.Shape.circle. */\n      readonly center: Point;",
+            "      /** Lean's Shapes.Shape.empty. */\n      readonly kind: \"empty\";",
+            "/** Lean's Shapes.Tree. */\nexport type Tree<A> =",
+            "/**\n * A window the host draws.\n *\n * Held by handle: only the program's functions make and read its values.\n */\nexport class Handle",
+            "  /**\n   * The area `s` covers.\n   *\n   * Lean's Shapes.area : Shapes.Shape → Float\n   */\n  area(s: Shape): number;",
+            "  /** Lean's Shapes.perimeter : Shapes.Shape → Float */\n  perimeter(s: Shape): number;",
+            "   * Scales a length to the screen.\n   *\n   * Lean's Shapes.Host.scale : Float → Float\n   */\n  scale(x: number): number;",
+            "  /** Lean's Shapes.Host.round : Float → Float */\n  round(x: number): number;",
+            "/**\n * The descriptor of Shapes.Tree: how its values cross the boundary.\n * @param a The descriptor of its type argument A.\n */\nexport function treeType<A>(a: L.Type<A>): L.Type<Tree<A>>;",
+        ] {
+            assert!(d_ts.contains(expected), "no\n{expected}\nin:\n{d_ts}");
+        }
+        // Every declaration, member and field is documented: the line before it ends a JSDoc.
+        let lines: Vec<&str> = d_ts.lines().collect();
+        for (i, l) in declarations(d_ts) {
+            let documented =
+                lines[..i].iter().rev().find(|p| !p.trim().is_empty()).is_some_and(|p| p.trim_end().ends_with("*/"));
+            assert!(documented, "line {} is not documented: {l}\nin:\n{d_ts}", i + 1);
+        }
+        // No `any` reaches a consumer: not in a declaration, not in a type it names.
+        for (i, l) in
+            declarations(d_ts).into_iter().chain(d_ts.lines().enumerate().filter(|(_, l)| l.contains("[lean: string]")))
+        {
+            let words = l.split(|c: char| !(c.is_alphanumeric() || c == '_'));
+            assert!(!words.into_iter().any(|w| w == "any"), "line {} uses `any`: {l}", i + 1);
+        }
+        assert!(
+            d_ts.contains("readonly type: (...args: L.Type<unknown>[]) => L.Type<unknown>;"),
+            "leanTypes describes its descriptors without `any`:\n{d_ts}"
+        );
     }
 }

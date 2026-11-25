@@ -302,6 +302,30 @@ fn test0115_ts_binding() {
     assert!(out.contains("# pass 18") && out.contains("# fail 0"), "{out}");
 }
 
+/// TEST0404: the Lean program's docstrings reach the TypeScript declarations as their JSDoc: of a
+/// type, a structure field, a constructor, a function and a host operation. A declaration
+/// without one names the Lean declaration it stands for.
+#[test]
+fn test0404_lean_docstrings_reach_the_typescript_declarations() {
+    let package = root().join("ts-docs");
+    support::generate(&repo().join("compiler-tests/polyglot/lungo.toml"), "ts", &package, &distribution());
+    let d_ts = std::fs::read_to_string(package.join("index.d.ts")).unwrap();
+    for expected in [
+        "/**\n * What looking a slot up answers. Named after the operation that returns it, as Lean code\n * is written: the type and the function are two names in every binding.\n */\nexport type Lookup =",
+        "/** Lean's Polyglot.Point. */\nexport interface Point {",
+        "  /**\n   * The distance from the left edge,\n   * in pixels.\n   */\n  readonly x: number;",
+        "  /** Lean's Polyglot.Point.y. */\n  readonly y: number;",
+        "  /** What the point is called. */\n  readonly label: string;",
+        "      /** A disc around `center`. */\n      readonly kind: \"circle\";",
+        "      /** Lean's Polyglot.Shape.rect. */\n      readonly kind: \"rect\";",
+        "  /**\n   * Natural numbers of any size.\n   *\n   * Lean's Polyglot.factorial : Nat → Nat\n   */\n  factorial(",
+        "  /** Lean's Polyglot.area : Polyglot.Shape → Float */\n  area(",
+        "  /**\n   * Scales by the host's factor (pure).\n   *\n   * Lean's Polyglot.hostScale : Nat → Nat\n   */\n  hostScale(",
+    ] {
+        assert!(d_ts.contains(expected), "no\n{expected}\nin:\n{d_ts}");
+    }
+}
+
 /// TEST0116: WebAssembly has no child processes: a program spawning one cannot be generated for it.
 #[test]
 fn test0116_webassembly_rejects_primitives_it_lacks() {

@@ -8,7 +8,7 @@ use lungo_bir::{ExternEntry, IrType, Param, Program};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 const MAGIC: &[u8; 4] = b"LNGF";
 const HEADER_SIZE: usize = 17;
 /// Nesting permitted in a response: bounded by the control-flow nesting of compiled code.
@@ -325,6 +325,8 @@ pub struct ExternRequirement {
     pub params: Vec<Param>,
     pub result: IrType,
     pub source: Option<DeclSource>,
+    /// The docstring of the declaration the extern comes from, when it has one.
+    pub doc: Option<String>,
     /// The Rust-facing signature of an application-provided implementation, when the extern's
     /// Lean type determines one.
     pub facade: Option<FacadeSignature>,
@@ -357,6 +359,8 @@ pub struct Export {
     pub params: Vec<FacadeParam>,
     pub result: FacadeType,
     pub source: Option<DeclSource>,
+    /// The declaration's docstring, when it has one.
+    pub doc: Option<String>,
     pub trust: Trust,
 }
 
@@ -465,6 +469,8 @@ pub struct TypeDecl {
     pub trivial: Option<TrivialStructure>,
     pub structure: bool,
     pub ctors: Vec<CtorDecl>,
+    /// The type's docstring, when it has one.
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +489,8 @@ pub struct CtorDecl {
     pub usize: u32,
     pub ssize: u32,
     pub fields: Vec<FieldDecl>,
+    /// The constructor's docstring, when it has one.
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -491,6 +499,9 @@ pub struct FieldDecl {
     pub name: String,
     pub ty: FacadeType,
     pub kind: FieldKind,
+    /// A structure field's docstring (its projection's), when it has one. The fields of other
+    /// constructors have none: Lean documents constructors, not their arguments.
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

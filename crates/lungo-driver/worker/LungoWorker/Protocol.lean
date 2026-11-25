@@ -12,7 +12,7 @@ namespace LungoWorker.Protocol
 
 open Cbor
 
-def version : Nat := 4
+def version : Nat := 5
 
 def requestKind : UInt8 := 1
 def responseKind : UInt8 := 2

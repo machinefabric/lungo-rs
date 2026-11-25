@@ -6,6 +6,8 @@ pub mod codes;
 pub mod exports;
 pub mod externs;
 pub mod fingerprint;
+#[cfg(test)]
+pub mod fixture;
 pub mod interface;
 pub mod model;
 pub mod names;

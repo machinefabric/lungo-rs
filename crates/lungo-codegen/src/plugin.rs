@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// The version of the request and response formats.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// The program the package is generated for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
