@@ -130,7 +130,30 @@ fn test0268_a_plugin_receives_the_request_and_its_files_are_published() {
     assert!(functions.contains("Polyglot.factorial polyglot__call_l_Polyglot_dfactorial Nat → Nat"), "{functions}");
     let request: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("request.json")).unwrap()).unwrap();
-    assert_eq!(request["protocol_version"], 3);
+    assert_eq!(request["protocol_version"], 4);
+    // Docstrings, as the protocol reference documents them: of a type, its constructors and its
+    // structure fields, a function and an operation; `null` where the declaration has none.
+    let types = request["boundary"]["types"].as_array().unwrap();
+    let ty = |name: &str| types.iter().find(|t| t["lean_name"] == name).unwrap_or_else(|| panic!("no {name}"));
+    let doc = |v: &serde_json::Value| v.as_str().map(str::trim).map(str::to_owned);
+    assert!(doc(&ty("Polyglot.Lookup")["doc"]).unwrap().starts_with("What looking a slot up answers."));
+    let point = ty("Polyglot.Point");
+    assert!(point["doc"].is_null(), "{point}");
+    let fields = point["ctors"][0]["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 4, "{point}");
+    assert!(doc(&fields[0]).unwrap().starts_with("The distance from the left edge,"), "{point}");
+    assert!(fields[1].is_null() && fields[3].is_null(), "{point}");
+    assert_eq!(doc(&fields[2]).as_deref(), Some("What the point is called."));
+    let shape = ty("Polyglot.Shape");
+    assert_eq!(doc(&shape["ctors"][0]["doc"]).as_deref(), Some("A disc around `center`."));
+    assert!(shape["ctors"][1]["doc"].is_null() && shape["ctors"][0]["fields"][0].is_null(), "{shape}");
+    let function = |name: &str| {
+        request["boundary"]["functions"].as_array().unwrap().iter().find(|f| f["lean_name"] == name).unwrap()
+    };
+    assert_eq!(doc(&function("Polyglot.factorial")["doc"]).as_deref(), Some("Natural numbers of any size."));
+    assert!(function("Polyglot.area")["doc"].is_null());
+    let scaler = request["boundary"]["facilities"].as_array().unwrap().iter().find(|c| c["id"] == "polyglot.scaler");
+    assert_eq!(doc(&scaler.unwrap()["operations"][0]["doc"]).as_deref(), Some("Scales by the host's factor (pure)."));
     assert_eq!(request["program"]["name"], "polyglot");
     assert_eq!(request["extern_types"], serde_json::json!({}), "no language table names extern types");
     // Every type carries whether it is opaque and its layout fingerprint.
